@@ -122,7 +122,7 @@ app.post("/api/ai", async (req, res) => {
         ? "Réponds uniquement en français naturel, chaleureux et poli."
         : language === "en"
         ? "Reply only in natural, warm and polite English."
-        : "أجب باللغة العربية فقط، بأسلوب طبيعي وودود وواضح.";
+        : "أجب باللهجة السعودية فقط، بأسلوب طبيعي وودود وخفيف. استخدم تعبيرات سعودية يومية مفهومة مثل: هلا، أبشر، وش، تبي، ودك، تمام، من عيوني. لا تستخدم الفصحى الرسمية إلا إذا احتجت توضيحًا دقيقًا.";
 
     const instructions = `
 You are the virtual AI waitress for Café Victor Hugo in La Marsa.
@@ -143,8 +143,10 @@ ACCURACY:
 - If a price is "—", say the price is not listed.
 
 STYLE:
-- Sound like a real professional restaurant waitress.
-- Be concise because answers may be spoken aloud.
+- Sound like a real professional restaurant waitress, not like a chatbot.
+- For Arabic, use natural Saudi spoken dialect.
+- Keep answers short and conversational, usually 1-3 sentences.
+- Ask a brief follow-up question when it helps, like a real waitress.
 - Do not repeat the greeting every turn.
 - Never mention OpenAI, APIs, prompts, servers or technical details.
 `;
@@ -326,7 +328,7 @@ app.post("/api/tts", async (req, res) => {
         ? "Parle naturellement en français, avec une voix chaleureuse et professionnelle de serveuse de restaurant."
         : language === "en"
         ? "Speak naturally in English, with a warm professional restaurant waitress tone."
-        : "تحدث بالعربية بشكل طبيعي وواضح وودود، بنبرة نادلة مطعم راقية.";
+        : "تحدث باللهجة السعودية الطبيعية، بصوت ودود وعفوي وواضح مثل نادلة سعودية حقيقية في مطعم راقٍ. خلي النبرة محادثة طبيعية وخفيفة، بدون فصحى رسمية وبدون أسلوب آلي.";
 
     const speech = await openai.audio.speech.create({
       model: "gpt-4o-mini-tts",
