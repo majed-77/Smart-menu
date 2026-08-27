@@ -514,49 +514,16 @@ function applySiteLanguage(lang){
  updateSearchPlaceholder();
  welcomeOverlay.classList.add('hidden');
 }
-document.querySelectorAll('[data-site-lang]').forEach(b=>b.onclick=()=>applySiteLanguage(b.dataset.siteLang));
-document.querySelector('#changeSiteLang').onclick=()=>welcomeOverlay.classList.remove('hidden');
-
-menu.forEach((s,i)=>{
- const b=document.createElement('button');
- b.textContent=s.cat;
- b.onclick=()=>document.getElementById('s'+i).scrollIntoView({behavior:'smooth',block:'start'});
- nav.appendChild(b);
-
- const sec=document.createElement('section');
- sec.id='s'+i;
- sec.dataset.category=s.cat;
- sec.innerHTML=`<h2 class="section-title"><span>${s.cat}</span><span class="section-count">${s.items.length}</span></h2><div class="grid"></div>`;
-
- const grid=sec.querySelector('.grid');
-
- s.items.forEach(d=>{
-   const c=document.createElement('article');
-   c.className='card';
-   c.dataset.search=(s.cat+' '+d[0]+' '+d[1]).toLowerCase();
-
-   const img=itemImage(d[0]);
-   const media=img
-     ? `<img class="foodImage" loading="lazy" src="${img}" alt="${d[0]}" onerror="this.outerHTML='<div class=&quot;foodFallback&quot;>${imageFallback(d[0])}</div>'">`
-     : `<div class="foodFallback">${imageFallback(d[0])}</div>`;
-
-   c.innerHTML=`
-     <div class="foodImageWrap">
-       ${media}
-       ${d[3]?'<span class="signature">Signature Victor</span>':''}
-       <div class="price">${displayPrice(d[2],siteLanguage||"ar")}</div>
-     </div>
-     <div class="cardBody">
-       <h3>${d[0]}</h3>
-       <div class="desc">${d[1]}</div>
-       <button class="voice">${TEXT[siteLanguage||'ar'].askWaiter}</button>
-     </div>`;
-
-   c.querySelector('.voice').onclick=()=>openWaiter(d);
-   grid.appendChild(c);
+document.querySelectorAll('[data-site-lang]').forEach(btn=>{
+ btn.addEventListener('click',(e)=>{
+   e.preventDefault();
+   e.stopPropagation();
+   const lang=btn.getAttribute('data-site-lang');
+   if(!lang)return;
+   applySiteLanguage(lang);
+   const welcome=document.querySelector('#welcomeOverlay');
+   if(welcome) welcome.classList.add('hidden');
  });
-
- root.appendChild(sec);
 });
 
 
@@ -1112,5 +1079,18 @@ function closeWaiter(){
 }
 endBtn.onclick=closeWaiter;
 </script>
+
+document.addEventListener('click',function(e){
+ const btn=e.target.closest('[data-site-lang]');
+ if(!btn)return;
+ const lang=btn.getAttribute('data-site-lang');
+ if(!lang)return;
+ try{
+   if(typeof applySiteLanguage==='function') applySiteLanguage(lang);
+   const overlay=document.querySelector('#welcomeOverlay');
+   if(overlay) overlay.classList.add('hidden');
+ }catch(err){console.error('Language selection error',err);}
+},true);
+
 </body>
 </html>
