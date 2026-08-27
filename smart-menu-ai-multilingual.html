@@ -192,6 +192,7 @@ main{max-width:1280px;margin:auto;padding:22px 5% 60px}
         <button class="micBtn" id="micBtn" aria-label="Microphone">🎤</button>
       </div>
       <div class="recordHint" id="recordHint"></div>
+      <button id="testAudioBtn" type="button" style="margin:8px auto 0;border:1px solid #d8c7ae;background:#fff;border-radius:999px;padding:7px 12px;cursor:pointer">🔊 اختبار الصوت</button>
       <div id="diagBox" style="display:none;margin-top:8px;padding:10px;border:1px solid #d8c7ae;border-radius:12px;font-size:12px;line-height:1.7;text-align:start"></div>
       <div class="permissionHelp" id="permissionHelp"></div>
       <button class="end" id="end">إنهاء</button>
@@ -503,6 +504,7 @@ function openWaiter(d){
 cancelWaiter.onclick=closeWaiter;
 document.querySelectorAll('[data-waiter-lang]').forEach(b=>b.onclick=async()=>{
  waiterLanguage=b.dataset.waiterLang;
+ await unlockSpeechAudio();
  waiterLangStep.classList.add('hidden'); chatStep.classList.remove('hidden');
  title.textContent=translateMenuText(currentDish[0],waiterLanguage);
  const t=TEXT[waiterLanguage];
@@ -581,17 +583,114 @@ async function askAI(question){
   body:JSON.stringify({question,dish:{name:currentDish[0],description:currentDish[1],price:currentDish[2]},menu:compactMenu(),history:conversationHistory.slice(-10),language:waiterLanguage})
  });
 }
+
+async function unlockSpeechAudio(){
+  try{
+    const AC=window.AudioContext||window.webkitAudioContext;
+    if(!AC) return false;
+    if(!speechAudioContext) speechAudioContext=new AC();
+    if(speechAudioContext.state==='suspended') await speechAudioContext.resume();
+
+    // Start a silent buffer while we are still inside a real user gesture.
+    const b=speechAudioContext.createBuffer(1,1,22050);
+    const s=speechAudioContext.createBufferSource();
+    s.buffer=b;
+    s.connect(speechAudioContext.destination);
+    s.start(0);
+    speechUnlocked=true;
+    return true;
+  }catch(e){
+    console.warn("Audio unlock failed:",e);
+    return false;
+  }
+}
+
 async function speakAI(text){
- try{
-   if(currentAudio){currentAudio.pause();currentAudio=null;}
-   const r=await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,language:waiterLanguage})});
-   if(!r.ok) return;
-   const blob=await r.blob(), url=URL.createObjectURL(blob), audio=new Audio(url);
-   currentAudio=audio; orb.classList.add('speaking');
-   audio.onended=()=>{orb.classList.remove('speaking');URL.revokeObjectURL(url);if(currentAudio===audio)currentAudio=null;};
-   audio.onerror=()=>{orb.classList.remove('speaking');URL.revokeObjectURL(url);};
-   await audio.play();
- }catch(e){console.warn('TTS',e);orb.classList.remove('speaking');}
+  try{
+    const clean=String(text||'').trim();
+    if(!clean) return;
+
+    if(currentAudio){
+      try{currentAudio.pause();}catch(e){}
+      currentAudio=null;
+    }
+    if(speechSource){
+      try{speechSource.stop();}catch(e){}
+      speechSource=null;
+    }
+
+    const r=await fetch('/api/tts',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({text:clean,language:waiterLanguage})
+    });
+
+    if(!r.ok){
+      const data=await r.json().catch(()=>({}));
+      throw new Error(data.message||data.error||('TTS HTTP '+r.status));
+    }
+
+    const blob=await r.blob();
+    if(!blob.size) throw new Error('TTS returned an empty audio file');
+
+    // Safari/iOS: decode and play through the AudioContext unlocked by the user's tap.
+    try{
+      const AC=window.AudioContext||window.webkitAudioContext;
+      if(AC){
+        if(!speechAudioContext) speechAudioContext=new AC();
+        if(speechAudioContext.state==='suspended') await speechAudioContext.resume();
+
+        const bytes=await blob.arrayBuffer();
+        const decoded=await speechAudioContext.decodeAudioData(bytes.slice(0));
+        speechSource=speechAudioContext.createBufferSource();
+        speechSource.buffer=decoded;
+        speechSource.connect(speechAudioContext.destination);
+        orb.classList.add('speaking');
+        speechSource.onended=()=>{
+          orb.classList.remove('speaking');
+          speechSource=null;
+        };
+        speechSource.start(0);
+        return;
+      }
+    }catch(webAudioError){
+      console.warn("WebAudio playback failed:",webAudioError);
+    }
+
+    // Fallback for Chrome/Firefox/other browsers.
+    const url=URL.createObjectURL(blob);
+    const audio=new Audio();
+    currentAudio=audio;
+    audio.preload='auto';
+    audio.playsInline=true;
+    audio.src=url;
+    orb.classList.add('speaking');
+
+    audio.onended=()=>{
+      orb.classList.remove('speaking');
+      URL.revokeObjectURL(url);
+      if(currentAudio===audio) currentAudio=null;
+    };
+    audio.onerror=()=>{
+      orb.classList.remove('speaking');
+      URL.revokeObjectURL(url);
+    };
+
+    await audio.play();
+  }catch(e){
+    console.error("TTS playback error:",e);
+    orb.classList.remove('speaking');
+
+    const msg=
+      waiterLanguage==='ar'
+        ? 'الرد النصي يعمل، لكن تشغيل الصوت فشل: '+(e.message||'خطأ غير معروف')
+        : waiterLanguage==='fr'
+        ? "Le texte fonctionne, mais l'audio a échoué : "+(e.message||'Erreur inconnue')
+        : 'Text works, but audio playback failed: '+(e.message||'Unknown error');
+
+    showDiagnostic(msg,false);
+    status.textContent=msg;
+  }
 }
 async function submitQuestion(q){
  q=(q||'').trim(); if(!q)return;
@@ -617,7 +716,12 @@ async function submitQuestion(q){
  }
  finally{input.disabled=false;micBtn.disabled=false;}
 }
-input.addEventListener('keydown',e=>{if(e.key==='Enter')submitQuestion(input.value)});
+input.addEventListener('keydown',async e=>{
+ if(e.key==='Enter'){
+   await unlockSpeechAudio();
+   submitQuestion(input.value);
+ }
+});
 
 function bestMime(){
  if(!window.MediaRecorder)return '';
@@ -696,7 +800,10 @@ async function sendVoice(){
   if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}
  }
 }
-micBtn.onclick=()=>recording?stopRecording():startRecording();
+micBtn.onclick=async()=>{
+ await unlockSpeechAudio();
+ recording?stopRecording():startRecording();
+};
 
 function closeWaiter(){
  stopVAD();
