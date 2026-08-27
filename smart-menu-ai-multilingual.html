@@ -421,6 +421,7 @@ let realtimeAssistantSpeaking=false;
 let realtimeAwaitingTranscript=false;
 let realtimeMicResumeTimer=null;
 let realtimeTranscriptSafetyTimer=null;
+let realtimeProcessedToolCalls=new Set();
 let conversationHistory=[];
 let recorder=null, stream=null, chunks=[], recording=false, currentAudio=null;
 let audioContext=null, analyser=null, vadFrame=null;
@@ -648,6 +649,7 @@ function closeRealtime(){
   realtimePC=null;
   realtimeMicStream=null;
   realtimeRemoteAudio=null;
+  realtimeProcessedToolCalls=new Set();
   orb.classList.remove('speaking');
 }
 
@@ -670,6 +672,17 @@ ${languageRule}
 إذا سأل عن سعر غير مدرج بعلامة — فقولي إن السعر غير مدرج.
 لا تخترعي مكونات أو حساسية أو أسعار أو توفر غير موجود في المنيو.
 ${lang==='ar'?'للعميل العربي: لا تشرحي أن الأسعار محوّلة ولا تقولي عبارة «بالريال السعودي». إذا احتجتِ ذكر سعر صنف فقولي السعر طبيعي داخل الجملة، مثل: «سعره حوالي 26 ريال» أو عند تعداد الأصناف: «برغر كلاسيك، 28 ريال». لا تذكري الدينار التونسي أو DT أو TND نهائيًا. وإذا كان السعر غير مدرج فقولي فقط: السعر غير مدرج.':''}
+
+الحجز والطلب:
+- تقدرين تسوين حجز طاولة مع طلب مسبق من المنيو داخل نفس المحادثة.
+- إذا قال العميل إنه يبي يحجز، اجمعي: الاسم، رقم واتساب بصيغة دولية، عدد الأشخاص، التاريخ، والوقت. إذا أعطاك رقمًا محليًا ولم تعرفي الدولة، اسأليه عن الدولة قبل الحفظ. وإذا كان سعوديًا وأعطى رقمًا يبدأ بـ05 فحوّليه لصيغة +9665 بعد حذف الصفر الأول.
+- الطلب المسبق اختياري. إذا طلب أصناف، اجمعي اسم كل صنف والكمية وأي تعديل يطلبه. لا تضيفي صنفًا غير موجود في المنيو.
+- إذا نقصت معلومة اسألي عنها فقط، ولا تطلبي كل المعلومات مرة وحدة إذا كان بعضها معروف.
+- قبل الحفظ لازم تلخصين الحجز والطلب كاملًا بوضوح، ثم تسألين سؤال تأكيد صريح مثل: «أعتمد الحجز والطلب؟».
+- ممنوع تستدعين أداة confirm_booking_order قبل ما يؤكد العميل بوضوح بكلمة مثل نعم، إيه، تمام اعتمد، أو ما يعادلها.
+- إذا عدّل العميل أي شيء بعد الملخص، حدّثي الملخص واسألي التأكيد مرة ثانية.
+- بعد نجاح الحفظ اذكري رقم الحجز باختصار، وقولي إن الحجز والطلب تم تسجيلهما. لا تدّعي أن رسالة واتساب أُرسلت الآن إلا إذا النظام أكد ذلك.
+
 تكلمي كإنسانة حقيقية وليس كمساعد آلي.
 خلي الرد غالبًا جملة أو جملتين، واسألي سؤال متابعة قصير إذا احتجت.
 مهم جدًا: كمّلي كل جملة للنهاية ولا تتوقفي في منتصف الكلمة أو الجملة. لا تختصري الرد بسبب طول الصوت. أصوات الخلفية والضوضاء لا تعني أن العميل قاطعك؛ النظام سيفتح الميكروفون للعميل بعد انتهاء ردك.
@@ -708,9 +721,96 @@ function createRealtimeResponse(){
   realtimeDC.send(JSON.stringify({type:'response.create'}));
 }
 
+function normalizeMenuLookupText(v){
+  return String(v||'').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/[^\p{L}\p{N}]+/gu,' ').trim();
+}
+function resolveSaraOrderItem(requestedName){
+  const q=normalizeMenuLookupText(requestedName);
+  if(!q) return null;
+  const candidates=[];
+  menu.forEach(section=>section.items.forEach(d=>{
+    const names=[d[0],translateMenuText(d[0],waiterLanguage),translateMenuText(d[0],'ar'),translateMenuText(d[0],'en')];
+    const keys=names.map(normalizeMenuLookupText);
+    let score=0;
+    if(keys.includes(q)) score=100;
+    else{
+      keys.forEach(k=>{
+        if(!k)return;
+        if(k.includes(q)||q.includes(k)) score=Math.max(score,80-Math.abs(k.length-q.length));
+        const qt=new Set(q.split(' ')), kt=new Set(k.split(' '));
+        const overlap=[...qt].filter(x=>kt.has(x)).length;
+        if(overlap) score=Math.max(score,overlap*12);
+      });
+    }
+    if(score>0)candidates.push({score,d});
+  }));
+  candidates.sort((a,b)=>b.score-a.score);
+  if(!candidates.length || candidates[0].score<18) return null;
+  const d=candidates[0].d;
+  const raw=String(d[2]||'');
+  const tnd=parseFloat(raw.replace(',','.'));
+  const unitPriceSar=Number.isFinite(tnd)?Math.round(tnd*TND_TO_SAR*100)/100:null;
+  return {name:translateMenuText(d[0],waiterLanguage),canonicalName:d[0],unitPriceSar};
+}
+function saraToolMessage(kind,data={}){
+  const lang=waiterLanguage||'ar';
+  if(kind==='saving') return lang==='ar'?'لحظة، أعتمد الحجز والطلب…':lang==='fr'?'Un instant, je confirme votre réservation…':'One moment, I’m confirming your booking…';
+  if(kind==='notFound') return lang==='ar'?`ما قدرت أربط الصنف «${data.name||''}» بالمنيو. اسألي العميل يحدد الصنف مرة ثانية.`:lang==='fr'?`Je n’ai pas pu retrouver « ${data.name||''} » dans le menu. Demande au client de préciser.`:`I couldn't match “${data.name||''}” to the menu. Ask the guest to clarify the item.`;
+  if(kind==='success') return lang==='ar'?`تم حفظ الحجز والطلب بنجاح. رقم الحجز ${data.code}.`:lang==='fr'?`Réservation et commande enregistrées. Numéro ${data.code}.`:`Booking and order saved successfully. Confirmation code ${data.code}.`;
+  return lang==='ar'?'تعذر حفظ الحجز الآن. اعتذري للعميل واطلبي منه المحاولة مرة ثانية.':lang==='fr'?`Impossible d’enregistrer la réservation maintenant. Présente tes excuses et propose de réessayer.`:`The booking could not be saved right now. Apologize and ask the guest to try again.`;
+}
+async function handleSaraBookingTool(callId,argsText){
+  if(!callId || realtimeProcessedToolCalls.has(callId)) return;
+  realtimeProcessedToolCalls.add(callId);
+  realtimeAssistantSpeaking=true;
+  setRealtimeMicEnabled(false);
+  status.textContent=saraToolMessage('saving');
+  let args={};
+  try{args=JSON.parse(argsText||'{}');}catch(e){}
+  try{
+    const resolved=[];
+    for(const item of (Array.isArray(args.order_items)?args.order_items:[])){
+      const found=resolveSaraOrderItem(item?.item_name);
+      if(!found){
+        const output={ok:false,code:'MENU_ITEM_NOT_FOUND',message:saraToolMessage('notFound',{name:item?.item_name})};
+        realtimeDC.send(JSON.stringify({type:'conversation.item.create',item:{type:'function_call_output',call_id:callId,output:JSON.stringify(output)}}));
+        realtimeDC.send(JSON.stringify({type:'response.create'}));
+        return;
+      }
+      resolved.push({name:found.canonicalName,displayName:found.name,quantity:Math.max(1,Math.min(20,Number(item?.quantity)||1)),specialRequest:String(item?.special_request||'').trim(),unitPriceSar:found.unitPriceSar});
+    }
+    const payload={
+      name:String(args.name||'').trim(),phone:String(args.phone||'').trim(),partySize:Number(args.party_size),date:String(args.date||''),time:String(args.time||''),notes:String(args.notes||'').trim(),language:waiterLanguage,source:'sara_voice',
+      orderItems:resolved.map(x=>({name:x.canonicalName,quantity:x.quantity,specialRequest:x.specialRequest,unitPriceSar:x.unitPriceSar}))
+    };
+    const r=await fetch('/api/reservations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const data=await r.json().catch(()=>({}));
+    if(!r.ok||!data.reservation) throw new Error(data.message||'Booking save failed');
+    const output={ok:true,message:saraToolMessage('success',{code:data.reservation.code}),reservation:data.reservation};
+    realtimeDC.send(JSON.stringify({type:'conversation.item.create',item:{type:'function_call_output',call_id:callId,output:JSON.stringify(output)}}));
+    realtimeDC.send(JSON.stringify({type:'response.create',response:{instructions:waiterLanguage==='ar'?`قولي للعميل باختصار إن الحجز${resolved.length?' والطلب':''} تم تسجيله بنجاح، واذكري رقم الحجز ${data.reservation.code}. لا تعيدي كل التفاصيل إلا إذا طلب.`:waiterLanguage==='fr'?`Confirme brièvement que la réservation${resolved.length?' et la commande':''} est enregistrée et donne le numéro ${data.reservation.code}.`:`Briefly confirm the booking${resolved.length?' and order':''} was saved and give confirmation code ${data.reservation.code}.`}}));
+  }catch(err){
+    console.error('Sara booking tool failed',err);
+    const output={ok:false,code:'BOOKING_SAVE_ERROR',message:String(err.message||saraToolMessage('error'))};
+    try{
+      realtimeDC.send(JSON.stringify({type:'conversation.item.create',item:{type:'function_call_output',call_id:callId,output:JSON.stringify(output)}}));
+      realtimeDC.send(JSON.stringify({type:'response.create'}));
+    }catch(e){}
+  }
+}
+
 function handleRealtimeEvent(event){
   let e;
   try{e=JSON.parse(event.data);}catch(err){return;}
+
+  if(e.type==='response.function_call_arguments.done' && e.name==='confirm_booking_order'){
+    handleSaraBookingTool(e.call_id,e.arguments);
+    return;
+  }
+  if(e.type==='response.output_item.done' && e.item?.type==='function_call' && e.item?.name==='confirm_booking_order'){
+    handleSaraBookingTool(e.item.call_id,e.item.arguments);
+    return;
+  }
 
   if(e.type==='input_audio_buffer.speech_started'){
     if(realtimeAssistantSpeaking){
@@ -864,7 +964,7 @@ async function startRealtime(){
         response:{
           instructions:
             waiterLanguage==='ar'
-              ?`ابدئي بترحيب قصير وطبيعي باللهجة السعودية، واذكري اسم المطعم واسمك بوضوح. قولي: هلا والله، حياك في Café Victor Hugo، معك سارة، كيف أقدر أخدمك؟ لا تقولي كلمة نادلتك في الترحيب، ولا تذكري أي تفاصيل تقنية.`
+              ?`ابدئي بترحيب قصير وطبيعي باللهجة السعودية، واذكري اسم المطعم واسمك بوضوح. قولي: هلا والله، حياك في Café Victor Hugo، معك سارة، كيف أقدر أخدمك؟ لا تقولي كلمة نادلتك في الترحيب، ولا تذكري أي تفاصيل تقنية. إذا كان مناسبًا، تقدرين تساعدين في المنيو أو الحجز والطلب.`
               :waiterLanguage==='fr'
               ?`Accueille brièvement le client, mentionne clairement le restaurant Café Victor Hugo et présente-toi comme Sara, sa serveuse. Puis demande comment tu peux l'aider avec le menu.`
               :`Give a very brief welcome, clearly mention Café Victor Hugo, introduce yourself as Sara, the guest's waitress, then ask how you can help with the menu.`
@@ -908,7 +1008,7 @@ async function startRealtime(){
 }
 
 function openWaiter(){
- currentDish=null; conversationHistory=[];
+ currentDish=null; conversationHistory=[]; realtimeProcessedToolCalls=new Set();
  waiterLanguage=siteLanguage||'ar'; permissionHelp.classList.remove('show');
  waiterLangStep.classList.remove('hidden'); chatStep.classList.add('hidden'); modal.classList.add('show');
 }
