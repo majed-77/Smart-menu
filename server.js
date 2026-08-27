@@ -127,7 +127,7 @@ app.post("/api/realtime-call", async (req, res) => {
           }
         },
         output: {
-          voice: "marin"
+          voice: "coral"
         }
       }
     };
@@ -239,7 +239,7 @@ app.post("/api/ai", async (req, res) => {
         ? "Réponds uniquement en français naturel, chaleureux et poli."
         : language === "en"
         ? "Reply only in natural, warm and polite English."
-        : "أجب باللهجة السعودية فقط، بأسلوب طبيعي وودود وخفيف. استخدم تعبيرات سعودية يومية مفهومة مثل: هلا، أبشر، وش، تبي، ودك، تمام، من عيوني. لا تستخدم الفصحى الرسمية إلا إذا احتجت توضيحًا دقيقًا.";
+        : "أجب باللهجة السعودية البيضاء الطبيعية فقط، وتميل بشكل خفيف للهجة النجدية. استخدم تعبيرات سعودية يومية مفهومة مثل: هلا، أبشر، وش، وش ودك، تبي، ودك، تمام، من عيوني. تجنب اللهجات المصرية والشامية والتونسية، وتجنب الفصحى الرسمية إلا إذا احتجت توضيحًا دقيقًا. خل الجمل قصيرة وطبيعية كأنك نادلة سعودية فعلًا.";
 
     const instructions = `
 You are the virtual AI waitress for Café Victor Hugo in La Marsa.
@@ -445,7 +445,7 @@ app.post("/api/tts", async (req, res) => {
         ? "Parle naturellement en français, avec une voix chaleureuse et professionnelle de serveuse de restaurant."
         : language === "en"
         ? "Speak naturally in English, with a warm professional restaurant waitress tone."
-        : "تحدث باللهجة السعودية الطبيعية، بصوت ودود وعفوي وواضح مثل نادلة سعودية حقيقية في مطعم راقٍ. خلي النبرة محادثة طبيعية وخفيفة، بدون فصحى رسمية وبدون أسلوب آلي.";
+        : "تحدث بلهجة سعودية بيضاء طبيعية تميل لنجد، بصوت أنثوي واضح ومشرق وغير مكتوم، وبسرعة متوسطة أبطأ قليلًا من الكلام السريع. انطق الحروف والكلمات بوضوح، وخفف التمطيط والهمهمة. استخدم تعبيرات سعودية يومية بشكل طبيعي مثل: هلا، وش ودك، أبشر، تمام، من عيوني. لا تستخدم اللهجة المصرية أو الشامية أو التونسية، ولا تستخدم فصحى رسمية إلا عند الحاجة. اجعل الأداء مثل نادلة سعودية شابة وراقية، دافئة وواثقة ومن دون مبالغة أو تمثيل.";
 
     const speech = await openai.audio.speech.create({
       model: "gpt-4o-mini-tts",
