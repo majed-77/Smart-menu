@@ -246,17 +246,17 @@ const menu = [
 
 const TEXT={
  ar:{
-  hero:'منيو ذكي — اطلب النادلة الافتراضية واسألها بالصوت أو الكتابة.',
+  hero:'اسأل النادلة بالصوت أو الكتابة.',
   askWaiter:'🎙️ اطلب النادلة',
   siteLang:'🌐 العربية',
   waiterTitle:'بأي لغة ترغب في التحدث مع النادلة؟',
   waiterSub:'اختر اللغة وسأرحب بك ثم يمكنك التحدث مباشرة.',
   close:'إغلاق', end:'إنهاء',
   placeholder:'اكتب سؤالك…',
-  ready:'جاهزة لخدمتك — اضغط الميكروفون وابدأ الكلام 🎤',
-  recording:'أستمع إليك… اضغط ⏹ عند الانتهاء.',
-  transcribing:'جارٍ فهم كلامك…',
-  thinking:'لحظة، أجهز لك الإجابة…',
+  ready:'أنا معك، اضغط المايك وتكلم 🎤',
+  recording:'أسمعك… وإذا خلصت اسكت شوي أو اضغط ⏹.',
+  transcribing:'لحظة أفهم كلامك…',
+  thinking:'ثواني وبرد عليك…',
   micError:'تعذر تشغيل الميكروفون.',
   permission:'على iPhone: افتح إعدادات الموقع في Safari واسمح للميكروفون، ثم أعد تحميل الصفحة.',
   hint:'اضغط 🎤 وتكلم. عند سكوتك 1.5 ثانية سأرسل السؤال تلقائيًا، ويمكنك الضغط على ⏹ للإرسال فورًا.',
@@ -265,7 +265,7 @@ const TEXT={
   quotaError:'حساب OpenAI API لا يملك رصيدًا كافيًا أو تم تجاوز الحصة. أضف وسيلة دفع/رصيد في منصة OpenAI ثم جرّب مرة أخرى.',
   permissionError:'مفتاح OpenAI لا يملك صلاحية استخدام هذا الموديل.',
   serverError:'حدث خطأ في خادم الذكاء الاصطناعي. راجع Render Logs.',
-  greet:(dish)=>`أهلًا وسهلًا بك في Café Victor Hugo. أنا نادلتك الافتراضية. أنت تشاهد ${dish[0]}. اسألني عن المكونات أو السعر أو اطلب مني اقتراحًا مناسبًا لك.`
+  greet:(dish)=>`هلا والله 👋 أنا نادلتك. وش حاب تعرف عن ${dish[0]}؟`
  },
  fr:{
   hero:'Menu intelligent — appelez la serveuse virtuelle et parlez-lui au micro ou par écrit.',
@@ -355,6 +355,8 @@ const transcript=document.querySelector('#transcript'), input=document.querySele
 const endBtn=document.querySelector('#end'), cancelWaiter=document.querySelector('#cancelWaiter'), permissionHelp=document.querySelector('#permissionHelp');
 
 
+const EXACT_MENU_I18N={"Le Matinal (1 pers)":{"ar":"الفطور الصباحي (شخص واحد)","en":"Morning Breakfast (1 person)"},"Victorien (1 pers)":{"ar":"فيكتوريان (شخص واحد)","en":"Victorien (1 person)"},"Healthy (1 pers)":{"ar":"الفطور الصحي (شخص واحد)","en":"Healthy Breakfast (1 person)"},"Le Duo Hugo (2 pers)":{"ar":"ثنائي هوغو (شخصان)","en":"Hugo Duo (2 people)"},"Le Marsois (2 pers)":{"ar":"فطور المرسى (شخصان)","en":"La Marsa Breakfast (2 people)"},"Espresso":{"ar":"إسبريسو","en":"Espresso"},"Machiatto":{"ar":"ماكياتو","en":"Macchiato"},"Cafe Latte":{"ar":"كافيه لاتيه","en":"Café Latte"},"Cappuchino":{"ar":"كابتشينو","en":"Cappuccino"},"Américain":{"ar":"أمريكانو","en":"Americano"},"Caramel Machiatto":{"ar":"ماكياتو كراميل","en":"Caramel Macchiato"},"Caramel Latte":{"ar":"لاتيه كراميل","en":"Caramel Latte"},"Mokachino":{"ar":"موكاتشينو","en":"Mochaccino"},"Lait Chaud au Miel":{"ar":"حليب ساخن بالعسل","en":"Hot Milk with Honey"},"Chocolat au Lait":{"ar":"شوكولاتة ساخنة بالحليب","en":"Hot Chocolate"},"Café Turc":{"ar":"قهوة تركية","en":"Turkish Coffee"},"Bonbon Latte":{"ar":"بونبون لاتيه","en":"Bonbon Latte"},"Bonbon Machiatto":{"ar":"بونبون ماكياتو","en":"Bonbon Macchiato"},"Spéculoos Cookies Latte":{"ar":"لاتيه سبكولوس كوكيز","en":"Speculoos Cookies Latte"},"Double Espresso":{"ar":"إسبريسو مزدوج","en":"Double Espresso"},"Café Gourmand":{"ar":"قهوة غورمان","en":"Gourmet Coffee"},"Americain Glacé":{"ar":"أمريكانو مثلج","en":"Iced Americano"},"Café Glacé":{"ar":"قهوة مثلجة","en":"Iced Coffee"},"Affogato Vanille":{"ar":"أفوجاتو فانيليا","en":"Vanilla Affogato"},"Affogato Pistache Vanille":{"ar":"أفوجاتو فستق وفانيليا","en":"Pistachio Vanilla Affogato"},"Iced Noisette Latte":{"ar":"لاتيه بندق مثلج","en":"Iced Hazelnut Latte"},"Iced Vanille Latte":{"ar":"لاتيه فانيليا مثلج","en":"Iced Vanilla Latte"},"Iced Caramel Latte":{"ar":"لاتيه كراميل مثلج","en":"Iced Caramel Latte"},"Espresso Nutella Campana":{"ar":"إسبريسو نوتيلا كامبانا","en":"Espresso Nutella Campana"},"Latte Nocciola":{"ar":"لاتيه نوتشيولا","en":"Nocciola Latte"},"Caramel":{"ar":"كراميل","en":"Caramel"},"Vanille":{"ar":"فانيليا","en":"Vanilla"},"Noisette":{"ar":"بندق","en":"Hazelnut"},"Spéculoos":{"ar":"سبكولوس","en":"Speculoos"},"Bueno":{"ar":"بوينو","en":"Bueno"},"Oreo":{"ar":"أوريو","en":"Oreo"},"Bounty":{"ar":"باونتي","en":"Bounty"},"Matcha":{"ar":"ماتشا","en":"Matcha"},"Citronnade":{"ar":"ليمونادة","en":"Lemonade"},"Slushie":{"ar":"سلاش","en":"Slushie"},"Citronnade aux Amandes":{"ar":"ليمونادة باللوز","en":"Almond Lemonade"},"Pomme":{"ar":"تفاح","en":"Apple"},"Pêche":{"ar":"خوخ","en":"Peach"},"Banane":{"ar":"موز","en":"Banana"},"Kiwi":{"ar":"كيوي","en":"Kiwi"},"Orange":{"ar":"برتقال","en":"Orange"},"Ananas":{"ar":"أناناس","en":"Pineapple"},"Fraise":{"ar":"فراولة","en":"Strawberry"},"Cocktail de Fruits selon saison":{"ar":"كوكتيل فواكه موسمية","en":"Seasonal Fruit Cocktail"},"Performance Boost":{"ar":"برفورمانس بوست","en":"Performance Boost"},"Désir":{"ar":"ديزير","en":"Désir"},"Banane Datte":{"ar":"موز وتمر","en":"Banana & Date"},"Kiwi Banane":{"ar":"كيوي وموز","en":"Kiwi & Banana"},"Melon":{"ar":"شمام","en":"Melon"},"Lemon Menthe":{"ar":"ليمون ونعناع","en":"Lemon & Mint"},"Grenade":{"ar":"رمان","en":"Pomegranate"},"Milkshake au choix":{"ar":"ميلك شيك من اختيارك","en":"Milkshake of Your Choice"},"Milkshake Banane":{"ar":"ميلك شيك موز","en":"Banana Milkshake"},"Milkshake":{"ar":"ميلك شيك","en":"Milkshake"},"Milkshake Banane Nutella":{"ar":"ميلك شيك موز ونوتيلا","en":"Banana Nutella Milkshake"},"Milkshake Biscuit Framboise":{"ar":"ميلك شيك بسكويت وتوت","en":"Biscuit Raspberry Milkshake"},"Margherita":{"ar":"مارغريتا","en":"Margherita"},"Végétarienne":{"ar":"نباتية","en":"Vegetarian"},"La Reine":{"ar":"لا رين","en":"La Reine"},"Neptune":{"ar":"نبتون","en":"Neptune"},"Calzone Italienne":{"ar":"كالزوني إيطالية","en":"Italian Calzone"},"Ricotta Epinards":{"ar":"ريكوتا وسبانخ","en":"Ricotta & Spinach"},"Calzone Thon":{"ar":"كالزوني تونة","en":"Tuna Calzone"},"Pepperoni":{"ar":"بيبروني","en":"Pepperoni"},"Napolitaine":{"ar":"نابوليتانا","en":"Neapolitan"},"Chipola":{"ar":"شيبولا","en":"Chipola"},"Bresaola":{"ar":"بريزاولا","en":"Bresaola"},"Mexicaine":{"ar":"مكسيكية","en":"Mexican"},"Quatre Fromages":{"ar":"أربعة أجبان","en":"Four Cheese"},"Truffe":{"ar":"كمأة","en":"Truffle"},"Burrata":{"ar":"بوراتا","en":"Burrata"},"Saumon":{"ar":"سلمون","en":"Salmon"},"Fruits de Mer":{"ar":"مأكولات بحرية","en":"Seafood"},"Burger Classique":{"ar":"برغر كلاسيكي","en":"Classic Burger"},"Chiken Cheese":{"ar":"برغر دجاج بالجبن","en":"Chicken Cheese Burger"},"Burger Truffe":{"ar":"برغر بالكمأة","en":"Truffle Burger"},"Pannini Thon":{"ar":"بانيني تونة","en":"Tuna Panini"},"Pannini Jambon":{"ar":"بانيني ديك رومي","en":"Turkey Ham Panini"},"Pannini Poulet":{"ar":"بانيني دجاج","en":"Chicken Panini"},"Pannini au Saumon":{"ar":"بانيني سلمون","en":"Salmon Panini"},"Crêpe Fromage":{"ar":"كريب جبن","en":"Cheese Crêpe"},"Crêpe Végétarienne":{"ar":"كريب نباتي","en":"Vegetarian Crêpe"},"Crêpe Classique":{"ar":"كريب كلاسيكي","en":"Classic Crêpe"},"Crêpe Thon":{"ar":"كريب تونة","en":"Tuna Crêpe"},"Crêpe Tunisienne":{"ar":"كريب تونسي","en":"Tunisian Crêpe"},"Crêpe Alpolo":{"ar":"كريب ألبولو","en":"Alpolo crêpe"},"Crêpe Poulet Champignon":{"ar":"كريب دجاج وفطر","en":"Chicken & Mushroom Crêpe"},"Crêpe Saumon":{"ar":"كريب سلمون","en":"Salmon Crêpe"},"Pancake Caramel Beurre salé":{"ar":"بان كيك كراميل وزبدة مالحة","en":"Salted Caramel Pancake"},"Pancake Nutella":{"ar":"بان كيك نوتيلا","en":"Nutella Pancake"},"Pancake Chocolat Blanc Fruit rouges":{"ar":"بان كيك شوكولاتة بيضاء وفواكه حمراء","en":"White Chocolate & Berries Pancake"},"Pancake Nutella Banane":{"ar":"بان كيك نوتيلا وموز","en":"Nutella Banana Pancake"},"Pancake Nutella Pistache":{"ar":"بان كيك نوتيلا وفستق","en":"Nutella Pistachio Pancake"},"Pancake Nutella Spéculoos":{"ar":"بان كيك نوتيلا وسبكولوس","en":"Nutella Speculoos Pancake"},"Salade Trio":{"ar":"سلطة تريو","en":"Trio Salad"},"Salade Greque à la Feta":{"ar":"سلطة يونانية بالفيتا","en":"Greek Feta Salad"},"Salade César":{"ar":"سلطة سيزر","en":"Caesar Salad"},"Salade Niçoise":{"ar":"سلطة نيسواز","en":"Niçoise Salad"},"Salade Burrata":{"ar":"سلطة بوراتا","en":"Burrata Salad"},"Salade Camembert Croustillant":{"ar":"سلطة كاممبير مقرمش","en":"Crispy Camembert Salad"},"Salade Caprese":{"ar":"سلطة كابريزي","en":"Caprese Salad"},"Salade Fraîcheur":{"ar":"سلطة فريش","en":"Freshness Salad"},"Salade Avocat Chevrette":{"ar":"سلطة أفوكادو وروبيان","en":"Avocado Shrimp Salad"},"Soupe à l'Oignon":{"ar":"شوربة بصل","en":"Onion Soup"},"Soupe de Lentilles":{"ar":"شوربة عدس","en":"Lentil Soup"},"Soupe aux Champignons":{"ar":"شوربة فطر","en":"Mushroom Soup"},"Bisque de Crevettes":{"ar":"شوربة روبيان كريمية","en":"Shrimp Bisque"},"Brik au Thon":{"ar":"بريك تونة","en":"Tuna Brik"},"Brik aux Chevrettes":{"ar":"بريك روبيان","en":"Shrimp Brik"},"Crème de Légumes":{"ar":"شوربة خضار كريمية","en":"Cream of Vegetable Soup"},"Bolognaise":{"ar":"بولونيز","en":"Bolognese"},"Puttanesca au Thon":{"ar":"بوتانيسكا بالتونة","en":"Tuna Puttanesca"},"Poulet Pesto":{"ar":"دجاج بالبيستو","en":"Chicken Pesto"},"Alfredo":{"ar":"ألفريدو","en":"Alfredo"},"Pâte 4 Fromages":{"ar":"معكرونة أربعة أجبان","en":"Four Cheese Pasta"},"Ravioli 4 Fromage":{"ar":"رافيولي أربعة أجبان","en":"Four Cheese Ravioli"},"Lasagne Bolognaise":{"ar":"لازانيا بولونيز","en":"Bolognese Lasagna"},"Gratin Terre et Mer":{"ar":"غراتان بر وبحر","en":"Land & Sea Gratin"},"Tagliatelli au Saumon":{"ar":"تالياتيلي بالسلمون","en":"Salmon Tagliatelle"},"Lasagne Saumon":{"ar":"لازانيا سلمون","en":"Salmon Lasagna"},"Spaghetti Fruits de Mer":{"ar":"سباغيتي مأكولات بحرية","en":"Seafood Spaghetti"},"Farfalle au Truffe":{"ar":"فارفالي بالكمأة","en":"Truffle Farfalle"},"Emince Poulet":{"ar":"شرائح دجاج","en":"Sliced Chicken"},"Emince de Boeuf":{"ar":"شرائح لحم بقري","en":"Sliced Beef"},"Dorade / loup et Légumes Grillés":{"ar":"دنيس / قاروص مع خضار مشوية","en":"Sea Bream / Sea Bass with Grilled Vegetables"},"Filet de Bœuf":{"ar":"فيليه لحم بقري","en":"Beef Fillet"},"Souris d'Agneau":{"ar":"موزة غنم","en":"Lamb Shank"},"Escalope Grillée ou Panée":{"ar":"إسكالوب مشوي أو بانيه","en":"Grilled or Breaded Escalope"},"Blanc de Poulet aux Épinards et à la Crème":{"ar":"صدر دجاج بالسبانخ والكريمة","en":"Chicken Breast with Spinach & Cream"},"Cordon bleu":{"ar":"كوردون بلو","en":"Cordon Bleu"},"Banana Split":{"ar":"بانانا سبليت","en":"Banana Split"},"Assiette de Fruits":{"ar":"طبق فواكه","en":"Fresh Fruit Plate"},"café, jus, viennoiserie, mlewi, pain toasté, confiture, beurre, chocolat":{"ar":"قهوة، عصير، كرواسون، ملاوي، توست، مربى، زبدة وشوكولاتة","en":"coffee, juice, pastry, mlewi, toast, jam, butter and chocolate"},"Café, jus, viennoiserie, mlewi, confiture, beurre, chocolat, pain toasté, gaufre, œuf bouilli, crème légère, mini focaccia, salade et fruit de saison":{"ar":"قهوة، عصير، كرواسون، ملاوي، مربى، زبدة، شوكولاتة، توست، وافل، بيضة مسلوقة، كريمة خفيفة، فوكاشيا صغيرة، سلطة وفاكهة موسمية","en":"coffee, juice, pastry, mlewi, jam, butter, chocolate, toast, waffle, boiled egg, light cream, mini focaccia, salad and seasonal fruit"},"Café ou thé, yaourt nature, graines de chia, fruit de saison, detox citron-pomme-menthe, tartine avocat et saumon fumé":{"ar":"قهوة أو شاي، زبادي طبيعي، بذور شيا، فاكهة موسمية، ديتوكس ليمون وتفاح ونعناع، توست أفوكادو وسلمون مدخن","en":"coffee or tea, plain yogurt, chia seeds, seasonal fruit, lemon-apple-mint detox, avocado toast and smoked salmon"},"2 cafés, 2 jus, 2 viennoiseries, 2 mlewi, pancakes, pain perdu, omelette, œuf bénédicte, salade, charcuterie et fromage":{"ar":"قهوة لشخصين، عصيران، معجنات لشخصين، ملاوي لشخصين، بان كيك، فرنش توست، أومليت، بيض بنديكت، سلطة، لحوم باردة وجبن","en":"2 coffees, 2 juices, 2 pastries, 2 mlewi, pancakes, French toast, omelette, eggs Benedict, salad, cold cuts and cheese"},"2 cafés, 2 jus, 2 viennoiseries, ojja boulette, plat tunisien, charcuteries, dattes farcies, chamia, droo, rfissa, mlewi et toast":{"ar":"قهوة لشخصين، عصيران، معجنات لشخصين، عجة كرات لحم، طبق تونسي، لحوم باردة، تمر محشي، شامية، درع، رفيسة، ملاوي وتوست","en":"2 coffees, 2 juices, 2 pastries, meatball ojja, Tunisian plate, cold cuts, stuffed dates, chamia, droo, rfissa, mlewi and toast"},"Café espresso":{"ar":"قهوة إسبريسو","en":"espresso coffee"},"Espresso avec lait":{"ar":"إسبريسو مع الحليب","en":"espresso with milk"},"Café au lait":{"ar":"قهوة بالحليب","en":"coffee with milk"},"Café et mousse de lait":{"ar":"قهوة مع رغوة الحليب","en":"coffee with milk foam"},"Espresso allongé":{"ar":"إسبريسو مخفف","en":"long espresso"},"Café gourmand au caramel":{"ar":"قهوة غنية بالكراميل","en":"gourmet caramel coffee"},"Latte au caramel":{"ar":"لاتيه بالكراميل","en":"caramel latte"},"Café chocolaté":{"ar":"قهوة بالشوكولاتة","en":"chocolate coffee"},"Lait chaud et miel":{"ar":"حليب ساخن وعسل","en":"hot milk and honey"},"Chocolat chaud au lait":{"ar":"شوكولاتة ساخنة بالحليب","en":"hot milk chocolate"},"Café turc":{"ar":"قهوة تركية","en":"Turkish coffee"},"Latte signature":{"ar":"لاتيه مميز","en":"signature latte"},"Macchiato signature":{"ar":"ماكياتو مميز","en":"signature macchiato"},"Latte spéculoos cookies":{"ar":"لاتيه سبكولوس كوكيز","en":"speculoos cookie latte"},"Double espresso":{"ar":"إسبريسو مزدوج","en":"double espresso"},"Café au choix + gâteau":{"ar":"قهوة من اختيارك + قطعة حلوى","en":"coffee of your choice + cake"},"Café américain glacé":{"ar":"أمريكانو مثلج","en":"iced Americano"},"Café glacé":{"ar":"قهوة مثلجة","en":"iced coffee"},"Espresso et glace vanille":{"ar":"إسبريسو مع آيس كريم فانيليا","en":"espresso with vanilla ice cream"},"Espresso, pistache et vanille":{"ar":"إسبريسو، فستق وفانيليا","en":"espresso, pistachio and vanilla"},"Latte glacé noisette":{"ar":"لاتيه بندق مثلج","en":"iced hazelnut latte"},"Latte glacé vanille":{"ar":"لاتيه فانيليا مثلج","en":"iced vanilla latte"},"Latte glacé caramel":{"ar":"لاتيه كراميل مثلج","en":"iced caramel latte"},"Espresso et Nutella":{"ar":"إسبريسو ونوتيلا","en":"espresso and Nutella"},"Latte noisette":{"ar":"لاتيه بالبندق","en":"hazelnut latte"},"Frappuccino caramel":{"ar":"فرابتشينو كراميل","en":"caramel frappuccino"},"Frappuccino vanille":{"ar":"فرابتشينو فانيليا","en":"vanilla frappuccino"},"Frappuccino noisette":{"ar":"فرابتشينو بندق","en":"hazelnut frappuccino"},"Frappuccino spéculoos":{"ar":"فرابتشينو سبكولوس","en":"speculoos frappuccino"},"Frappuccino Bueno":{"ar":"فرابتشينو بوينو","en":"Bueno frappuccino"},"Frappuccino Oreo":{"ar":"فرابتشينو أوريو","en":"Oreo frappuccino"},"Frappuccino Bounty":{"ar":"فرابتشينو باونتي","en":"Bounty frappuccino"},"Frappuccino matcha":{"ar":"فرابتشينو ماتشا","en":"matcha frappuccino"},"Citronnade fraîche":{"ar":"ليمونادة طازجة","en":"fresh lemonade"},"Citron, menthe":{"ar":"ليمون ونعناع","en":"lemon and mint"},"Citronnade aux amandes":{"ar":"ليمونادة باللوز","en":"almond lemonade"},"Jus de pomme":{"ar":"عصير تفاح","en":"apple juice"},"Jus de pêche":{"ar":"عصير خوخ","en":"peach juice"},"Jus de banane":{"ar":"عصير موز","en":"banana juice"},"Jus de kiwi":{"ar":"عصير كيوي","en":"kiwi juice"},"Jus d’orange":{"ar":"عصير برتقال","en":"orange juice"},"Jus d’ananas":{"ar":"عصير أناناس","en":"pineapple juice"},"Jus de fraise":{"ar":"عصير فراولة","en":"strawberry juice"},"Fruits de saison":{"ar":"فواكه موسمية","en":"seasonal fruits"},"Banane, datte, fruit sec":{"ar":"موز، تمر ومكسرات","en":"banana, dates and nuts"},"Ananas, menthe":{"ar":"أناناس ونعناع","en":"pineapple and mint"},"Banane, datte":{"ar":"موز وتمر","en":"banana and dates"},"Kiwi, banane":{"ar":"كيوي وموز","en":"kiwi and banana"},"Jus de melon":{"ar":"عصير شمام","en":"melon juice"},"Jus de grenade":{"ar":"عصير رمان","en":"pomegranate juice"},"Vanille, fraise, chocolat ou noisette":{"ar":"فانيليا، فراولة، شوكولاتة أو بندق","en":"vanilla, strawberry, chocolate or hazelnut"},"Ananas, cerise, framboise, fruits rouges, pêche, pomme ou passion":{"ar":"أناناس، كرز، توت، فواكه حمراء، خوخ، تفاح أو باشن فروت","en":"pineapple, cherry, raspberry, berries, peach, apple or passion fruit"},"Milkshake banane":{"ar":"ميلك شيك موز","en":"banana milkshake"},"Spéculoos, Bueno, Oreo, beurre de cacahuète ou Bounty":{"ar":"سبكولوس، بوينو، أوريو، زبدة فول سوداني أو باونتي","en":"Speculoos, Bueno, Oreo, peanut butter or Bounty"},"Banane et Nutella":{"ar":"موز ونوتيلا","en":"banana and Nutella"},"Biscuit et framboise":{"ar":"بسكويت وتوت","en":"biscuit and raspberry"},"Pizza tomate, mozzarella et basilic":{"ar":"بيتزا طماطم، موزاريلا وريحان","en":"tomato, mozzarella and basil pizza"},"Pizza végétarienne":{"ar":"بيتزا نباتية","en":"vegetarian pizza"},"Pizza signature":{"ar":"بيتزا مميزة","en":"signature pizza"},"Pizza au thon":{"ar":"بيتزا بالتونة","en":"tuna pizza"},"Calzone italienne":{"ar":"كالزوني إيطالية","en":"Italian calzone"},"Ricotta et épinards":{"ar":"ريكوتا وسبانخ","en":"ricotta and spinach"},"Calzone au thon":{"ar":"كالزوني بالتونة","en":"tuna calzone"},"Pizza pepperoni":{"ar":"بيتزا بيبروني","en":"pepperoni pizza"},"Pizza napolitaine":{"ar":"بيتزا نابوليتانا","en":"Neapolitan pizza"},"Pizza chipolata":{"ar":"بيتزا شيبولاتا","en":"chipolata pizza"},"Pizza bresaola":{"ar":"بيتزا بريزاولا","en":"bresaola pizza"},"Pizza mexicaine":{"ar":"بيتزا مكسيكية","en":"Mexican pizza"},"Pizza quatre fromages":{"ar":"بيتزا أربعة أجبان","en":"four-cheese pizza"},"Pizza à la truffe":{"ar":"بيتزا بالكمأة","en":"truffle pizza"},"Pizza burrata":{"ar":"بيتزا بوراتا","en":"burrata pizza"},"Pizza au saumon":{"ar":"بيتزا بالسلمون","en":"salmon pizza"},"Pizza fruits de mer":{"ar":"بيتزا مأكولات بحرية","en":"seafood pizza"},"Burger classique":{"ar":"برغر كلاسيكي","en":"classic burger"},"Pain burger maison, poulet, tomates confites, fromage, salade et oignon caramélisé":{"ar":"خبز برغر منزلي، دجاج، طماطم مجففة، جبن، سلطة وبصل مكرمل","en":"homemade burger bun, chicken, confit tomatoes, cheese, salad and caramelized onion"},"Pain maison, steak haché, crème de truffes, fromage, roquette, tomates séchées et oignon caramélisé":{"ar":"خبز منزلي، لحم مفروم، كريمة كمأة، جبن، جرجير، طماطم مجففة وبصل مكرمل","en":"homemade bun, minced beef, truffle cream, cheese, arugula, sun-dried tomatoes and caramelized onion"},"Panini au thon":{"ar":"بانيني تونة","en":"tuna panini"},"Panini au jambon":{"ar":"بانيني ديك رومي","en":"turkey ham panini"},"Panini au poulet":{"ar":"بانيني دجاج","en":"chicken panini"},"Saumon fumé, tomates marinées, huile d’olive et roquette":{"ar":"سلمون مدخن، طماطم متبلة، زيت زيتون وجرجير","en":"smoked salmon, marinated tomatoes, olive oil and arugula"},"Crêpe au fromage":{"ar":"كريب بالجبن","en":"cheese crêpe"},"Crêpe végétarienne":{"ar":"كريب نباتي","en":"vegetarian crêpe"},"Crêpe classique":{"ar":"كريب كلاسيكي","en":"classic crêpe"},"Crêpe au thon":{"ar":"كريب بالتونة","en":"tuna crêpe"},"Crêpe tunisienne":{"ar":"كريب تونسي","en":"Tunisian crêpe"},"Poulet et champignons":{"ar":"دجاج وفطر","en":"chicken and mushrooms"},"Crêpe au saumon":{"ar":"كريب بالسلمون","en":"salmon crêpe"},"Caramel et beurre salé":{"ar":"كراميل وزبدة مالحة","en":"salted butter caramel"},"Nutella":{"ar":"نوتيلا","en":"Nutella"},"Chocolat blanc et fruits rouges":{"ar":"شوكولاتة بيضاء وفواكه حمراء","en":"white chocolate and berries"},"Nutella et banane":{"ar":"نوتيلا وموز","en":"Nutella and banana"},"Nutella et pistache":{"ar":"نوتيلا وفستق","en":"Nutella and pistachio"},"Nutella et spéculoos":{"ar":"نوتيلا وسبكولوس","en":"Nutella and speculoos"},"Omek houria, salade tunisienne, salade mechouia":{"ar":"أمك حورية، سلطة تونسية وسلطة مشوية","en":"Omek Houria, Tunisian salad and grilled salad"},"Feta, tomate, olives, oignons, laitue, concombre":{"ar":"فيتا، طماطم، زيتون، بصل، خس وخيار","en":"feta, tomato, olives, onions, lettuce and cucumber"},"Roquette, tomates cerises, sauce césar, poulet, parmesan et pain croquant":{"ar":"جرجير، طماطم كرزية، صوص سيزر، دجاج، بارميزان وخبز مقرمش","en":"arugula, cherry tomatoes, Caesar dressing, chicken, Parmesan and crunchy bread"},"Œuf, anchois, thon, légumes, olives et vinaigrette maison":{"ar":"بيض، أنشوفة، تونة، خضار، زيتون وصلصة منزلية","en":"egg, anchovies, tuna, vegetables, olives and house vinaigrette"},"Roquette, tomates cerises, pesto, parmesan et burrata":{"ar":"جرجير، طماطم كرزية، بيستو، بارميزان وبوراتا","en":"arugula, cherry tomatoes, pesto, Parmesan and burrata"},"Camembert, salade, tomates, balsamique et miel":{"ar":"كاممبير، سلطة، طماطم، بلسميك وعسل","en":"Camembert, salad, tomatoes, balsamic and honey"},"Tomates, mozzarella et huile de basilic":{"ar":"طماطم، موزاريلا وزيت ريحان","en":"tomatoes, mozzarella and basil oil"},"Salade, roquette, saumon fumé et ananas":{"ar":"سلطة، جرجير، سلمون مدخن وأناناس","en":"salad, arugula, smoked salmon and pineapple"},"Salade, roquette, tomates, chevrette et avocat":{"ar":"سلطة، جرجير، طماطم، روبيان وأفوكادو","en":"salad, arugula, tomatoes, shrimp and avocado"},"Soupe à l’oignon":{"ar":"شوربة بصل","en":"onion soup"},"Soupe de lentilles":{"ar":"شوربة عدس","en":"lentil soup"},"Soupe aux champignons":{"ar":"شوربة فطر","en":"mushroom soup"},"Bisque de crevettes":{"ar":"شوربة روبيان كريمية","en":"shrimp bisque"},"Brik au thon":{"ar":"بريك تونة","en":"tuna brik"},"Brik aux crevettes":{"ar":"بريك روبيان","en":"shrimp brik"},"Crème de légumes":{"ar":"شوربة خضار كريمية","en":"cream of vegetable soup"},"Pâtes à la sauce bolognaise":{"ar":"معكرونة بصوص بولونيز","en":"pasta with Bolognese sauce"},"Pâtes au thon":{"ar":"معكرونة بالتونة","en":"tuna pasta"},"Pâtes au poulet et pesto":{"ar":"معكرونة بالدجاج والبيستو","en":"chicken pesto pasta"},"Pâtes Alfredo":{"ar":"معكرونة ألفريدو","en":"Alfredo pasta"},"Pâtes quatre fromages":{"ar":"معكرونة أربعة أجبان","en":"four-cheese pasta"},"Ravioli quatre fromages":{"ar":"رافيولي أربعة أجبان","en":"four-cheese ravioli"},"Lasagne bolognaise":{"ar":"لازانيا بولونيز","en":"Bolognese lasagna"},"Gratin terre et mer":{"ar":"غراتان بر وبحر","en":"land and sea gratin"},"Saumon fumé, épinard, crème fraîche et mozzarella":{"ar":"سلمون مدخن، سبانخ، كريمة طازجة وموزاريلا","en":"smoked salmon, spinach, fresh cream and mozzarella"},"Lasagne au saumon":{"ar":"لازانيا بالسلمون","en":"salmon lasagna"},"Spaghetti fruits de mer":{"ar":"سباغيتي مأكولات بحرية","en":"seafood spaghetti"},"Champignon, mascarpone, grana padano et crème de truffe":{"ar":"فطر، ماسكاربوني، غرانا بادانو وكريمة كمأة","en":"mushroom, mascarpone, Grana Padano and truffle cream"},"Émincé de poulet":{"ar":"شرائح دجاج","en":"sliced chicken"},"Émincé de bœuf":{"ar":"شرائح لحم بقري","en":"sliced beef"},"Poisson et légumes grillés":{"ar":"سمك وخضار مشوية","en":"fish and grilled vegetables"},"Filet de bœuf, sauce au choix":{"ar":"فيليه لحم بقري مع صوص من اختيارك","en":"beef fillet with your choice of sauce"},"Légumes grillés et pommes de terre écrasées":{"ar":"خضار مشوية وبطاطس مهروسة","en":"grilled vegetables and mashed potatoes"},"Blanc de poulet, légumes sautés et riz":{"ar":"صدر دجاج، خضار سوتيه وأرز","en":"chicken breast, sautéed vegetables and rice"},"Poulet, légumes sautés et riz":{"ar":"دجاج، خضار سوتيه وأرز","en":"chicken, sautéed vegetables and rice"},"Jambon de dinde, fromage, légumes sautés et riz":{"ar":"ديك رومي، جبن، خضار سوتيه وأرز","en":"turkey ham, cheese, sautéed vegetables and rice"},"Banane et glace":{"ar":"موز وآيس كريم","en":"banana and ice cream"},"Fruits frais":{"ar":"فواكه طازجة","en":"fresh fruits"}};
+
 const MENU_I18N={
  ar:{
   categories:{"Petit Déjeuner":"الفطور","Cafés by Victoria Arduino":"القهوة","Signature Victor":"مشروبات فيكتور المميزة","Frappuccino":"فرابتشينو","Les Jus Frais":"العصائر الطازجة","Milkshakes":"ميلك شيك","Pizzas":"البيتزا","Burger":"البرغر","Panini":"بانيني","Crêpes Salées":"الكريب المالح","Pancakes":"البان كيك","Salades":"السلطات","Entrées":"المقبلات","Pâtes":"المعكرونة","Plats":"الأطباق الرئيسية","Desserts":"الحلويات"},
@@ -391,7 +393,12 @@ const MENU_I18N={
 };
 function translateMenuText(value,lang){
  if(lang==='fr'||!lang) return value;
- const pack=MENU_I18N[lang]; if(!pack) return value;
+ const exact=EXACT_MENU_I18N[value];
+ if(exact && exact[lang]) return exact[lang];
+
+ // Fallback only for future menu items that are added later.
+ const pack=MENU_I18N[lang];
+ if(!pack) return value;
  let out=value;
  (pack.words||[]).forEach(([a,b])=>{out=out.split(a).join(b)});
  return out;
@@ -400,16 +407,46 @@ function menuCategory(value,lang){
  return (MENU_I18N[lang]&&MENU_I18N[lang].categories[value])||value;
 }
 function refreshMenuLanguage(){
- document.querySelectorAll('#nav button').forEach((b,i)=>{if(menu[i]) b.textContent=menuCategory(menu[i].cat,siteLanguage)});
+ document.querySelectorAll('#nav button').forEach((b,i)=>{
+   if(menu[i]) b.textContent=menuCategory(menu[i].cat,siteLanguage);
+ });
+
  document.querySelectorAll('#menu section').forEach((sec,i)=>{
    if(!menu[i]) return;
-   const h=sec.querySelector('.section-title'); if(h) h.textContent=menuCategory(menu[i].cat,siteLanguage);
+
+   const localizedCategory=menuCategory(menu[i].cat,siteLanguage);
+   const h=sec.querySelector('.section-title');
+   if(h){
+     const titleSpan=h.querySelector('span') || h;
+     titleSpan.textContent=localizedCategory;
+   }
+
    sec.querySelectorAll('.card').forEach((card,j)=>{
-     const d=menu[i].items[j]; if(!d) return;
-     const h3=card.querySelector('h3'), desc=card.querySelector('.desc');
-     if(h3) h3.textContent=translateMenuText(d[0],siteLanguage);
-     if(desc) desc.textContent=translateMenuText(d[1],siteLanguage);
-     const sig=card.querySelector('.signature'); if(sig) sig.textContent=siteLanguage==='ar'?'اختيار فيكتور':siteLanguage==='en'?'Victor Signature':'Signature Victor';
+     const d=menu[i].items[j];
+     if(!d) return;
+
+     const localizedName=translateMenuText(d[0],siteLanguage);
+     const localizedDesc=translateMenuText(d[1],siteLanguage);
+
+     const h3=card.querySelector('h3');
+     const desc=card.querySelector('.desc');
+
+     if(h3) h3.textContent=localizedName;
+     if(desc) desc.textContent=localizedDesc;
+
+     // Search now understands Arabic, English and French.
+     card.dataset.search=(
+       localizedCategory+' '+localizedName+' '+localizedDesc+' '+
+       menu[i].cat+' '+d[0]+' '+d[1]
+     ).toLowerCase();
+
+     const sig=card.querySelector('.signature');
+     if(sig){
+       sig.textContent=
+         siteLanguage==='ar'?'اختيار فيكتور':
+         siteLanguage==='en'?'Victor Signature':
+         'Signature Victor';
+     }
    });
  });
 }
@@ -529,7 +566,15 @@ function addBubble(role,text){
  transcript.appendChild(b); transcript.scrollTop=transcript.scrollHeight;
 }
 function compactMenu(){
- return menu.map(s=>({category:s.cat,items:s.items.map(d=>({name:d[0],description:d[1],price:d[2]}))}));
+ const lang=waiterLanguage||siteLanguage||'fr';
+ return menu.map(s=>({
+   category:menuCategory(s.cat,lang),
+   items:s.items.map(d=>({
+     name:translateMenuText(d[0],lang),
+     description:translateMenuText(d[1],lang),
+     price:d[2]
+   }))
+ }));
 }
 
 function friendlyApiError(data,statusCode){
@@ -585,8 +630,25 @@ async function fetchJSON(url,options,timeout=45000){
 async function askAI(question){
  return fetchJSON('/api/ai',{
   method:'POST',headers:{'Content-Type':'application/json'},
-  body:JSON.stringify({question,dish:{name:currentDish[0],description:currentDish[1],price:currentDish[2]},menu:compactMenu(),history:conversationHistory.slice(-10),language:waiterLanguage})
+  body:JSON.stringify({question,dish:{name:translateMenuText(currentDish[0],waiterLanguage),description:translateMenuText(currentDish[1],waiterLanguage),price:currentDish[2]},menu:compactMenu(),history:conversationHistory.slice(-10),language:waiterLanguage})
  });
+}
+
+
+function stopAISpeech(){
+  try{
+    if(typeof speechSource!=='undefined' && speechSource){
+      try{speechSource.stop();}catch(e){}
+      speechSource=null;
+    }
+    if(currentAudio){
+      try{currentAudio.pause();currentAudio.currentTime=0;}catch(e){}
+      currentAudio=null;
+    }
+    orb.classList.remove('speaking');
+  }catch(e){
+    console.warn('Could not stop AI speech',e);
+  }
 }
 
 async function unlockSpeechAudio(){
@@ -723,6 +785,7 @@ async function submitQuestion(q){
 }
 input.addEventListener('keydown',async e=>{
  if(e.key==='Enter'){
+   stopAISpeech();
    await unlockSpeechAudio();
    submitQuestion(input.value);
  }
@@ -806,6 +869,7 @@ async function sendVoice(){
  }
 }
 micBtn.onclick=async()=>{
+ stopAISpeech();
  await unlockSpeechAudio();
  recording?stopRecording():startRecording();
 };
