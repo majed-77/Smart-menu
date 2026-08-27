@@ -123,7 +123,7 @@ app.post("/api/realtime-call", async (req, res) => {
             prefix_padding_ms: 350,
             silence_duration_ms: 850,
             create_response: true,
-            interrupt_response: true
+            interrupt_response: false
           },
           transcription: {
             model: "gpt-4o-mini-transcribe",
