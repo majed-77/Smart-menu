@@ -2,10 +2,29 @@ const express = require("express");
 const path = require("path");
 const OpenAI = require("openai");
 const multer = require("multer");
+const { Pool } = require("pg");
+const { DateTime } = require("luxon");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const apiKey = process.env.OPENAI_API_KEY || "";
+const DATABASE_URL = process.env.DATABASE_URL || "";
+const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID || "";
+const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
+const TWILIO_WHATSAPP_FROM = process.env.TWILIO_WHATSAPP_FROM || "";
+const TWILIO_MESSAGING_SERVICE_SID = process.env.TWILIO_MESSAGING_SERVICE_SID || "";
+const TWILIO_CONTENT_SID = process.env.TWILIO_CONTENT_SID || "";
+const CRON_SECRET = process.env.CRON_SECRET || "";
+const RESTAURANT_TIMEZONE = process.env.RESTAURANT_TIMEZONE || "Africa/Tunis";
+
+const db = DATABASE_URL
+  ? new Pool({
+      connectionString: DATABASE_URL,
+      ssl: /localhost|127\.0\.0\.1/.test(DATABASE_URL)
+        ? false
+        : { rejectUnauthorized: false }
+    })
+  : null;
 
 const openai = new OpenAI({ apiKey });
 
@@ -43,6 +62,296 @@ function normalizeOpenAIError(error) {
 
   return { status, code, message: rawMessage };
 }
+
+
+// ======================================================
+// TABLE RESERVATIONS + WHATSAPP REMINDERS
+// Reservations are stored in PostgreSQL. Reminder is sent 30 minutes before.
+// ======================================================
+async function initReservationDatabase() {
+  if (!db) {
+    console.warn("⚠️ DATABASE_URL is not configured; table reservations are disabled.");
+    return;
+  }
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS reservations (
+      id BIGSERIAL PRIMARY KEY,
+      confirmation_code TEXT UNIQUE NOT NULL,
+      customer_name TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      party_size INTEGER NOT NULL CHECK (party_size BETWEEN 1 AND 30),
+      reservation_at TIMESTAMPTZ NOT NULL,
+      notes TEXT NOT NULL DEFAULT '',
+      language TEXT NOT NULL DEFAULT 'ar',
+      status TEXT NOT NULL DEFAULT 'confirmed',
+      reminder_sent_at TIMESTAMPTZ,
+      reminder_message_sid TEXT,
+      reminder_attempts INTEGER NOT NULL DEFAULT 0,
+      reminder_last_error TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS reservations_reminder_due_idx
+      ON reservations (reservation_at)
+      WHERE reminder_sent_at IS NULL AND status = 'confirmed';
+  `);
+  console.log("✅ Reservations database ready");
+}
+
+function makeConfirmationCode() {
+  return "VH-" + Math.random().toString(36).slice(2, 7).toUpperCase() + Date.now().toString(36).slice(-3).toUpperCase();
+}
+
+function normalizeWhatsAppPhone(value) {
+  let phone = String(value || "").trim().replace(/[\s().-]/g, "");
+  if (phone.startsWith("00")) phone = "+" + phone.slice(2);
+  if (!/^\+[1-9]\d{7,14}$/.test(phone)) return "";
+  return phone;
+}
+
+function reminderCopy(reservation) {
+  const local = DateTime.fromJSDate(new Date(reservation.reservation_at), { zone: "utc" })
+    .setZone(RESTAURANT_TIMEZONE);
+  const dateAr = local.setLocale("ar").toFormat("cccc d LLLL");
+  const timeAr = local.setLocale("ar").toFormat("h:mm a");
+  const dateFr = local.setLocale("fr").toFormat("cccc d LLLL");
+  const time24 = local.toFormat("HH:mm");
+  const name = reservation.customer_name;
+  const party = reservation.party_size;
+
+  if (reservation.language === "fr") {
+    return `Bonjour ${name} 👋 Rappel de votre réservation chez Café Victor Hugo aujourd’hui (${dateFr}) à ${time24}, pour ${party} personne${party > 1 ? "s" : ""}. À très bientôt 🌷`;
+  }
+  if (reservation.language === "en") {
+    return `Hi ${name} 👋 This is a reminder for your reservation at Café Victor Hugo today at ${time24} for ${party} guest${party > 1 ? "s" : ""}. See you soon 🌷`;
+  }
+  return `هلا ${name} 👋 تذكير بحجزك في Café Victor Hugo ${dateAr} الساعة ${timeAr}، لعدد ${party} ${party === 1 ? "شخص" : "أشخاص"}. ننتظرك 🌷`;
+}
+
+async function sendWhatsAppReminder(reservation) {
+  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) {
+    throw new Error("Twilio WhatsApp credentials are not configured.");
+  }
+  if (!TWILIO_MESSAGING_SERVICE_SID && !TWILIO_WHATSAPP_FROM) {
+    throw new Error("Set TWILIO_MESSAGING_SERVICE_SID or TWILIO_WHATSAPP_FROM.");
+  }
+
+  const params = new URLSearchParams();
+  params.set("To", `whatsapp:${reservation.phone}`);
+
+  if (TWILIO_MESSAGING_SERVICE_SID) {
+    params.set("MessagingServiceSid", TWILIO_MESSAGING_SERVICE_SID);
+  } else {
+    const from = TWILIO_WHATSAPP_FROM.startsWith("whatsapp:")
+      ? TWILIO_WHATSAPP_FROM
+      : `whatsapp:${TWILIO_WHATSAPP_FROM}`;
+    params.set("From", from);
+  }
+
+  // For production business-initiated WhatsApp reminders, configure an approved
+  // Twilio Content Template and put its SID in TWILIO_CONTENT_SID.
+  if (TWILIO_CONTENT_SID) {
+    const local = DateTime.fromJSDate(new Date(reservation.reservation_at), { zone: "utc" })
+      .setZone(RESTAURANT_TIMEZONE);
+    params.set("ContentSid", TWILIO_CONTENT_SID);
+    params.set("ContentVariables", JSON.stringify({
+      "1": reservation.customer_name,
+      "2": local.toFormat("dd/LL/yyyy"),
+      "3": local.toFormat("HH:mm"),
+      "4": String(reservation.party_size)
+    }));
+  } else {
+    params.set("Body", reminderCopy(reservation));
+  }
+
+  const endpoint = `https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(TWILIO_ACCOUNT_SID)}/Messages.json`;
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      Authorization: "Basic " + Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString("base64"),
+      "Content-Type": "application/x-www-form-urlencoded"
+    },
+    body: params
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload?.message || `Twilio HTTP ${response.status}`);
+  }
+  return payload.sid || "sent";
+}
+
+async function processDueReservationReminders() {
+  if (!db) return { checked: 0, sent: 0, failed: 0 };
+
+  // FOR UPDATE SKIP LOCKED avoids duplicate sends if two workers overlap.
+  const client = await db.connect();
+  let rows = [];
+  try {
+    await client.query("BEGIN");
+    const result = await client.query(`
+      SELECT * FROM reservations
+      WHERE status = 'confirmed'
+        AND reminder_sent_at IS NULL
+        AND reservation_at > NOW()
+        AND reservation_at <= NOW() + INTERVAL '30 minutes'
+        AND reminder_attempts < 8
+      ORDER BY reservation_at ASC
+      FOR UPDATE SKIP LOCKED
+      LIMIT 25
+    `);
+    rows = result.rows;
+    // Mark attempt inside the lock before network calls.
+    for (const row of rows) {
+      await client.query(
+        "UPDATE reservations SET reminder_attempts = reminder_attempts + 1 WHERE id = $1",
+        [row.id]
+      );
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  let sent = 0, failed = 0;
+  for (const row of rows) {
+    try {
+      const sid = await sendWhatsAppReminder(row);
+      await db.query(
+        `UPDATE reservations
+         SET reminder_sent_at = NOW(), reminder_message_sid = $2, reminder_last_error = NULL
+         WHERE id = $1 AND reminder_sent_at IS NULL`,
+        [row.id, sid]
+      );
+      sent++;
+    } catch (error) {
+      failed++;
+      console.error("WhatsApp reminder failed:", row.confirmation_code, error.message);
+      await db.query(
+        "UPDATE reservations SET reminder_last_error = $2 WHERE id = $1",
+        [row.id, String(error.message || error).slice(0, 1000)]
+      );
+    }
+  }
+  return { checked: rows.length, sent, failed };
+}
+
+app.post("/api/reservations", async (req, res) => {
+  try {
+    if (!db) {
+      return res.status(503).json({
+        ok: false,
+        code: "DATABASE_NOT_CONFIGURED",
+        message: "نظام الحجز يحتاج DATABASE_URL في Render."
+      });
+    }
+
+    const { name, phone, partySize, date, time, notes = "", language = "ar" } = req.body || {};
+    const customerName = String(name || "").trim().slice(0, 100);
+    const normalizedPhone = normalizeWhatsAppPhone(phone);
+    const party = Number(partySize);
+    const lang = ["ar", "fr", "en"].includes(language) ? language : "ar";
+
+    if (customerName.length < 2) {
+      return res.status(400).json({ ok: false, code: "INVALID_NAME", message: "اكتب اسم الحجز." });
+    }
+    if (!normalizedPhone) {
+      return res.status(400).json({ ok: false, code: "INVALID_PHONE", message: "اكتب رقم واتساب بصيغة دولية مثل +9665... أو +216..." });
+    }
+    if (!Number.isInteger(party) || party < 1 || party > 30) {
+      return res.status(400).json({ ok: false, code: "INVALID_PARTY_SIZE", message: "عدد الأشخاص يجب أن يكون من 1 إلى 30." });
+    }
+
+    const localDateTime = DateTime.fromISO(`${date || ""}T${time || ""}`, { zone: RESTAURANT_TIMEZONE });
+    if (!localDateTime.isValid) {
+      return res.status(400).json({ ok: false, code: "INVALID_DATETIME", message: "اختر تاريخ ووقت الحجز بشكل صحيح." });
+    }
+    const now = DateTime.now().setZone(RESTAURANT_TIMEZONE);
+    if (localDateTime <= now.plus({ minutes: 5 })) {
+      return res.status(400).json({ ok: false, code: "PAST_DATETIME", message: "اختر موعدًا بعد الوقت الحالي بأكثر من 5 دقائق." });
+    }
+    if (localDateTime > now.plus({ years: 1 })) {
+      return res.status(400).json({ ok: false, code: "TOO_FAR", message: "يمكن الحجز حتى سنة مقدمًا." });
+    }
+
+    let inserted;
+    for (let i = 0; i < 4; i++) {
+      const code = makeConfirmationCode();
+      try {
+        inserted = await db.query(
+          `INSERT INTO reservations
+           (confirmation_code, customer_name, phone, party_size, reservation_at, notes, language)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)
+           RETURNING id, confirmation_code, customer_name, phone, party_size, reservation_at, notes, language, status, created_at`,
+          [code, customerName, normalizedPhone, party, localDateTime.toUTC().toISO(), String(notes || "").trim().slice(0, 500), lang]
+        );
+        break;
+      } catch (error) {
+        if (error?.code !== "23505") throw error;
+      }
+    }
+    if (!inserted) throw new Error("Could not create confirmation code.");
+
+    const row = inserted.rows[0];
+    const local = DateTime.fromJSDate(new Date(row.reservation_at), { zone: "utc" }).setZone(RESTAURANT_TIMEZONE);
+    return res.status(201).json({
+      ok: true,
+      reservation: {
+        code: row.confirmation_code,
+        name: row.customer_name,
+        phone: row.phone,
+        partySize: row.party_size,
+        date: local.toISODate(),
+        time: local.toFormat("HH:mm"),
+        timezone: RESTAURANT_TIMEZONE,
+        reminderMinutesBefore: 30
+      }
+    });
+  } catch (error) {
+    console.error("Reservation create error:", error);
+    return res.status(500).json({ ok: false, code: "RESERVATION_ERROR", message: "تعذر حفظ الحجز الآن. حاول مرة أخرى." });
+  }
+});
+
+app.get("/api/reservations/:code", async (req, res) => {
+  try {
+    if (!db) return res.status(503).json({ ok: false, code: "DATABASE_NOT_CONFIGURED" });
+    const result = await db.query(
+      `SELECT confirmation_code, customer_name, party_size, reservation_at, notes, status
+       FROM reservations WHERE confirmation_code = $1 LIMIT 1`,
+      [String(req.params.code || "").trim().toUpperCase()]
+    );
+    if (!result.rowCount) return res.status(404).json({ ok: false, code: "NOT_FOUND" });
+    const row = result.rows[0];
+    const local = DateTime.fromJSDate(new Date(row.reservation_at), { zone: "utc" }).setZone(RESTAURANT_TIMEZONE);
+    return res.json({ ok: true, reservation: {
+      code: row.confirmation_code,
+      name: row.customer_name,
+      partySize: row.party_size,
+      date: local.toISODate(),
+      time: local.toFormat("HH:mm"),
+      notes: row.notes,
+      status: row.status
+    }});
+  } catch (error) {
+    return res.status(500).json({ ok: false, code: "RESERVATION_LOOKUP_ERROR" });
+  }
+});
+
+app.post("/api/reminders/run", async (req, res) => {
+  const supplied = String(req.headers.authorization || "").replace(/^Bearer\s+/i, "") || String(req.headers["x-cron-secret"] || "");
+  if (!CRON_SECRET || supplied !== CRON_SECRET) {
+    return res.status(401).json({ ok: false, code: "UNAUTHORIZED" });
+  }
+  try {
+    const result = await processDueReservationReminders();
+    return res.json({ ok: true, ...result });
+  } catch (error) {
+    console.error("Reminder cron error:", error);
+    return res.status(500).json({ ok: false, code: "REMINDER_RUN_ERROR", message: error.message });
+  }
+});
 
 app.get("/api/diagnostics", async (req, res) => {
   if (!apiKey) {
@@ -488,6 +797,9 @@ app.get("/health", (req, res) => {
     ok: true,
     service: "Smart Menu AI",
     apiKeyConfigured: Boolean(apiKey),
+    reservationsConfigured: Boolean(db),
+    whatsappConfigured: Boolean(TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && (TWILIO_WHATSAPP_FROM || TWILIO_MESSAGING_SERVICE_SID)),
+    whatsappTemplateConfigured: Boolean(TWILIO_CONTENT_SID),
     timestamp: new Date().toISOString()
   });
 });
@@ -510,7 +822,13 @@ app.use((error, req, res, next) => {
   });
 });
 
-app.listen(PORT, "0.0.0.0", () => {
+app.listen(PORT, "0.0.0.0", async () => {
   console.log(`✅ Smart Menu AI server running on port ${PORT}`);
   console.log(`🔑 OpenAI API Key: ${apiKey ? "Configured" : "NOT CONFIGURED"}`);
+  console.log(`🗓️ Reservations DB: ${db ? "Configured" : "NOT CONFIGURED"}`);
+  console.log(`💬 WhatsApp: ${TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN ? "Credentials configured" : "NOT CONFIGURED"}`);
+  try { await initReservationDatabase(); } catch (error) { console.error("Reservation DB init failed:", error); }
+  // Built-in safety net. For production also configure a Render Cron Job to POST /api/reminders/run every 5 minutes.
+  setInterval(() => processDueReservationReminders().catch(err => console.error("Reminder worker error:", err)), 60 * 1000).unref();
+  setTimeout(() => processDueReservationReminders().catch(err => console.error("Initial reminder check error:", err)), 10 * 1000).unref();
 });
