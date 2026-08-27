@@ -364,6 +364,10 @@ let realtimeRemoteAudio=null;
 let realtimeConnected=false;
 let realtimeStarting=false;
 let realtimeAssistantBuffer='';
+let realtimeAssistantSpeaking=false;
+let realtimeAwaitingTranscript=false;
+let realtimeMicResumeTimer=null;
+let realtimeTranscriptSafetyTimer=null;
 let conversationHistory=[];
 let recorder=null, stream=null, chunks=[], recording=false, currentAudio=null;
 let audioContext=null, analyser=null, vadFrame=null;
@@ -574,6 +578,9 @@ menu.forEach((s,i)=>{
 function closeRealtime(){
   realtimeConnected=false;
   realtimeStarting=false;
+  realtimeAssistantSpeaking=false;
+  realtimeAwaitingTranscript=false;
+  clearRealtimeTimers();
   try{if(realtimeDC)realtimeDC.close();}catch(e){}
   try{if(realtimePC)realtimePC.close();}catch(e){}
   if(realtimeMicStream){
@@ -608,13 +615,43 @@ ${languageRule}
 إذا سأل العميل عن اقتراح، قارني بين الأصناف المناسبة حسب ذوقه وميزانيته وعدد الأشخاص.
 إذا سأل عن سعر غير مدرج بعلامة — فقولي إن السعر غير مدرج.
 لا تخترعي مكونات أو حساسية أو أسعار أو توفر غير موجود في المنيو.
-${lang==='ar'?'إذا ذكرتِ السعر للعميل العربي، استخدمي السعر الظاهر له بالريال السعودي تقريبياً عند توفر سعر رقمي، ويمكنك ذكر أنه تقريبي إذا احتجت.':''}
+${lang==='ar'?'للعميل العربي: اذكري الأسعار بالريال السعودي فقط كما تظهر في بيانات المنيو. لا تذكري الدينار التونسي أو DT أو TND نهائيًا. إذا كان السعر غير مدرج فقولي السعر غير مدرج.':''}
 تكلمي كإنسانة حقيقية وليس كمساعد آلي.
 خلي الرد غالبًا جملة أو جملتين، واسألي سؤال متابعة قصير إذا احتجت.
-إذا بدأ العميل يتكلم أثناء كلامك، توقفي فورًا واسمعيه.
+أثناء كلامك كمّلي الجملة للنهاية ولا تتوقفي بسبب أصوات الخلفية أو الضوضاء المحيطة. النظام سيفتح الميكروفون للعميل بعد انتهاء ردك.
 
 بيانات المنيو كاملة:
 ${JSON.stringify(fullMenu)}`;
+}
+
+function setRealtimeMicEnabled(enabled){
+  if(!realtimeMicStream) return;
+  const track=realtimeMicStream.getAudioTracks()[0];
+  if(!track) return;
+  track.enabled=!!enabled;
+  micBtn.textContent=enabled?'🎤':'🔇';
+}
+
+function clearRealtimeTimers(){
+  if(realtimeMicResumeTimer){clearTimeout(realtimeMicResumeTimer);realtimeMicResumeTimer=null;}
+  if(realtimeTranscriptSafetyTimer){clearTimeout(realtimeTranscriptSafetyTimer);realtimeTranscriptSafetyTimer=null;}
+}
+
+function resumeRealtimeMicAfter(ms=1200){
+  if(realtimeMicResumeTimer) clearTimeout(realtimeMicResumeTimer);
+  realtimeMicResumeTimer=setTimeout(()=>{
+    realtimeAssistantSpeaking=false;
+    realtimeAwaitingTranscript=false;
+    setRealtimeMicEnabled(true);
+    status.textContent=TEXT[waiterLanguage].ready;
+  },ms);
+}
+
+function createRealtimeResponse(){
+  if(!realtimeDC || realtimeDC.readyState!=='open') return;
+  realtimeAssistantSpeaking=true;
+  setRealtimeMicEnabled(false);
+  realtimeDC.send(JSON.stringify({type:'response.create'}));
 }
 
 function handleRealtimeEvent(event){
@@ -622,7 +659,10 @@ function handleRealtimeEvent(event){
   try{e=JSON.parse(event.data);}catch(err){return;}
 
   if(e.type==='input_audio_buffer.speech_started'){
-    orb.classList.remove('speaking');
+    if(realtimeAssistantSpeaking){
+      // Sara is speaking: ignore accidental VAD triggers from speakers/background.
+      return;
+    }
     status.textContent=
       waiterLanguage==='ar'?'أسمعك…':
       waiterLanguage==='fr'?"Je vous écoute…":
@@ -630,29 +670,42 @@ function handleRealtimeEvent(event){
   }
 
   if(e.type==='input_audio_buffer.speech_stopped'){
+    // Freeze the mic while the server finishes transcription. This prevents
+    // café noise from opening a second turn before we know what was said.
+    realtimeAwaitingTranscript=true;
+    setRealtimeMicEnabled(false);
     status.textContent=
-      waiterLanguage==='ar'?'ثواني وبرد عليك…':
-      waiterLanguage==='fr'?'Un instant…':
-      'One moment…';
+      waiterLanguage==='ar'?'لحظة أفهم كلامك…':
+      waiterLanguage==='fr'?'Je comprends votre message…':
+      'Understanding your voice…';
+
+    if(realtimeTranscriptSafetyTimer) clearTimeout(realtimeTranscriptSafetyTimer);
+    realtimeTranscriptSafetyTimer=setTimeout(()=>{
+      if(realtimeAwaitingTranscript && !realtimeAssistantSpeaking){
+        realtimeAwaitingTranscript=false;
+        setRealtimeMicEnabled(true);
+        status.textContent=TEXT[waiterLanguage].ready;
+      }
+    },3000);
   }
 
   if(e.type==='response.audio.delta' || e.type==='response.output_audio.delta'){
+    realtimeAssistantSpeaking=true;
+    setRealtimeMicEnabled(false);
     orb.classList.add('speaking');
-    // Prevent speaker echo/background noise from being interpreted as a new user turn.
-    if(realtimeMicStream){
-      const micTrack=realtimeMicStream.getAudioTracks()[0];
-      if(micTrack) micTrack.enabled=false;
-    }
   }
 
-  if(e.type==='response.audio.done' || e.type==='response.output_audio.done' || e.type==='response.done'){
+  if(e.type==='response.audio.done' || e.type==='response.output_audio.done'){
     orb.classList.remove('speaking');
-    if(realtimeMicStream){
-      const micTrack=realtimeMicStream.getAudioTracks()[0];
-      if(micTrack) micTrack.enabled=true;
-    }
-    micBtn.textContent='🎤';
-    status.textContent=TEXT[waiterLanguage].ready;
+    // Do not reopen the microphone immediately. The phone speaker can still
+    // be playing the tail of the buffered audio for a short moment.
+    resumeRealtimeMicAfter(1400);
+  }
+
+  if(e.type==='response.done'){
+    orb.classList.remove('speaking');
+    // Fallback for clients that do not emit a separate audio.done event.
+    if(!realtimeMicResumeTimer) resumeRealtimeMicAfter(1600);
   }
 
   if(e.type==='response.audio_transcript.delta' || e.type==='response.output_audio_transcript.delta'){
@@ -669,10 +722,21 @@ function handleRealtimeEvent(event){
   }
 
   if(e.type==='conversation.item.input_audio_transcription.completed'){
+    if(realtimeTranscriptSafetyTimer){clearTimeout(realtimeTranscriptSafetyTimer);realtimeTranscriptSafetyTimer=null;}
     const text=(e.transcript||'').trim();
-    if(text){
+    realtimeAwaitingTranscript=false;
+
+    // Ignore tiny/empty background-noise transcriptions instead of creating
+    // an AI turn from them.
+    const meaningful = text.replace(/[\s\p{P}\p{S}]/gu,'').length >= 2;
+    if(text && meaningful){
       addBubble('user',text);
       conversationHistory.push({role:'user',content:text});
+      status.textContent=TEXT[waiterLanguage].thinking;
+      createRealtimeResponse();
+    }else if(!realtimeAssistantSpeaking){
+      setRealtimeMicEnabled(true);
+      status.textContent=TEXT[waiterLanguage].ready;
     }
   }
 
@@ -681,9 +745,11 @@ function handleRealtimeEvent(event){
     const msg=e.error?.message || 'Realtime voice error';
     showDiagnostic(msg,false);
     status.textContent=msg;
+    realtimeAssistantSpeaking=false;
+    realtimeAwaitingTranscript=false;
+    setRealtimeMicEnabled(true);
   }
 }
-
 async function startRealtime(){
   if(realtimeConnected || realtimeStarting) return;
   realtimeStarting=true;
@@ -705,9 +771,16 @@ async function startRealtime(){
       audio.play().catch(err=>console.warn('Remote audio play',err));
     };
 
-    const stream=await navigator.mediaDevices.getUserMedia({
-      audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:false}
-    });
+    const supported=navigator.mediaDevices.getSupportedConstraints?.()||{};
+    const audioConstraints={
+      echoCancellation:true,
+      noiseSuppression:true,
+      autoGainControl:false,
+      channelCount:1
+    };
+    if(supported.voiceIsolation) audioConstraints.voiceIsolation=true;
+
+    const stream=await navigator.mediaDevices.getUserMedia({audio:audioConstraints});
 
     realtimeMicStream=stream;
     stream.getTracks().forEach(track=>pc.addTrack(track,stream));
@@ -730,6 +803,8 @@ async function startRealtime(){
         true
       );
 
+      realtimeAssistantSpeaking=true;
+      setRealtimeMicEnabled(false);
       dc.send(JSON.stringify({
         type:'response.create',
         response:{
@@ -819,7 +894,7 @@ function compactMenu(){
    items:s.items.map(d=>({
      name:translateMenuText(d[0],lang),
      description:translateMenuText(d[1],lang),
-     price:d[2]
+     price:lang==='ar'?displayPrice(d[2],'ar'):d[2]
    }))
  }));
 }
