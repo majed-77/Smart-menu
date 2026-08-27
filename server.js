@@ -112,7 +112,9 @@ app.post("/api/realtime-call", async (req, res) => {
       model: "gpt-realtime-1.5",
       instructions: String(instructions || ""),
       output_modalities: ["audio"],
-      max_output_tokens: 220,
+      // Audio responses consume many more tokens than plain text.
+      // A low cap can stop Sara mid-sentence, so keep a generous budget.
+      max_output_tokens: 1200,
       audio: {
         input: {
           turn_detection: {
