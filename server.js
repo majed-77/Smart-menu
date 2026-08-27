@@ -117,9 +117,13 @@ app.post("/api/realtime-call", async (req, res) => {
         input: {
           turn_detection: {
             type: "server_vad",
+            // Less sensitive to speaker echo / café background noise.
+            // Real speech still interrupts Sara, but brief noise should not.
+            threshold: 0.72,
+            prefix_padding_ms: 350,
+            silence_duration_ms: 850,
             create_response: true,
-            interrupt_response: true,
-            silence_duration_ms: 650
+            interrupt_response: true
           },
           transcription: {
             model: "gpt-4o-mini-transcribe",
