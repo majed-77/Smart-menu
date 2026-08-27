@@ -514,15 +514,11 @@ function applySiteLanguage(lang){
  updateSearchPlaceholder();
  welcomeOverlay.classList.add('hidden');
 }
-document.querySelectorAll('[data-site-lang]').forEach(btn=>{
- btn.addEventListener('click',(e)=>{
-   e.preventDefault();
-   e.stopPropagation();
-   const lang=btn.getAttribute('data-site-lang');
-   if(!lang)return;
+document.querySelectorAll('[data-site-lang]').forEach((btn)=>{
+ btn.addEventListener('click',()=>{
+   const lang=btn.dataset.siteLang;
+   if(!lang) return;
    applySiteLanguage(lang);
-   const welcome=document.querySelector('#welcomeOverlay');
-   if(welcome) welcome.classList.add('hidden');
  });
 });
 
@@ -1065,9 +1061,6 @@ micBtn.onclick=()=>{
  status.textContent=track.enabled?TEXT[waiterLanguage].ready:
    (waiterLanguage==='ar'?'المايك مكتوم':waiterLanguage==='fr'?'Micro coupé':'Microphone muted');
 };
- await unlockSpeechAudio();
- recording?stopRecording():startRecording();
-};
 
 function closeWaiter(){
  closeRealtime();
@@ -1079,18 +1072,5 @@ function closeWaiter(){
 }
 endBtn.onclick=closeWaiter;
 </script>
-
-document.addEventListener('click',function(e){
- const btn=e.target.closest('[data-site-lang]');
- if(!btn)return;
- const lang=btn.getAttribute('data-site-lang');
- if(!lang)return;
- try{
-   if(typeof applySiteLanguage==='function') applySiteLanguage(lang);
-   const overlay=document.querySelector('#welcomeOverlay');
-   if(overlay) overlay.classList.add('hidden');
- }catch(err){console.error('Language selection error',err);}
-},true);
-
 </body>
 </html>
