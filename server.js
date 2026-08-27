@@ -82,6 +82,9 @@ async function initReservationDatabase() {
       party_size INTEGER NOT NULL CHECK (party_size BETWEEN 1 AND 30),
       reservation_at TIMESTAMPTZ NOT NULL,
       notes TEXT NOT NULL DEFAULT '',
+      order_items JSONB NOT NULL DEFAULT '[]'::jsonb,
+      order_total_sar NUMERIC(12,2) NOT NULL DEFAULT 0,
+      source TEXT NOT NULL DEFAULT 'form',
       language TEXT NOT NULL DEFAULT 'ar',
       status TEXT NOT NULL DEFAULT 'confirmed',
       reminder_sent_at TIMESTAMPTZ,
@@ -90,6 +93,10 @@ async function initReservationDatabase() {
       reminder_last_error TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE reservations ADD COLUMN IF NOT EXISTS order_items JSONB NOT NULL DEFAULT '[]'::jsonb;
+    ALTER TABLE reservations ADD COLUMN IF NOT EXISTS order_total_sar NUMERIC(12,2) NOT NULL DEFAULT 0;
+    ALTER TABLE reservations ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'form';
+    CREATE SEQUENCE IF NOT EXISTS reservation_number_seq START WITH 1 INCREMENT BY 1 MINVALUE 1;
     CREATE INDEX IF NOT EXISTS reservations_reminder_due_idx
       ON reservations (reservation_at)
       WHERE reminder_sent_at IS NULL AND status = 'confirmed';
@@ -97,8 +104,9 @@ async function initReservationDatabase() {
   console.log("✅ Reservations database ready");
 }
 
-function makeConfirmationCode() {
-  return "VH-" + Math.random().toString(36).slice(2, 7).toUpperCase() + Date.now().toString(36).slice(-3).toUpperCase();
+async function nextReservationNumber(client = db) {
+  const result = await client.query("SELECT nextval('reservation_number_seq')::text AS code");
+  return result.rows[0].code;
 }
 
 function normalizeWhatsAppPhone(value) {
@@ -247,11 +255,29 @@ app.post("/api/reservations", async (req, res) => {
       });
     }
 
-    const { name, phone, partySize, date, time, notes = "", language = "ar" } = req.body || {};
+    const { name, phone, partySize, date, time, notes = "", language = "ar", orderItems = [], source = "form" } = req.body || {};
     const customerName = String(name || "").trim().slice(0, 100);
     const normalizedPhone = normalizeWhatsAppPhone(phone);
     const party = Number(partySize);
     const lang = ["ar", "fr", "en"].includes(language) ? language : "ar";
+
+    const cleanOrderItems = Array.isArray(orderItems)
+      ? orderItems.slice(0, 50).map((item) => {
+          const name = String(item?.name || "").trim().slice(0, 160);
+          const quantity = Math.max(1, Math.min(20, Math.trunc(Number(item?.quantity) || 1)));
+          const specialRequest = String(item?.specialRequest || "").trim().slice(0, 300);
+          const unitPriceSar = Number(item?.unitPriceSar);
+          return {
+            name,
+            quantity,
+            specialRequest,
+            unitPriceSar: Number.isFinite(unitPriceSar) && unitPriceSar >= 0 ? Math.round(unitPriceSar * 100) / 100 : null
+          };
+        }).filter((item) => item.name)
+      : [];
+    const orderTotalSar = Math.round(cleanOrderItems.reduce((sum, item) =>
+      sum + (Number.isFinite(item.unitPriceSar) ? item.unitPriceSar * item.quantity : 0), 0) * 100) / 100;
+    const reservationSource = source === "sara_voice" ? "sara_voice" : "form";
 
     if (customerName.length < 2) {
       return res.status(400).json({ ok: false, code: "INVALID_NAME", message: "اكتب اسم الحجز." });
@@ -275,23 +301,14 @@ app.post("/api/reservations", async (req, res) => {
       return res.status(400).json({ ok: false, code: "TOO_FAR", message: "يمكن الحجز حتى سنة مقدمًا." });
     }
 
-    let inserted;
-    for (let i = 0; i < 4; i++) {
-      const code = makeConfirmationCode();
-      try {
-        inserted = await db.query(
-          `INSERT INTO reservations
-           (confirmation_code, customer_name, phone, party_size, reservation_at, notes, language)
-           VALUES ($1,$2,$3,$4,$5,$6,$7)
-           RETURNING id, confirmation_code, customer_name, phone, party_size, reservation_at, notes, language, status, created_at`,
-          [code, customerName, normalizedPhone, party, localDateTime.toUTC().toISO(), String(notes || "").trim().slice(0, 500), lang]
-        );
-        break;
-      } catch (error) {
-        if (error?.code !== "23505") throw error;
-      }
-    }
-    if (!inserted) throw new Error("Could not create confirmation code.");
+    const code = await nextReservationNumber();
+    const inserted = await db.query(
+      `INSERT INTO reservations
+       (confirmation_code, customer_name, phone, party_size, reservation_at, notes, order_items, order_total_sar, source, language)
+       VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10)
+       RETURNING id, confirmation_code, customer_name, phone, party_size, reservation_at, notes, order_items, order_total_sar, source, language, status, created_at`,
+      [code, customerName, normalizedPhone, party, localDateTime.toUTC().toISO(), String(notes || "").trim().slice(0, 500), JSON.stringify(cleanOrderItems), orderTotalSar, reservationSource, lang]
+    );
 
     const row = inserted.rows[0];
     const local = DateTime.fromJSDate(new Date(row.reservation_at), { zone: "utc" }).setZone(RESTAURANT_TIMEZONE);
@@ -305,7 +322,10 @@ app.post("/api/reservations", async (req, res) => {
         date: local.toISODate(),
         time: local.toFormat("HH:mm"),
         timezone: RESTAURANT_TIMEZONE,
-        reminderMinutesBefore: 30
+        reminderMinutesBefore: 30,
+        orderItems: row.order_items || [],
+        orderTotalSar: Number(row.order_total_sar || 0),
+        source: row.source
       }
     });
   } catch (error) {
@@ -318,7 +338,7 @@ app.get("/api/reservations/:code", async (req, res) => {
   try {
     if (!db) return res.status(503).json({ ok: false, code: "DATABASE_NOT_CONFIGURED" });
     const result = await db.query(
-      `SELECT confirmation_code, customer_name, party_size, reservation_at, notes, status
+      `SELECT confirmation_code, customer_name, party_size, reservation_at, notes, order_items, order_total_sar, source, status
        FROM reservations WHERE confirmation_code = $1 LIMIT 1`,
       [String(req.params.code || "").trim().toUpperCase()]
     );
@@ -332,6 +352,9 @@ app.get("/api/reservations/:code", async (req, res) => {
       date: local.toISODate(),
       time: local.toFormat("HH:mm"),
       notes: row.notes,
+      orderItems: row.order_items || [],
+      orderTotalSar: Number(row.order_total_sar || 0),
+      source: row.source,
       status: row.status
     }});
   } catch (error) {
@@ -419,8 +442,43 @@ app.post("/api/realtime-call", async (req, res) => {
     const session = {
       type: "realtime",
       model: "gpt-realtime-1.5",
-      instructions: String(instructions || ""),
+      instructions: String(instructions || "") + `\n\nوقت المطعم الحالي: ${DateTime.now().setZone(RESTAURANT_TIMEZONE).toFormat("yyyy-LL-dd HH:mm")} (${RESTAURANT_TIMEZONE}). استخدمي هذا الوقت لفهم كلمات مثل اليوم وبكرة وبعد بكرة.`,
       output_modalities: ["audio"],
+      tools: [
+        {
+          type: "function",
+          name: "confirm_booking_order",
+          description: "Save a table reservation and optional food/drink pre-order only after the guest explicitly confirms the final summary.",
+          parameters: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              name: { type: "string", description: "Guest name" },
+              phone: { type: "string", description: "WhatsApp phone in international format starting with +" },
+              party_size: { type: "integer", minimum: 1, maximum: 30 },
+              date: { type: "string", description: "Reservation date YYYY-MM-DD" },
+              time: { type: "string", description: "Reservation time HH:MM 24-hour" },
+              notes: { type: "string", description: "Reservation-level notes, empty string if none" },
+              order_items: {
+                type: "array",
+                maxItems: 30,
+                items: {
+                  type: "object",
+                  additionalProperties: false,
+                  properties: {
+                    item_name: { type: "string", description: "Menu item name exactly as shown in the current language" },
+                    quantity: { type: "integer", minimum: 1, maximum: 20 },
+                    special_request: { type: "string", description: "Item modification/request, empty string if none" }
+                  },
+                  required: ["item_name", "quantity", "special_request"]
+                }
+              }
+            },
+            required: ["name", "phone", "party_size", "date", "time", "notes", "order_items"]
+          }
+        }
+      ],
+      tool_choice: "auto",
       // Audio responses consume many more tokens than plain text.
       // A low cap can stop Sara mid-sentence, so keep a generous budget.
       max_output_tokens: 1200,
