@@ -120,6 +120,34 @@ main{max-width:1280px;margin:auto;padding:22px 5% 60px}
 .permissionHelp{display:none;background:#fff5f5;border:1px solid #fed7d7;color:#742a2a;padding:10px;border-radius:12px;font-size:12px;line-height:1.6;margin-top:8px}
 .permissionHelp.show{display:block}
 .recordHint{font-size:11px;color:var(--muted);margin-top:6px}
+
+.bookingBtn{
+  position:fixed;z-index:22;inset-inline-end:18px;bottom:82px;border:0;border-radius:999px;
+  background:#fff;color:var(--dark);border:1px solid var(--line);padding:13px 17px;font-weight:800;
+  box-shadow:0 12px 30px #0002;cursor:pointer;display:flex;align-items:center;gap:7px
+}
+.bookingBtn:hover{transform:translateY(-2px);box-shadow:0 16px 34px #0003}
+.bookingModal{position:fixed;inset:0;background:#000a;display:none;align-items:center;justify-content:center;z-index:35;padding:18px}
+.bookingModal.show{display:flex}
+.bookingCard{background:#fffdf9;border-radius:24px;max-width:560px;width:100%;max-height:92vh;overflow:auto;padding:24px;box-shadow:0 25px 70px #0005}
+.bookingHead{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px}
+.bookingHead h2{margin:0 0 4px}.bookingHead p{margin:0;color:var(--muted);font-size:13px}
+.bookingClose{border:0;background:#f1e8dc;border-radius:50%;width:42px;height:42px;font-size:20px;cursor:pointer;flex:0 0 auto}
+.bookingGrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.bookingField{display:flex;flex-direction:column;gap:6px;text-align:start;min-width:0}
+.bookingField.full{grid-column:1/-1}
+.bookingField label{font-size:13px;font-weight:700}
+.bookingField input,.bookingField select,.bookingField textarea{width:100%;border:1px solid #d8c7ae;background:#fff;border-radius:13px;padding:11px 12px;font-size:16px;color:var(--ink);outline:none}
+.bookingField textarea{min-height:76px;resize:vertical}
+.bookingField input:focus,.bookingField select:focus,.bookingField textarea:focus{outline:2px solid var(--gold);border-color:transparent}
+.bookingSubmit{width:100%;margin-top:15px;border:0;border-radius:14px;background:var(--dark);color:#fff;padding:13px 16px;font-size:16px;font-weight:800;cursor:pointer}
+.bookingSubmit:disabled{opacity:.55;cursor:wait}
+.bookingNote{font-size:12px;color:var(--muted);margin-top:9px;line-height:1.7}
+.bookingResult{display:none;margin-top:14px;border:1px solid #9ae6b4;background:#f0fff4;color:#22543d;border-radius:14px;padding:13px;line-height:1.8}
+.bookingResult.show{display:block}.bookingError{display:none;margin-top:12px;border:1px solid #fed7d7;background:#fff5f5;color:#742a2a;border-radius:14px;padding:11px;line-height:1.7}
+.bookingError.show{display:block}
+@media(max-width:640px){.bookingBtn{inset-inline-end:14px;bottom:72px}.bookingGrid{grid-template-columns:1fr}.bookingField.full{grid-column:auto}.bookingCard{padding:18px}}
+
 @media(max-width:980px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:640px){
   .topbar{padding-inline:16px}.brandLogo{width:42px;height:42px}.brand{font-size:21px}.sub{font-size:11px}
@@ -170,6 +198,31 @@ main{max-width:1280px;margin:auto;padding:22px 5% 60px}
   <div id="menu"></div>
   <div class="emptyState" id="emptyState">لا توجد نتائج مطابقة.</div>
 </main>
+
+
+<button class="bookingBtn" id="bookingBtn" type="button">📅 احجز طاولة</button>
+<div class="bookingModal" id="bookingModal" aria-hidden="true">
+  <div class="bookingCard" role="dialog" aria-modal="true" aria-labelledby="bookingTitle">
+    <div class="bookingHead">
+      <div><h2 id="bookingTitle">حجز طاولة</h2><p id="bookingSubtitle">احجز موعدك وسنذكّرك على واتساب قبل 30 دقيقة.</p></div>
+      <button class="bookingClose" id="bookingClose" type="button" aria-label="إغلاق">×</button>
+    </div>
+    <form id="bookingForm">
+      <div class="bookingGrid">
+        <div class="bookingField"><label id="bookingNameLabel" for="bookingName">الاسم</label><input id="bookingName" name="name" required maxlength="100" autocomplete="name"></div>
+        <div class="bookingField"><label id="bookingPhoneLabel" for="bookingPhone">رقم واتساب</label><input id="bookingPhone" name="phone" type="tel" required inputmode="tel" placeholder="+9665... أو +216..." autocomplete="tel"></div>
+        <div class="bookingField"><label id="bookingPeopleLabel" for="bookingPeople">عدد الأشخاص</label><select id="bookingPeople" name="partySize" required></select></div>
+        <div class="bookingField"><label id="bookingDateLabel" for="bookingDate">التاريخ</label><input id="bookingDate" name="date" type="date" required></div>
+        <div class="bookingField"><label id="bookingTimeLabel" for="bookingTime">الوقت</label><input id="bookingTime" name="time" type="time" required step="900"></div>
+        <div class="bookingField full"><label id="bookingNotesLabel" for="bookingNotes">ملاحظات (اختياري)</label><textarea id="bookingNotes" name="notes" maxlength="500"></textarea></div>
+      </div>
+      <button class="bookingSubmit" id="bookingSubmit" type="submit">تأكيد الحجز</button>
+      <div class="bookingNote" id="bookingNote">اكتب رقم واتساب بصيغة دولية. التذكير يرسل قبل الموعد بـ30 دقيقة.</div>
+      <div class="bookingError" id="bookingError" role="alert"></div>
+      <div class="bookingResult" id="bookingResult" aria-live="polite"></div>
+    </form>
+  </div>
+</div>
 
 <button class="globalWaiter" id="globalWaiter" type="button">🎙️ سارة</button>
 
@@ -518,6 +571,7 @@ function applySiteLanguage(lang){
  document.querySelector('#waiterLangSubtitle').textContent=TEXT[lang].waiterSub;
  cancelWaiter.textContent=TEXT[lang].close;
  const gw=document.querySelector('#globalWaiter'); if(gw) gw.textContent=TEXT[lang].askWaiter;
+ applyBookingLanguage(lang);
  refreshMenuLanguage();
  updateSearchPlaceholder();
  welcomeOverlay.classList.add('hidden');
@@ -1201,6 +1255,47 @@ micBtn.onclick=()=>{
      ?TEXT[waiterLanguage].ready
      :(waiterLanguage==='ar'?'المايك مكتوم':waiterLanguage==='fr'?'Micro coupé':'Microphone muted');
 };
+
+
+const BOOKING_TEXT={
+ ar:{button:'📅 احجز طاولة',title:'حجز طاولة',sub:'احجز موعدك وسنذكّرك على واتساب قبل 30 دقيقة.',name:'الاسم',phone:'رقم واتساب',people:'عدد الأشخاص',date:'التاريخ',time:'الوقت',notes:'ملاحظات (اختياري)',submit:'تأكيد الحجز',saving:'جاري حفظ الحجز…',note:'اكتب رقم واتساب بصيغة دولية. التذكير يرسل قبل الموعد بـ30 دقيقة.',success:(r)=>`تم الحجز ✅ رقم الحجز: ${r.code} — ${r.date} الساعة ${r.time}. سنرسل تذكير واتساب قبل الموعد بـ30 دقيقة.`,error:'تعذر حفظ الحجز الآن.'},
+ fr:{button:'📅 Réserver une table',title:'Réserver une table',sub:'Réservez et recevez un rappel WhatsApp 30 minutes avant.',name:'Nom',phone:'Numéro WhatsApp',people:'Nombre de personnes',date:'Date',time:'Heure',notes:'Notes (facultatif)',submit:'Confirmer',saving:'Enregistrement…',note:'Utilisez le format international, par ex. +216… ou +33…',success:(r)=>`Réservation confirmée ✅ N° ${r.code} — ${r.date} à ${r.time}. Rappel WhatsApp 30 min avant.`,error:'Impossible d’enregistrer la réservation.'},
+ en:{button:'📅 Reserve a table',title:'Reserve a table',sub:'Book now and get a WhatsApp reminder 30 minutes before.',name:'Name',phone:'WhatsApp number',people:'Guests',date:'Date',time:'Time',notes:'Notes (optional)',submit:'Confirm booking',saving:'Saving…',note:'Use international format, e.g. +966… or +216…',success:(r)=>`Booking confirmed ✅ Code: ${r.code} — ${r.date} at ${r.time}. WhatsApp reminder 30 minutes before.`,error:'Could not save the reservation.'}
+};
+function applyBookingLanguage(lang){
+ const t=BOOKING_TEXT[lang]||BOOKING_TEXT.ar;
+ const map={bookingBtn:t.button,bookingTitle:t.title,bookingSubtitle:t.sub,bookingNameLabel:t.name,bookingPhoneLabel:t.phone,bookingPeopleLabel:t.people,bookingDateLabel:t.date,bookingTimeLabel:t.time,bookingNotesLabel:t.notes,bookingSubmit:t.submit,bookingNote:t.note};
+ Object.entries(map).forEach(([id,value])=>{const el=document.getElementById(id);if(el)el.textContent=value;});
+}
+function setBookingMinDate(){
+ const input=document.getElementById('bookingDate'); if(!input)return;
+ const d=new Date(); const y=d.getFullYear(); const m=String(d.getMonth()+1).padStart(2,'0'); const day=String(d.getDate()).padStart(2,'0');
+ input.min=`${y}-${m}-${day}`;
+}
+(function initBookingUI(){
+ const btn=document.getElementById('bookingBtn'), modalEl=document.getElementById('bookingModal'), close=document.getElementById('bookingClose'), form=document.getElementById('bookingForm');
+ const people=document.getElementById('bookingPeople'), errorBox=document.getElementById('bookingError'), resultBox=document.getElementById('bookingResult'), submit=document.getElementById('bookingSubmit');
+ if(!btn||!modalEl||!form)return;
+ for(let i=1;i<=20;i++){const o=document.createElement('option');o.value=String(i);o.textContent=String(i);if(i===2)o.selected=true;people.appendChild(o);}
+ const open=()=>{setBookingMinDate();applyBookingLanguage(siteLanguage||'ar');errorBox.classList.remove('show');resultBox.classList.remove('show');modalEl.classList.add('show');modalEl.setAttribute('aria-hidden','false');setTimeout(()=>document.getElementById('bookingName')?.focus(),50);};
+ const hide=()=>{modalEl.classList.remove('show');modalEl.setAttribute('aria-hidden','true');};
+ btn.addEventListener('click',open); close.addEventListener('click',hide); modalEl.addEventListener('click',e=>{if(e.target===modalEl)hide();});
+ form.addEventListener('submit',async e=>{
+   e.preventDefault(); errorBox.classList.remove('show'); resultBox.classList.remove('show');
+   const lang=siteLanguage||'ar', t=BOOKING_TEXT[lang]||BOOKING_TEXT.ar;
+   const payload={name:document.getElementById('bookingName').value.trim(),phone:document.getElementById('bookingPhone').value.trim(),partySize:Number(people.value),date:document.getElementById('bookingDate').value,time:document.getElementById('bookingTime').value,notes:document.getElementById('bookingNotes').value.trim(),language:lang};
+   submit.disabled=true; submit.textContent=t.saving;
+   try{
+     const r=await fetch('/api/reservations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+     const data=await r.json().catch(()=>({}));
+     if(!r.ok||!data.reservation) throw new Error(data.message||t.error);
+     resultBox.textContent=t.success(data.reservation); resultBox.classList.add('show');
+     form.reset(); people.value='2'; setBookingMinDate();
+   }catch(err){errorBox.textContent=err.message||t.error;errorBox.classList.add('show');}
+   finally{submit.disabled=false;submit.textContent=t.submit;}
+ });
+ applyBookingLanguage(siteLanguage||'ar'); setBookingMinDate();
+})();
 
 function closeWaiter(){
  closeRealtime();
