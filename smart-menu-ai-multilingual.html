@@ -591,7 +591,7 @@ function realtimeInstructions(){
 
   const languageRule=
     lang==='ar'
-      ?`تكلم باللهجة السعودية الطبيعية فقط، بشكل خفيف وعفوي وواضح. لا تستخدم الفصحى الرسمية. خلك مثل نادلة سعودية حقيقية، واستخدم عبارات يومية طبيعية مثل هلا، أبشر، وش ودك، تمام، من عيوني بدون مبالغة.`
+      ?`تكلم باللهجة السعودية البيضاء الطبيعية فقط، وتميل بشكل خفيف للهجة النجدية. صوتك أنثوي واضح ومشرق ودافئ، والنطق واضح وغير مكتوم، والسرعة متوسطة وهادية شوي. خلك مثل نادلة سعودية شابة وراقية تتكلم بعفوية. استخدم عبارات سعودية طبيعية مثل: هلا، وش ودك، أبشر، تمام، من عيوني، من غير مبالغة. تجنب تمامًا اللهجة المصرية والشامية والتونسية، ولا تستخدم الفصحى الرسمية إلا إذا احتجت توضيح دقيق. لا تمط الكلمات ولا تكثر من الهمهمة.`
       :lang==='fr'
       ?`Parle uniquement en français naturel, chaleureux et conversationnel.`
       :`Speak only in natural, warm conversational English.`;
@@ -676,6 +676,7 @@ async function startRealtime(){
     const audio=document.createElement('audio');
     audio.autoplay=true;
     audio.playsInline=true;
+    audio.volume=1.0;
     audio.style.display='none';
     document.body.appendChild(audio);
     realtimeRemoteAudio=audio;
@@ -715,7 +716,7 @@ async function startRealtime(){
         response:{
           instructions:
             waiterLanguage==='ar'
-              ?`رحب باختصار جدًا باللهجة السعودية وقل بشكل طبيعي: هلا والله، أنا معك. وش ودك تعرف عن ${translateMenuText(currentDish[0],'ar')}؟`
+              ?`رحّب بجملة قصيرة جدًا وبلهجة سعودية بيضاء طبيعية، بنبرة دافئة وواضحة، مثل: هلا والله، أنا معك. وش ودك تعرف عن ${translateMenuText(currentDish[0],'ar')}؟ لا تستخدم فصحى ولا لهجة غير سعودية.`
               :waiterLanguage==='fr'
               ?`Accueille très brièvement le client et demande ce qu'il veut savoir sur ${translateMenuText(currentDish[0],'fr')}.`
               :`Give a very brief welcome and ask what the guest wants to know about ${translateMenuText(currentDish[0],'en')}.`
