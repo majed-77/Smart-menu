@@ -696,7 +696,7 @@ async function startRealtime(){
     };
 
     const stream=await navigator.mediaDevices.getUserMedia({
-      audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}
+      audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:false}
     });
 
     realtimeMicStream=stream;
@@ -1069,7 +1069,7 @@ async function startRecording(){
   status.textContent=TEXT[waiterLanguage].micError; permissionHelp.textContent=TEXT[waiterLanguage].permission; permissionHelp.classList.add('show'); return;
  }
  try{
-  stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
+  stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:false}});
   chunks=[]; const mime=bestMime(); recorder=new MediaRecorder(stream,mime?{mimeType:mime}:undefined);
   recorder.ondataavailable=e=>{if(e.data?.size)chunks.push(e.data)};
   recorder.onstop=sendVoice;
