@@ -785,16 +785,31 @@ async function handleSaraBookingTool(callId,argsText){
     };
     const r=await fetch('/api/reservations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     const data=await r.json().catch(()=>({}));
-    if(!r.ok||!data.reservation) throw new Error(data.message||'Booking save failed');
+    if(!r.ok||!data.reservation){
+      const err=new Error(data.message||'Booking save failed');
+      err.bookingCode=data.code||'BOOKING_SAVE_ERROR';
+      err.httpStatus=r.status;
+      throw err;
+    }
     const output={ok:true,message:saraToolMessage('success',{code:data.reservation.code}),reservation:data.reservation};
     realtimeDC.send(JSON.stringify({type:'conversation.item.create',item:{type:'function_call_output',call_id:callId,output:JSON.stringify(output)}}));
     realtimeDC.send(JSON.stringify({type:'response.create',response:{instructions:waiterLanguage==='ar'?`قولي للعميل باختصار إن الحجز${resolved.length?' والطلب':''} تم تسجيله بنجاح، واذكري رقم الحجز ${data.reservation.code}. لا تعيدي كل التفاصيل إلا إذا طلب.`:waiterLanguage==='fr'?`Confirme brièvement que la réservation${resolved.length?' et la commande':''} est enregistrée et donne le numéro ${data.reservation.code}.`:`Briefly confirm the booking${resolved.length?' and order':''} was saved and give confirmation code ${data.reservation.code}.`}}));
   }catch(err){
     console.error('Sara booking tool failed',err);
-    const output={ok:false,code:'BOOKING_SAVE_ERROR',message:String(err.message||saraToolMessage('error'))};
+    const reason=String(err.message||saraToolMessage('error'));
+    const code=String(err.bookingCode||'BOOKING_SAVE_ERROR');
+    const output={ok:false,code,message:reason};
+    showDiagnostic(`الحجز لم يُحفظ: ${reason} [${code}]`,false);
     try{
       realtimeDC.send(JSON.stringify({type:'conversation.item.create',item:{type:'function_call_output',call_id:callId,output:JSON.stringify(output)}}));
-      realtimeDC.send(JSON.stringify({type:'response.create'}));
+      realtimeDC.send(JSON.stringify({
+        type:'response.create',
+        response:{instructions:waiterLanguage==='ar'
+          ?`الحجز لم يُحفظ. السبب: ${reason}. اشرحي السبب للعميل بشكل بسيط ومباشر واطلبي فقط المعلومة التي تحتاج تصحيحها. إذا كان السبب عطل قاعدة بيانات، اعتذري واطلبي إعادة المحاولة. لا تقولي فقط مشكلة تقنية إذا كان السبب واضحًا.`
+          :waiterLanguage==='fr'
+          ?`La réservation n'a pas été enregistrée. Raison : ${reason}. Explique brièvement la raison et demande uniquement l'information à corriger.`
+          :`The booking was not saved. Reason: ${reason}. Briefly explain the reason and ask only for the information that needs correction.`}
+      }));
     }catch(e){}
   }
 }
