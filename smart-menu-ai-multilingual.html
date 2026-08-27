@@ -7,30 +7,84 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
 <style>
-:root{--ink:#21170f;--gold:#b88935;--cream:#f7f1e7;--card:#fffdf9;--muted:#776b60;--danger:#9b2c2c;--ok:#2f855a}
+:root{
+  --ink:#17130f;--gold:#c79a3b;--cream:#f5efe5;--card:#fffdf9;--muted:#786f65;
+  --danger:#a83232;--line:#e8dccb;--dark:#17130f;--soft:#efe5d6
+}
 *{box-sizing:border-box}
-body{margin:0;background:var(--cream);color:var(--ink);font-family:Cairo,Arial,sans-serif}
+html{scroll-behavior:smooth}
+body{margin:0;background:linear-gradient(180deg,#f7f2ea 0,#f3ecdf 100%);color:var(--ink);font-family:Cairo,Arial,sans-serif}
 button,input{font-family:inherit}
-header{position:sticky;top:0;z-index:5;background:rgba(33,23,15,.97);color:#fff;padding:16px 5%;box-shadow:0 4px 18px #0002}
-.brandRow{display:flex;align-items:center;justify-content:space-between;gap:12px}
-.brand{font-family:"Playfair Display",serif;font-size:28px}
-.sub{opacity:.75;font-size:13px}
-.siteLang{border:1px solid #ffffff44;background:#ffffff12;color:#fff;border-radius:999px;padding:8px 12px;cursor:pointer}
-nav{display:flex;gap:8px;overflow:auto;padding-top:12px}
-nav button{white-space:nowrap;border:1px solid #ffffff33;background:#ffffff12;color:#fff;border-radius:999px;padding:8px 12px;cursor:pointer}
-main{max-width:1200px;margin:auto;padding:28px 5%}
-.hero{text-align:center;padding:25px 0 35px}
-.hero h1{font-family:"Playfair Display",serif;font-size:42px;margin:0 0 8px}
-.hero p{color:var(--muted)}
-section{margin:30px 0}
-.section-title{font-family:"Playfair Display",serif;font-size:29px;border-bottom:1px solid #d8c7ae;padding-bottom:10px}
-.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
-.card{background:var(--card);border:1px solid #eadfce;border-radius:18px;padding:18px;box-shadow:0 8px 25px #4b321011;position:relative}
-.card h3{margin:0 0 8px;font-size:20px;padding-inline-end:72px}
-.desc{color:var(--muted);font-size:14px;line-height:1.8;min-height:25px}
-.price{position:absolute;inset-inline-end:16px;top:16px;background:var(--gold);color:#fff;border-radius:999px;padding:7px 11px;font-weight:800}
-.signature{display:inline-block;background:#21170f;color:#fff;border-radius:999px;padding:4px 8px;font-size:11px;margin-bottom:8px}
-.voice{margin-top:14px;width:100%;border:0;border-radius:12px;padding:12px;background:#21170f;color:#fff;font-weight:700;cursor:pointer}
+button{touch-action:manipulation}
+header{
+  position:sticky;top:0;z-index:10;background:rgba(23,19,15,.96);color:#fff;
+  border-bottom:1px solid #ffffff12;backdrop-filter:blur(14px)
+}
+.topbar{max-width:1280px;margin:auto;padding:13px 5% 10px}
+.brandRow{display:flex;align-items:center;justify-content:space-between;gap:14px}
+.brandWrap{display:flex;align-items:center;gap:12px;min-width:0}
+.brandLogo{width:48px;height:48px;border-radius:50%;object-fit:cover;border:1px solid #ffffff28;background:#222;flex:0 0 auto}
+.brand{font-family:"Playfair Display",serif;font-size:25px;line-height:1.05;white-space:nowrap}
+.sub{opacity:.68;font-size:12px;margin-top:4px}
+.siteLang{border:1px solid #ffffff30;background:#ffffff10;color:#fff;border-radius:999px;padding:9px 12px;cursor:pointer;flex:0 0 auto}
+.searchBar{display:flex;align-items:center;gap:9px;margin-top:12px}
+.searchBar input{
+  width:100%;border:1px solid #ffffff26;background:#ffffff0d;color:#fff;border-radius:16px;
+  padding:11px 14px;font-size:15px;outline:none
+}
+.searchBar input::placeholder{color:#ffffff88}
+nav{display:flex;gap:8px;overflow:auto;padding:10px 5% 13px;scrollbar-width:none;max-width:1280px;margin:auto}
+nav::-webkit-scrollbar{display:none}
+nav button{
+  white-space:nowrap;border:1px solid #ffffff24;background:#ffffff0d;color:#fff;border-radius:999px;
+  padding:8px 13px;cursor:pointer;font-size:13px;transition:.2s
+}
+nav button:hover{background:#ffffff18}
+main{max-width:1280px;margin:auto;padding:22px 5% 60px}
+.hero{
+  position:relative;overflow:hidden;border-radius:28px;background:
+    radial-gradient(circle at 75% 20%,#d9b56633,transparent 35%),
+    linear-gradient(135deg,#201910,#3a2a18);
+  color:#fff;padding:38px 34px;margin:6px 0 26px;min-height:210px;display:flex;align-items:center
+}
+.heroContent{max-width:700px;position:relative;z-index:2}
+.heroEyebrow{display:inline-block;border:1px solid #ffffff30;background:#ffffff0e;border-radius:999px;padding:7px 11px;font-size:12px;margin-bottom:12px}
+.hero h1{font-family:"Playfair Display",serif;font-size:44px;margin:0 0 10px;line-height:1.1}
+.hero p{color:#ffffffb8;margin:0;line-height:1.8;max-width:650px}
+.heroMark{
+  position:absolute;inset-inline-end:-45px;bottom:-70px;width:240px;height:240px;border-radius:50%;
+  border:1px solid #ffffff12;background:#ffffff07
+}
+.section-title{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;font-family:"Playfair Display",serif;
+  font-size:28px;margin:32px 0 14px;padding-bottom:9px;border-bottom:1px solid #d8c8b3
+}
+.section-count{font-family:Cairo,Arial,sans-serif;font-size:12px;color:var(--muted);font-weight:600}
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+.card{
+  background:var(--card);border:1px solid var(--line);border-radius:22px;overflow:hidden;
+  box-shadow:0 10px 30px #3e2b1110;position:relative;display:flex;flex-direction:column;min-width:0;
+  transition:transform .2s ease,box-shadow .2s ease
+}
+@media(hover:hover){.card:hover{transform:translateY(-3px);box-shadow:0 14px 34px #3e2b1118}}
+.foodImageWrap{position:relative;aspect-ratio:4/3;background:linear-gradient(135deg,#dacdbb,#f1e7d9);overflow:hidden}
+.foodImage{width:100%;height:100%;display:block;object-fit:cover;transition:transform .35s ease}
+@media(hover:hover){.card:hover .foodImage{transform:scale(1.035)}}
+.foodFallback{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:42px;color:#8b7354;background:linear-gradient(135deg,#e9dece,#f8f1e7)}
+.price{
+  position:absolute;inset-inline-end:12px;top:12px;background:#17130fe8;color:#fff;border:1px solid #ffffff24;
+  border-radius:999px;padding:7px 11px;font-weight:800;font-size:13px;backdrop-filter:blur(8px)
+}
+.signature{position:absolute;inset-inline-start:12px;top:12px;background:var(--gold);color:#fff;border-radius:999px;padding:6px 9px;font-size:11px;font-weight:700}
+.cardBody{padding:16px;display:flex;flex-direction:column;flex:1}
+.card h3{margin:0 0 7px;font-size:19px;line-height:1.45}
+.desc{color:var(--muted);font-size:13px;line-height:1.75;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;min-height:68px}
+.voice{
+  margin-top:14px;width:100%;border:0;border-radius:14px;padding:11px 13px;background:var(--dark);color:#fff;
+  font-weight:700;cursor:pointer;transition:.2s
+}
+.voice:hover{background:#2b2118}
+.emptyState{display:none;text-align:center;padding:45px 20px;color:var(--muted)}
 .overlay{position:fixed;inset:0;background:#000b;z-index:40;display:flex;align-items:center;justify-content:center;padding:20px}
 .overlay.hidden{display:none}
 .welcomeCard,.dialog{background:#fffdf9;border-radius:26px;max-width:500px;width:100%;box-shadow:0 25px 70px #0005}
@@ -55,7 +109,7 @@ section{margin:30px 0}
 .bubble.assistant{background:#f1e6d2;align-self:flex-start}
 .bubble.user{background:#21170f;color:#fff;align-self:flex-end}
 .askRow{display:flex;gap:8px;margin-top:12px}
-.askRow input{flex:1;border:1px solid #d8c7ae;border-radius:999px;padding:11px 16px;font-size:14px;min-width:0}
+.askRow input{flex:1;border:1px solid #d8c7ae;border-radius:999px;padding:11px 16px;font-size:16px;min-width:0}
 .askRow input:focus{outline:2px solid var(--gold)}
 .micBtn{border:0;background:var(--gold);color:white;border-radius:50%;width:48px;height:48px;font-size:19px;cursor:pointer;flex-shrink:0}
 .micBtn.recording{background:var(--danger);animation:pulse .7s infinite}
@@ -64,7 +118,13 @@ section{margin:30px 0}
 .permissionHelp{display:none;background:#fff5f5;border:1px solid #fed7d7;color:#742a2a;padding:10px;border-radius:12px;font-size:12px;line-height:1.6;margin-top:8px}
 .permissionHelp.show{display:block}
 .recordHint{font-size:11px;color:var(--muted);margin-top:6px}
-@media(max-width:700px){.grid{grid-template-columns:1fr}.hero h1{font-size:34px}.dialog{padding:18px}}
+@media(max-width:980px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:640px){
+  .topbar{padding-inline:16px}.brandLogo{width:42px;height:42px}.brand{font-size:21px}.sub{font-size:11px}
+  nav{padding-inline:16px}.hero{border-radius:22px;padding:28px 22px;min-height:180px}.hero h1{font-size:34px}
+  main{padding-inline:14px}.grid{grid-template-columns:1fr;gap:14px}.card{border-radius:20px}
+  .foodImageWrap{aspect-ratio:16/10}.dialog{padding:18px}.section-title{font-size:25px}
+}
 </style>
 </head>
 <body>
@@ -81,16 +141,32 @@ section{margin:30px 0}
 </div>
 
 <header>
-  <div class="brandRow">
-    <div><div class="brand">Café Victor Hugo</div><div class="sub">La Marsa • Café & Restaurant</div></div>
-    <button class="siteLang" id="changeSiteLang">🌐 العربية</button>
+  <div class="topbar">
+    <div class="brandRow">
+      <div class="brandWrap">
+        <img class="brandLogo" src="https://digitalmenu.tn/storage/logos/cafe-victor-hugo-la-marsa-177633909869e21c70f3bb8-logo.jpg" alt="Café Victor Hugo">
+        <div><div class="brand">Café Victor Hugo</div><div class="sub">La Marsa • Café & Restaurant</div></div>
+      </div>
+      <button class="siteLang" id="changeSiteLang">🌐 العربية</button>
+    </div>
+    <div class="searchBar">
+      <input id="menuSearch" type="search" placeholder="ابحث في المنيو..." autocomplete="off">
+    </div>
   </div>
   <nav id="nav"></nav>
 </header>
 
 <main>
-  <div class="hero"><h1>Bienvenue chez Victor Hugo</h1><p id="heroText"></p></div>
+  <div class="hero">
+    <div class="heroContent">
+      <div class="heroEyebrow">Smart Menu • AI Waitress</div>
+      <h1>Bienvenue chez Victor Hugo</h1>
+      <p id="heroText"></p>
+    </div>
+    <div class="heroMark"></div>
+  </div>
   <div id="menu"></div>
+  <div class="emptyState" id="emptyState">لا توجد نتائج مطابقة.</div>
 </main>
 
 <div class="modal" id="modal">
@@ -231,6 +307,31 @@ const TEXT={
  }
 };
 
+
+const ITEM_IMAGES={
+ "Le Matinal (1 pers)":"https://digitalmenu.tn/storage/clients/17763390988246/products/69f0b428a2deb.jpg",
+ "Victorien (1 pers)":"https://digitalmenu.tn/storage/clients/17763390988246/products/69f0978cbd555.jpg",
+ "Healthy (1 pers)":"https://digitalmenu.tn/storage/clients/17763390988246/products/69f0b3ff05c61.jpg",
+ "CHOCO CRUNCH":"https://digitalmenu.tn/storage/clients/17763390988246/products/6a1c47eb18e21.jpg",
+ "Margherita":"https://digitalmenu.tn/storage/clients/17763390988246/products/69e1ee8aaa727.jpg",
+ "Burger Classique":"https://digitalmenu.tn/storage/clients/17763390988246/products/69e1f4609ee7f.jpg",
+ "Salade César":"https://digitalmenu.tn/storage/clients/17763390988246/products/69e203b3e7ead.jpg",
+ "Tagliatelli au Saumon":"https://digitalmenu.tn/storage/clients/17763390988246/products/69e2097cd98fb.jpg",
+ "Citronnade":"https://digitalmenu.tn/storage/clients/17763390988246/products/69e17e3d2f6c5.jpg"
+};
+function itemImage(name){return ITEM_IMAGES[name]||'';}
+function imageFallback(name){
+ const n=(name||'').toLowerCase();
+ if(/café|coffee|espresso|latte|capp/.test(n)) return '☕';
+ if(/pizza/.test(n)) return '🍕';
+ if(/burger/.test(n)) return '🍔';
+ if(/salade/.test(n)) return '🥗';
+ if(/jus|citron|orange|fraise|pomme|banane|kiwi/.test(n)) return '🥤';
+ if(/dessert|pancake|crêpe|gaufre|nutella|chocolat/.test(n)) return '🍰';
+ if(/pâte|spaghetti|lasagne|ravioli/.test(n)) return '🍝';
+ return '🍽️';
+}
+
 let siteLanguage='';
 let waiterLanguage='ar';
 let currentDish=null;
@@ -307,6 +408,32 @@ function refreshMenuLanguage(){
  });
 }
 
+
+function updateSearchPlaceholder(){
+ const el=document.querySelector('#menuSearch');
+ if(!el)return;
+ el.placeholder=siteLanguage==='ar'?'ابحث في المنيو...':siteLanguage==='fr'?'Rechercher dans le menu...':'Search the menu...';
+}
+const searchInput=document.querySelector('#menuSearch');
+if(searchInput){
+ searchInput.addEventListener('input',()=>{
+   const q=searchInput.value.trim().toLowerCase();
+   let shown=0;
+   document.querySelectorAll('#menu section').forEach(sec=>{
+     let sectionShown=0;
+     sec.querySelectorAll('.card').forEach(card=>{
+       const visible=!q || card.dataset.search.includes(q);
+       card.style.display=visible?'':'none';
+       if(visible)sectionShown++;
+     });
+     sec.style.display=sectionShown?'':'none';
+     shown+=sectionShown;
+   });
+   const empty=document.querySelector('#emptyState');
+   if(empty) empty.style.display=shown?'none':'block';
+ });
+}
+
 function applySiteLanguage(lang){
  siteLanguage=lang;
  document.documentElement.lang=lang; document.documentElement.dir=lang==='ar'?'rtl':'ltr';
@@ -319,20 +446,51 @@ function applySiteLanguage(lang){
  cancelWaiter.textContent=TEXT[lang].close;
  document.querySelectorAll('.voice').forEach(b=>b.textContent=TEXT[lang].askWaiter);
  refreshMenuLanguage();
+ updateSearchPlaceholder();
  welcomeOverlay.classList.add('hidden');
 }
 document.querySelectorAll('[data-site-lang]').forEach(b=>b.onclick=()=>applySiteLanguage(b.dataset.siteLang));
 document.querySelector('#changeSiteLang').onclick=()=>welcomeOverlay.classList.remove('hidden');
 
 menu.forEach((s,i)=>{
- const b=document.createElement('button'); b.textContent=s.cat; b.onclick=()=>document.getElementById('s'+i).scrollIntoView({behavior:'smooth'}); nav.appendChild(b);
- const sec=document.createElement('section'); sec.id='s'+i; sec.innerHTML=`<h2 class="section-title">${s.cat}</h2><div class="grid"></div>`;
+ const b=document.createElement('button');
+ b.textContent=s.cat;
+ b.onclick=()=>document.getElementById('s'+i).scrollIntoView({behavior:'smooth',block:'start'});
+ nav.appendChild(b);
+
+ const sec=document.createElement('section');
+ sec.id='s'+i;
+ sec.dataset.category=s.cat;
+ sec.innerHTML=`<h2 class="section-title"><span>${s.cat}</span><span class="section-count">${s.items.length}</span></h2><div class="grid"></div>`;
+
  const grid=sec.querySelector('.grid');
+
  s.items.forEach(d=>{
-   const c=document.createElement('article'); c.className='card';
-   c.innerHTML=`${d[3]?'<span class="signature">Signature Victor</span>':''}<h3>${d[0]}</h3><div class="desc">${d[1]}</div><div class="price">${d[2]}</div><button class="voice">${TEXT[siteLanguage||'ar'].askWaiter}</button>`;
-   c.querySelector('.voice').onclick=()=>openWaiter(d); grid.appendChild(c);
+   const c=document.createElement('article');
+   c.className='card';
+   c.dataset.search=(s.cat+' '+d[0]+' '+d[1]).toLowerCase();
+
+   const img=itemImage(d[0]);
+   const media=img
+     ? `<img class="foodImage" loading="lazy" src="${img}" alt="${d[0]}" onerror="this.outerHTML='<div class=&quot;foodFallback&quot;>${imageFallback(d[0])}</div>'">`
+     : `<div class="foodFallback">${imageFallback(d[0])}</div>`;
+
+   c.innerHTML=`
+     <div class="foodImageWrap">
+       ${media}
+       ${d[3]?'<span class="signature">Signature Victor</span>':''}
+       <div class="price">${d[2]}</div>
+     </div>
+     <div class="cardBody">
+       <h3>${d[0]}</h3>
+       <div class="desc">${d[1]}</div>
+       <button class="voice">${TEXT[siteLanguage||'ar'].askWaiter}</button>
+     </div>`;
+
+   c.querySelector('.voice').onclick=()=>openWaiter(d);
+   grid.appendChild(c);
  });
+
  root.appendChild(sec);
 });
 
