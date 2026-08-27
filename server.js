@@ -101,6 +101,21 @@ async function initReservationDatabase() {
       ON reservations (reservation_at)
       WHERE reminder_sent_at IS NULL AND status = 'confirmed';
   `);
+
+  // Keep the numeric sequence aligned with any existing numeric booking codes.
+  // This avoids duplicate-key failures after deployments or migrations.
+  const maxNumeric = await db.query(`
+    SELECT COALESCE(MAX(confirmation_code::bigint), 0) AS max_code
+    FROM reservations
+    WHERE confirmation_code ~ '^[0-9]+$'
+  `);
+  const maxCode = Number(maxNumeric.rows[0]?.max_code || 0);
+  if (maxCode > 0) {
+    await db.query("SELECT setval('reservation_number_seq', $1, true)", [maxCode]);
+  } else {
+    await db.query("SELECT setval('reservation_number_seq', 1, false)");
+  }
+
   console.log("✅ Reservations database ready");
 }
 
@@ -110,8 +125,22 @@ async function nextReservationNumber(client = db) {
 }
 
 function normalizeWhatsAppPhone(value) {
-  let phone = String(value || "").trim().replace(/[\s().-]/g, "");
+  let phone = String(value || "").trim()
+    .replace(/[\s().-]/g, "")
+    .replace(/[^+\d]/g, "");
+
   if (phone.startsWith("00")) phone = "+" + phone.slice(2);
+
+  // Common local formats: Saudi mobile 05xxxxxxxx -> +9665xxxxxxxx
+  if (/^05\d{8}$/.test(phone)) phone = "+966" + phone.slice(1);
+
+  // Café Victor Hugo is in Tunisia: local 8-digit mobile/phone -> +216xxxxxxxx
+  if (/^\d{8}$/.test(phone)) phone = "+216" + phone;
+
+  // Accept 9665... / 216... if the guest omitted the plus sign.
+  if (/^9665\d{8}$/.test(phone)) phone = "+" + phone;
+  if (/^216\d{8}$/.test(phone)) phone = "+" + phone;
+
   if (!/^\+[1-9]\d{7,14}$/.test(phone)) return "";
   return phone;
 }
@@ -283,7 +312,7 @@ app.post("/api/reservations", async (req, res) => {
       return res.status(400).json({ ok: false, code: "INVALID_NAME", message: "اكتب اسم الحجز." });
     }
     if (!normalizedPhone) {
-      return res.status(400).json({ ok: false, code: "INVALID_PHONE", message: "اكتب رقم واتساب بصيغة دولية مثل +9665... أو +216..." });
+      return res.status(400).json({ ok: false, code: "INVALID_PHONE", message: "رقم الواتساب غير واضح. قل الرقم كاملًا، ويمكنك قول رقم سعودي يبدأ 05 أو رقم دولي يبدأ +." });
     }
     if (!Number.isInteger(party) || party < 1 || party > 30) {
       return res.status(400).json({ ok: false, code: "INVALID_PARTY_SIZE", message: "عدد الأشخاص يجب أن يكون من 1 إلى 30." });
@@ -329,8 +358,30 @@ app.post("/api/reservations", async (req, res) => {
       }
     });
   } catch (error) {
-    console.error("Reservation create error:", error);
-    return res.status(500).json({ ok: false, code: "RESERVATION_ERROR", message: "تعذر حفظ الحجز الآن. حاول مرة أخرى." });
+    console.error("Reservation create error:", {
+      message: error?.message,
+      code: error?.code,
+      detail: error?.detail,
+      constraint: error?.constraint
+    });
+    return res.status(500).json({
+      ok: false,
+      code: error?.code === "23505" ? "BOOKING_NUMBER_CONFLICT" : "RESERVATION_ERROR",
+      message: error?.code === "23505"
+        ? "صار تعارض مؤقت في رقم الحجز. حاول اعتماد الحجز مرة ثانية."
+        : "تعذر حفظ الحجز الآن. حاول مرة أخرى."
+    });
+  }
+});
+
+app.get("/api/reservations-status", async (req, res) => {
+  if (!db) return res.status(503).json({ ok: false, database: false, message: "DATABASE_URL غير مربوط." });
+  try {
+    const result = await db.query("SELECT COUNT(*)::int AS count FROM reservations");
+    return res.json({ ok: true, database: true, reservations: result.rows[0].count });
+  } catch (error) {
+    console.error("Reservations status error:", error);
+    return res.status(500).json({ ok: false, database: false, message: "تعذر الاتصال بقاعدة الحجوزات." });
   }
 });
 
