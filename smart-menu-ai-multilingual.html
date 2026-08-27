@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Café Victor Hugo — La Marsa</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#21170f;--gold:#b88935;--cream:#f7f1e7;--card:#fffdf9;--muted:#776b60}
+*{box-sizing:border-box}body{margin:0;background:var(--cream);color:var(--ink);font-family:Cairo,Arial,sans-serif}
+header{position:sticky;top:0;z-index:5;background:rgba(33,23,15,.96);color:#fff;padding:18px 5%;box-shadow:0 4px 18px #0002}
+.brand{font-family:"Playfair Display",serif;font-size:28px}.sub{opacity:.75;font-size:13px}
+nav{display:flex;gap:8px;overflow:auto;padding-top:12px}nav button{white-space:nowrap;border:1px solid #ffffff33;background:#ffffff12;color:#fff;border-radius:999px;padding:8px 12px}
+main{max-width:1200px;margin:auto;padding:28px 5%}.hero{text-align:center;padding:25px 0 35px}.hero h1{font-family:"Playfair Display",serif;font-size:42px;margin:0 0 8px}.hero p{color:var(--muted)}
+section{margin:30px 0}.section-title{font-family:"Playfair Display",serif;font-size:29px;border-bottom:1px solid #d8c7ae;padding-bottom:10px}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.card{background:var(--card);border:1px solid #eadfce;border-radius:18px;padding:18px;box-shadow:0 8px 25px #4b321011;position:relative}
+.card h3{margin:0 0 8px;font-size:20px}.desc{color:var(--muted);font-size:14px;line-height:1.8;min-height:25px}.price{position:absolute;left:16px;top:16px;background:var(--gold);color:#fff;border-radius:999px;padding:7px 11px;font-weight:800}.signature{display:inline-block;background:#21170f;color:#fff;border-radius:999px;padding:4px 8px;font-size:11px;margin-bottom:8px}
+.voice{margin-top:14px;width:100%;border:0;border-radius:12px;padding:11px;background:#21170f;color:#fff;font-family:inherit;font-weight:700;cursor:pointer}
+.modal{position:fixed;inset:0;background:#0009;display:none;align-items:center;justify-content:center;z-index:20;padding:20px}.modal.show{display:flex}.dialog{background:#fffdf9;border-radius:24px;padding:28px;max-width:460px;width:100%;text-align:center;max-height:88vh;display:flex;flex-direction:column}.orb{width:70px;height:70px;margin:14px auto;border-radius:50%;background:var(--gold);animation:pulse 1.2s infinite;flex-shrink:0}.orb.speaking{animation:pulse .5s infinite}.end{border:0;background:#9b2c2c;color:white;padding:12px 24px;border-radius:999px;font-family:inherit;font-weight:700;margin-top:14px;cursor:pointer;flex-shrink:0}@keyframes pulse{50%{transform:scale(1.12);opacity:.65}}
+#status{color:var(--muted);font-size:13px;margin:4px 0 10px}
+.transcript{text-align:right;overflow-y:auto;flex:1;min-height:60px;max-height:38vh;padding:4px 2px;display:flex;flex-direction:column;gap:8px}
+.bubble{max-width:85%;padding:10px 14px;border-radius:14px;font-size:14px;line-height:1.6;text-align:left}
+.bubble.assistant{background:#f1e6d2;align-self:flex-start;border-bottom-left-radius:4px}
+.bubble.user{background:#21170f;color:#fff;align-self:flex-end;border-bottom-right-radius:4px}
+.langRow{display:flex;gap:7px;justify-content:center;flex-wrap:wrap;margin:0 0 10px}.langBtn{border:1px solid #d8c7ae;background:#fffdf9;color:var(--ink);border-radius:999px;padding:7px 11px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer}.langBtn.active{background:var(--ink);color:#fff;border-color:var(--ink)}
+.askRow{display:flex;gap:8px;margin-top:12px;flex-shrink:0}
+.askRow input{flex:1;border:1px solid #d8c7ae;border-radius:999px;padding:11px 16px;font-family:inherit;font-size:14px}
+.askRow input:focus{outline:2px solid var(--gold)}
+.askRow button{border:0;background:var(--gold);color:#fff;border-radius:50%;width:44px;height:44px;font-size:18px;cursor:pointer;flex-shrink:0}
+.askRow button.listening{background:#9b2c2c;animation:pulse .6s infinite}
+@media(max-width:700px){.grid{grid-template-columns:1fr}.hero h1{font-size:34px}}
+</style>
+</head>
+<body>
+<header><div class="brand">Café Victor Hugo</div><div class="sub">La Marsa • Café & Restaurant</div><nav id="nav"></nav></header>
+<main><div class="hero"><h1>Bienvenue chez Victor Hugo</h1><p>منيو فاخر بلمسة فرنسية ومتوسطية — اسألي النادلة الصوتية عن أي طبق.</p></div><div id="menu"></div></main>
+<div class="modal" id="modal"><div class="dialog">
+ <h2 id="modalDish">Notre serveuse virtuelle</h2>
+ <div class="orb" id="orb"></div>
+ <p id="status">Bienvenue</p>
+ <div class="langRow" id="langRow">
+   <button class="langBtn active" data-lang="auto">Auto</button>
+   <button class="langBtn" data-lang="ar">العربية</button>
+   <button class="langBtn" data-lang="fr">Français</button>
+   <button class="langBtn" data-lang="en">English</button>
+ </div>
+ <div class="transcript" id="transcript"></div>
+ <div class="askRow">
+   <input id="askInput" type="text" placeholder="Tapez votre question… (ex: c'est épicé ?)" autocomplete="off">
+   <button id="micBtn" title="Poser la question au micro">🎤</button>
+ </div>
+ <button class="end" id="end">Terminer</button>
+</div></div>
+<script>
+const menu = [
+ {cat:"Petit Déjeuner",items:[
+  ["Le Matinal (1 pers)","café, jus, viennoiserie, mlewi, pain toasté, confiture, beurre, chocolat","15.00 DT"],
+  ["Victorien (1 pers)","Café, jus, viennoiserie, mlewi, confiture, beurre, chocolat, pain toasté, gaufre, œuf bouilli, crème légère, mini focaccia, salade et fruit de saison","42.00 DT"],
+  ["Healthy (1 pers)","Café ou thé, yaourt nature, graines de chia, fruit de saison, detox citron-pomme-menthe, tartine avocat et saumon fumé","30.00 DT"],
+  ["Le Duo Hugo (2 pers)","2 cafés, 2 jus, 2 viennoiseries, 2 mlewi, pancakes, pain perdu, omelette, œuf bénédicte, salade, charcuterie et fromage","53.00 DT"],
+  ["Le Marsois (2 pers)","2 cafés, 2 jus, 2 viennoiseries, ojja boulette, plat tunisien, charcuteries, dattes farcies, chamia, droo, rfissa, mlewi et toast","70.00 DT"]]},
+ {cat:"Cafés by Victoria Arduino",items:[
+  ["Espresso","Café espresso","8.00 DT"],["Machiatto","Espresso avec lait","9.00 DT"],["Cafe Latte","Café au lait","9.00 DT"],["Cappuchino","Café et mousse de lait","11.50 DT"],["Américain","Espresso allongé","9.50 DT"],["Caramel Machiatto","Café gourmand au caramel","10.50 DT"],["Caramel Latte","Latte au caramel","11.50 DT"],["Mokachino","Café chocolaté","12.00 DT"],["Lait Chaud au Miel","Lait chaud et miel","10.00 DT"],["Chocolat au Lait","Chocolat chaud au lait","8.50 DT"],["Café Turc","Café turc","8.50 DT"],["Bonbon Latte","Latte signature","10.50 DT"],["Bonbon Machiatto","Macchiato signature","10.50 DT"],["Spéculoos Cookies Latte","Latte spéculoos cookies","15.50 DT"],["Double Espresso","Double espresso","14.00 DT"],["Café Gourmand","Café au choix + gâteau","17.00 DT"]]},
+ {cat:"Signature Victor",items:[
+  ["Americain Glacé","Café américain glacé","11.50 DT",1],["Café Glacé","Café glacé","11.50 DT",1],["Affogato Vanille","Espresso et glace vanille","12.00 DT",1],["Affogato Pistache Vanille","Espresso, pistache et vanille","16.00 DT",1],["Iced Noisette Latte","Latte glacé noisette","12.00 DT",1],["Iced Vanille Latte","Latte glacé vanille","12.00 DT",1],["Iced Caramel Latte","Latte glacé caramel","12.00 DT",1],["Espresso Nutella Campana","Espresso et Nutella","12.00 DT",1],["Latte Nocciola","Latte noisette","12.00 DT",1]]},
+ {cat:"Frappuccino",items:[
+  ["Caramel","Frappuccino caramel","16.00 DT"],["Vanille","Frappuccino vanille","16.00 DT"],["Noisette","Frappuccino noisette","16.00 DT"],["Spéculoos","Frappuccino spéculoos","16.00 DT"],["Bueno","Frappuccino Bueno","18.00 DT"],["Oreo","Frappuccino Oreo","18.00 DT"],["Bounty","Frappuccino Bounty","18.00 DT"],["Matcha","Frappuccino matcha","21.00 DT"]]},
+ {cat:"Les Jus Frais",items:[
+  ["Citronnade","Citronnade fraîche","10.00 DT"],["Slushie","Citron, menthe","12.00 DT"],["Citronnade aux Amandes","Citronnade aux amandes","14.00 DT"],["Pomme","Jus de pomme","13.00 DT"],["Pêche","Jus de pêche","13.00 DT"],["Banane","Jus de banane","16.00 DT"],["Kiwi","Jus de kiwi","13.00 DT"],["Orange","Jus d’orange","12.00 DT"],["Ananas","Jus d’ananas","16.00 DT"],["Fraise","Jus de fraise","12.00 DT"],["Cocktail de Fruits selon saison","Fruits de saison","24.00 DT"],["Performance Boost","Banane, datte, fruit sec","21.00 DT"],["Désir","Ananas, menthe","17.00 DT"],["Banane Datte","Banane, datte","18.00 DT"],["Kiwi Banane","Kiwi, banane","18.00 DT"],["Melon","Jus de melon","13.00 DT"],["Lemon Menthe","Citron, menthe","12.00 DT"],["Grenade","Jus de grenade","13.00 DT"]]},
+ {cat:"Milkshakes",items:[
+  ["Milkshake au choix","Vanille, fraise, chocolat ou noisette","16.00 DT"],["Milkshake au choix","Ananas, cerise, framboise, fruits rouges, pêche, pomme ou passion","18.00 DT"],["Milkshake Banane","Milkshake banane","19.00 DT"],["Milkshake","Spéculoos, Bueno, Oreo, beurre de cacahuète ou Bounty","21.00 DT"],["Milkshake Banane Nutella","Banane et Nutella","23.00 DT"],["Milkshake Biscuit Framboise","Biscuit et framboise","21.00 DT"]]},
+ {cat:"Pizzas",items:[
+  ["Margherita","Pizza tomate, mozzarella et basilic","—"],["Végétarienne","Pizza végétarienne","—"],["La Reine","Pizza signature","—"],["Neptune","Pizza au thon","—"],["Calzone Italienne","Calzone italienne","—"],["Ricotta Epinards","Ricotta et épinards","—"],["Calzone Thon","Calzone au thon","—"],["Pepperoni","Pizza pepperoni","—"],["Napolitaine","Pizza napolitaine","—"],["Chipola","Pizza chipolata","—"],["Bresaola","Pizza bresaola","—"],["Mexicaine","Pizza mexicaine","—"],["Quatre Fromages","Pizza quatre fromages","—"],["Truffe","Pizza à la truffe","—"],["Burrata","Pizza burrata","—"],["Saumon","Pizza au saumon","—"],["Fruits de Mer","Pizza fruits de mer","—"]]},
+ {cat:"Burger",items:[
+  ["Burger Classique","Burger classique","22.00 DT"],["Chiken Cheese","Pain burger maison, poulet, tomates confites, fromage, salade et oignon caramélisé","21.00 DT"],["Burger Truffe","Pain maison, steak haché, crème de truffes, fromage, roquette, tomates séchées et oignon caramélisé","26.00 DT"]]},
+ {cat:"Panini",items:[
+  ["Pannini Thon","Panini au thon","17.00 DT"],["Pannini Jambon","Panini au jambon","17.00 DT"],["Pannini Poulet","Panini au poulet","18.00 DT"],["Pannini au Saumon","Saumon fumé, tomates marinées, huile d’olive et roquette","34.00 DT"]]},
+ {cat:"Crêpes Salées",items:[
+  ["Crêpe Fromage","Crêpe au fromage","16.00 DT"],["Crêpe Végétarienne","Crêpe végétarienne","18.00 DT"],["Crêpe Classique","Crêpe classique","18.00 DT"],["Crêpe Thon","Crêpe au thon","22.00 DT"],["Crêpe Tunisienne","Crêpe tunisienne","23.00 DT"],["Crêpe Alpolo","Crêpe Alpolo","22.00 DT"],["Crêpe Poulet Champignon","Poulet et champignons","25.00 DT"],["Crêpe Saumon","Crêpe au saumon","36.00 DT"]]},
+ {cat:"Pancakes",items:[
+  ["Pancake Caramel Beurre salé","Caramel et beurre salé","17.00 DT"],["Pancake Nutella","Nutella","20.00 DT"],["Pancake Chocolat Blanc Fruit rouges","Chocolat blanc et fruits rouges","23.00 DT"],["Pancake Nutella Banane","Nutella et banane","25.00 DT"],["Pancake Nutella Pistache","Nutella et pistache","28.00 DT"],["Pancake Nutella Spéculoos","Nutella et spéculoos","25.00 DT"]]},
+ {cat:"Salades",items:[
+  ["Salade Trio","Omek houria, salade tunisienne, salade mechouia","18.00 DT"],["Salade Greque à la Feta","Feta, tomate, olives, oignons, laitue, concombre","18.00 DT"],["Salade César","Roquette, tomates cerises, sauce césar, poulet, parmesan et pain croquant","19.00 DT"],["Salade Niçoise","Œuf, anchois, thon, légumes, olives et vinaigrette maison","28.00 DT"],["Salade Burrata","Roquette, tomates cerises, pesto, parmesan et burrata","24.00 DT"],["Salade Camembert Croustillant","Camembert, salade, tomates, balsamique et miel","29.00 DT"],["Salade Caprese","Tomates, mozzarella et huile de basilic","22.00 DT"],["Salade Fraîcheur","Salade, roquette, saumon fumé et ananas","35.00 DT"],["Salade Avocat Chevrette","Salade, roquette, tomates, chevrette et avocat","34.00 DT"]]},
+ {cat:"Entrées",items:[
+  ["Soupe à l'Oignon","Soupe à l’oignon","14.00 DT"],["Soupe de Lentilles","Soupe de lentilles","17.00 DT"],["Soupe aux Champignons","Soupe aux champignons","18.00 DT"],["Bisque de Crevettes","Bisque de crevettes","19.00 DT"],["Brik au Thon","Brik au thon","10.00 DT"],["Brik aux Chevrettes","Brik aux crevettes","11.00 DT"],["Crème de Légumes","Crème de légumes","17.00 DT"]]},
+ {cat:"Pâtes",items:[
+  ["Bolognaise","Pâtes à la sauce bolognaise","—"],["Puttanesca au Thon","Pâtes au thon","—"],["Poulet Pesto","Pâtes au poulet et pesto","—"],["Alfredo","Pâtes Alfredo","—"],["Pâte 4 Fromages","Pâtes quatre fromages","—"],["Ravioli 4 Fromage","Ravioli quatre fromages","—"],["Lasagne Bolognaise","Lasagne bolognaise","—"],["Gratin Terre et Mer","Gratin terre et mer","—"],["Tagliatelli au Saumon","Saumon fumé, épinard, crème fraîche et mozzarella","42.00 DT"],["Lasagne Saumon","Lasagne au saumon","42.00 DT"],["Spaghetti Fruits de Mer","Spaghetti fruits de mer","47.00 DT"],["Farfalle au Truffe","Champignon, mascarpone, grana padano et crème de truffe","36.00 DT"]]},
+ {cat:"Plats",items:[
+  ["Emince Poulet","Émincé de poulet","32.00 DT"],["Emince de Boeuf","Émincé de bœuf","41.00 DT"],["Dorade / loup et Légumes Grillés","Poisson et légumes grillés","46.00 DT"],["Filet de Bœuf","Filet de bœuf, sauce au choix","50.00 DT"],["Souris d'Agneau","Légumes grillés et pommes de terre écrasées","62.00 DT"],["Escalope Grillée ou Panée","Blanc de poulet, légumes sautés et riz","32.00 DT"],["Blanc de Poulet aux Épinards et à la Crème","Poulet, légumes sautés et riz","32.00 DT"],["Cordon bleu","Jambon de dinde, fromage, légumes sautés et riz","32.00 DT"]]},
+ {cat:"Desserts",items:[["Banana Split","Banane et glace","23.00 DT"],["Assiette de Fruits","Fruits frais","30.00 DT"]]}
+];
+
+const nav=document.querySelector('#nav'), root=document.querySelector('#menu');
+menu.forEach((s,i)=>{
+ const b=document.createElement('button'); b.textContent=s.cat; b.onclick=()=>document.getElementById('s'+i).scrollIntoView({behavior:'smooth'}); nav.appendChild(b);
+ const sec=document.createElement('section'); sec.id='s'+i; sec.innerHTML=`<h2 class="section-title">${s.cat}</h2><div class="grid"></div>`;
+ const grid=sec.querySelector('.grid');
+ s.items.forEach(d=>{const c=document.createElement('article'); c.className='card'; c.innerHTML=`${d[3]?'<span class="signature">Signature Victor</span>':''}<h3>${d[0]}</h3><div class="desc">${d[1]}</div><div class="price">${d[2]}</div><button class="voice">🎙️ Demander à la serveuse</button>`; c.querySelector('.voice').onclick=()=>startVoice(d); grid.appendChild(c)});
+ root.appendChild(sec);
+});
+/* ===== Serveuse virtuelle 100% navigateur — voix française, aucun compte requis ===== */
+const modal=document.querySelector('#modal'), status=document.querySelector('#status'),
+      title=document.querySelector('#modalDish'), orb=document.querySelector('#orb'),
+      transcript=document.querySelector('#transcript'), input=document.querySelector('#askInput'),
+      micBtn=document.querySelector('#micBtn'), endBtn=document.querySelector('#end'),
+      langButtons=[...document.querySelectorAll('.langBtn')];
+let currentDish=null;
+let selectedLanguage='auto';
+let lastDetectedLanguage='fr';
+
+const uiText={
+ ar:{placeholder:'اكتب سؤالك… مثال: هل الطبق حار؟',listen:'أنا أستمع…',ready:'اسأل سؤالًا آخر بالكتابة أو الميكروفون 🎤',thinking:'النادلة تفكر… ✨',micUnavailable:'🎤 الميكروفون غير مدعوم في هذا المتصفح، اكتب سؤالك.',aiUnavailable:'تعذر الاتصال بالـAI — تم استخدام الرد المحلي.',end:'إنهاء'},
+ fr:{placeholder:"Tapez votre question… (ex: c'est épicé ?)",listen:"Je vous écoute…",ready:"Posez une autre question, à l'écrit ou au micro 🎤",thinking:'La serveuse réfléchit… ✨',micUnavailable:'🎤 Micro non supporté sur ce navigateur, tapez votre question.',aiUnavailable:'AI indisponible — réponse locale utilisée.',end:'Terminer'},
+ en:{placeholder:'Type your question… e.g. is it spicy?',listen:'I’m listening…',ready:'Ask another question by text or microphone 🎤',thinking:'The waitress is thinking… ✨',micUnavailable:'🎤 Microphone is not supported in this browser. Type your question.',aiUnavailable:'AI unavailable — local fallback used.',end:'End'}
+};
+
+function detectLanguage(text){
+ if(/[\u0600-\u06FF]/.test(text||'')) return 'ar';
+ if(/[àâçéèêëîïôùûüÿœæ]/i.test(text||'') || /\b(bonjour|merci|prix|plat|avec|sans|pour|je|vous|est|une|des|du|de|le|la)\b/i.test(text||'')) return 'fr';
+ return 'en';
+}
+function activeLanguage(text=''){
+ if(selectedLanguage!=='auto') return selectedLanguage;
+ if(text) lastDetectedLanguage=detectLanguage(text);
+ return lastDetectedLanguage || 'fr';
+}
+function speechLocale(lang){ return lang==='ar'?'ar-SA':lang==='en'?'en-US':'fr-FR'; }
+function refreshLanguageUI(){
+ const lang=activeLanguage();
+ const t=uiText[lang];
+ input.placeholder=t.placeholder; endBtn.textContent=t.end;
+ langButtons.forEach(b=>b.classList.toggle('active',b.dataset.lang===selectedLanguage));
+ if(recognition) recognition.lang=speechLocale(lang);
+}
+langButtons.forEach(b=>b.addEventListener('click',()=>{
+ selectedLanguage=b.dataset.lang;
+ if(selectedLanguage!=='auto') lastDetectedLanguage=selectedLanguage;
+ refreshLanguageUI();
+ status.textContent=uiText[activeLanguage()].ready;
+}));
+
+/* --- اختيار صوت مناسب حسب اللغة --- */
+let availableVoices=[];
+function loadVoices(){
+ if(!('speechSynthesis' in window)) return;
+ availableVoices=speechSynthesis.getVoices();
+}
+function pickVoice(lang){
+ const locale=speechLocale(lang).toLowerCase();
+ const base=lang.toLowerCase();
+ return availableVoices.find(v=>v.lang.toLowerCase()===locale)
+   || availableVoices.find(v=>v.lang.toLowerCase().startsWith(base))
+   || null;
+}
+if('speechSynthesis' in window){loadVoices(); speechSynthesis.onvoiceschanged=loadVoices;}
+
+function speak(text){
+ if(!('speechSynthesis' in window)) return;
+ speechSynthesis.cancel();
+ const lang=activeLanguage(text);
+ const u=new SpeechSynthesisUtterance(text);
+ u.lang=speechLocale(lang);
+ const voice=pickVoice(lang); if(voice) u.voice=voice;
+ u.rate=lang==='ar'?0.96:1; u.pitch=1.03;
+ orb.classList.add('speaking');
+ u.onend=()=>orb.classList.remove('speaking');
+ speechSynthesis.speak(u);
+}
+
+/* --- Reconnaissance vocale (Chrome/Edge). Repli clavier si indisponible --- */
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+let recognition=null;
+if(SR){
+ recognition=new SR(); recognition.lang=speechLocale(activeLanguage()); recognition.interimResults=false; recognition.maxAlternatives=1;
+ recognition.onresult=e=>{ input.value=e.results[0][0].transcript; if(selectedLanguage==='auto') lastDetectedLanguage=detectLanguage(input.value); refreshLanguageUI(); micBtn.classList.remove('listening'); ask(); };
+ recognition.onerror=()=>{ micBtn.classList.remove('listening'); status.textContent=uiText[activeLanguage()].micUnavailable; };
+ recognition.onend=()=>micBtn.classList.remove('listening');
+}else{
+ micBtn.title='Microphone / ميكروفون';
+}
+micBtn.onclick=()=>{
+ if(!recognition){ status.textContent=uiText[activeLanguage()].micUnavailable; return; }
+ recognition.lang=speechLocale(activeLanguage());
+ micBtn.classList.add('listening'); status.textContent=uiText[activeLanguage()].listen;
+ try{ recognition.start(); }catch(e){}
+};
+
+/* --- Le "cerveau" : répond à partir des infos du plat déjà présentes dans le menu --- */
+function normalize(s){return (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');}
+function generateAnswer(dish, question){
+ const [name,desc,price]=dish, q=normalize(question), d=normalize(desc);
+ const meatWords=['poulet','boeuf','viande','jambon','thon','saumon','crevette','anchois','dinde','agneau','bacon','charcuterie','bresaola','pepperoni'];
+ const containsMeat=meatWords.some(w=>d.includes(w));
+
+ if(/allerg|gluten|noix|lactose|arachide/.test(q))
+  return `Je n'ai pas la liste complète des allergènes sous les yeux pour ${name}. Pour toute allergie, demandez confirmation à notre équipe en salle avant de commander, par précaution.`;
+ if(/epic|piment|pic[ea]/.test(q))
+  return `D'après notre carte, ${name} n'est pas signalé comme épicé. Si vous êtes sensible aux épices, n'hésitez pas à le confirmer avec notre équipe en cuisine.`;
+ if(/vege|vegetarien|viande dedans|y a de la viande/.test(q))
+  return containsMeat ? `${name} contient de la viande ou du poisson : ${desc}.` : `D'après la composition indiquée, ${name} ne semble pas contenir de viande — mais vérifiez avec notre équipe si vous suivez un régime strict.`;
+ if(/prix|coute|combien ca coute/.test(q))
+  return (price && price!=='—') ? `${name} est à ${price}.` : `Je n'ai pas de prix fixe affiché pour ${name}, notre équipe en salle pourra vous renseigner.`;
+ if(/portion|personne|taille/.test(q)){
+  const m=name.match(/\((\d+)\s*pers/i);
+  return m ? `${name} est prévu pour ${m[1]} personne${m[1]>1?'s':''}.` : `${name} est servi en portion individuelle.`;
+ }
+ if(/ingredient|compose|contient|dedans|c'est quoi/.test(q))
+  return `${name} est composé de : ${desc}.`;
+
+ return `Pour ${name}, voici ce que je peux vous dire : ${desc}. Pour une question plus précise, notre équipe en salle se fera un plaisir de vous répondre.`;
+}
+
+function addBubble(role, text){
+ const b=document.createElement('div'); b.className='bubble '+role; b.textContent=text;
+ transcript.appendChild(b); transcript.scrollTop=transcript.scrollHeight;
+}
+
+/* --- AI حقيقي عبر الخادم: المفتاح يبقى خارج المتصفح --- */
+let conversationHistory=[];
+
+function compactMenu(){
+ return menu.map(section=>({
+   category:section.cat,
+   items:section.items.map(d=>({name:d[0],description:d[1],price:d[2]}))
+ }));
+}
+
+async function askAI(question){
+ const payload={
+   question,
+   dish: currentDish ? {name:currentDish[0],description:currentDish[1],price:currentDish[2]} : null,
+   menu: compactMenu(),
+   history: conversationHistory.slice(-10),
+   language: selectedLanguage,
+   detectedLanguage: activeLanguage(question)
+ };
+
+ const res=await fetch('/api/ai',{
+   method:'POST',
+   headers:{'Content-Type':'application/json'},
+   body:JSON.stringify(payload)
+ });
+ if(!res.ok){
+   let details='';
+   try{ details=(await res.json()).error||''; }catch(e){}
+   throw new Error(details || `HTTP ${res.status}`);
+ }
+ const data=await res.json();
+ if(!data.answer) throw new Error('Réponse AI vide');
+ return data.answer;
+}
+
+async function ask(){
+ const q=(input.value||'').trim();
+ if(!q || !currentDish) return;
+ addBubble('user', q); input.value='';
+ if(selectedLanguage==='auto') lastDetectedLanguage=detectLanguage(q);
+ refreshLanguageUI();
+ conversationHistory.push({role:'user',content:q});
+ status.textContent=uiText[activeLanguage(q)].thinking;
+ input.disabled=true; micBtn.disabled=true;
+ try{
+   const answer=await askAI(q);
+   addBubble('assistant', answer);
+   conversationHistory.push({role:'assistant',content:answer});
+   speak(answer);
+   status.textContent=uiText[activeLanguage(answer)].ready;
+ }catch(err){
+   console.error(err);
+   const fallback=generateAnswer(currentDish,q);
+   addBubble('assistant', fallback);
+   speak(fallback);
+   status.textContent=uiText[activeLanguage()].aiUnavailable;
+ }finally{
+   input.disabled=false; micBtn.disabled=false; input.focus();
+ }
+}
+input.addEventListener('keydown', e=>{ if(e.key==='Enter' && !input.disabled) ask(); });
+
+function startVoice(d){
+ currentDish=d; conversationHistory=[]; title.textContent=d[0]; modal.classList.add('show');
+ transcript.innerHTML=''; input.value=''; refreshLanguageUI();
+ const lang=activeLanguage();
+ const intros={
+   ar:`مرحبًا! أنا نادلتك الافتراضية. أنت تشاهد ${d[0]}. الوصف: ${d[1]}. اسألني عن المكونات أو السعر أو المقارنة أو الترشيحات.`,
+   fr:`Bonjour ! Je suis votre serveuse virtuelle. Vous regardez ${d[0]}. ${d[1]}. Posez-moi une question : ingrédients, prix, comparaison ou recommandation.`,
+   en:`Hello! I’m your virtual waitress. You’re viewing ${d[0]}. ${d[1]}. Ask me about ingredients, price, comparisons, or recommendations.`
+ };
+ const intro=intros[lang];
+ addBubble('assistant', intro); conversationHistory.push({role:'assistant',content:intro}); speak(intro);
+ status.textContent=uiText[lang].ready;
+}
+
+refreshLanguageUI();
+
+endBtn.onclick=()=>{
+ if('speechSynthesis' in window) speechSynthesis.cancel();
+ if(recognition){ try{recognition.stop();}catch(e){} }
+ modal.classList.remove('show'); currentDish=null;
+};
+</script></body></html>

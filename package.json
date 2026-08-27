@@ -1,0 +1,10 @@
+{
+  "name": "smart-menu-ai",
+  "private": true,
+  "type": "module",
+  "scripts": {"start": "node server.js"},
+  "dependencies": {
+    "express": "^5.1.0",
+    "openai": "^5.0.0"
+  }
+}
