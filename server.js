@@ -124,7 +124,7 @@ app.post("/api/realtime-call", async (req, res) => {
           },
           transcription: {
             model: "gpt-4o-mini-transcribe",
-            language: ["ar","fr","en"].includes(language) ? language : undefined
+            language: ["ar", "fr", "en"].includes(language) ? language : undefined
           }
         },
         output: {
@@ -133,20 +133,60 @@ app.post("/api/realtime-call", async (req, res) => {
       }
     };
 
-    const call = await openai.realtime.calls.create({ sdp, session });
-    const answerSdp = await call.text();
+    // Call the official Realtime WebRTC endpoint directly.
+    // This avoids depending on a particular OpenAI Node SDK version.
+    const form = new FormData();
+    form.append(
+      "sdp",
+      new Blob([sdp], { type: "application/sdp" }),
+      "offer.sdp"
+    );
+    form.append(
+      "session",
+      new Blob([JSON.stringify(session)], { type: "application/json" }),
+      "session.json"
+    );
+
+    const openaiResponse = await fetch(
+      "https://api.openai.com/v1/realtime/calls",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`
+        },
+        body: form
+      }
+    );
+
+    const answerText = await openaiResponse.text();
+
+    if (!openaiResponse.ok) {
+      let message = answerText || `OpenAI Realtime HTTP ${openaiResponse.status}`;
+      let code = "REALTIME_API_ERROR";
+      try {
+        const parsed = JSON.parse(answerText);
+        message = parsed?.error?.message || parsed?.message || message;
+        code = parsed?.error?.code || parsed?.error?.type || code;
+      } catch (_) {}
+
+      console.error("Realtime API error:", openaiResponse.status, answerText);
+      return res.status(openaiResponse.status).json({
+        ok: false,
+        code,
+        message
+      });
+    }
 
     return res.json({
       ok: true,
-      sdp: answerSdp
+      sdp: answerText
     });
   } catch (error) {
     console.error("Realtime call error:", error);
-    const e = normalizeOpenAIError(error);
-    return res.status(e.status || 500).json({
+    return res.status(500).json({
       ok: false,
-      code: e.code,
-      message: e.message
+      code: "REALTIME_SERVER_ERROR",
+      message: error?.message || "تعذر تشغيل المحادثة الصوتية."
     });
   }
 });
