@@ -1,6 +1,6 @@
 {
   "name": "smart-menu-ai",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "private": true,
   "main": "server.js",
   "type": "commonjs",
@@ -13,6 +13,8 @@
   "dependencies": {
     "express": "^5.1.0",
     "multer": "^2.0.2",
-    "openai": "^6.0.0"
+    "openai": "^6.0.0",
+    "pg": "^8.13.1",
+    "luxon": "^3.5.0"
   }
 }
