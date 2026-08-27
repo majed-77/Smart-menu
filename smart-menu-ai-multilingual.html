@@ -79,11 +79,13 @@ main{max-width:1280px;margin:auto;padding:22px 5% 60px}
 .cardBody{padding:16px;display:flex;flex-direction:column;flex:1}
 .card h3{margin:0 0 7px;font-size:19px;line-height:1.45}
 .desc{color:var(--muted);font-size:13px;line-height:1.75;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;min-height:68px}
-.voice{
-  margin-top:14px;width:100%;border:0;border-radius:14px;padding:11px 13px;background:var(--dark);color:#fff;
-  font-weight:700;cursor:pointer;transition:.2s
+.globalWaiter{
+  position:fixed;inset-inline-end:20px;bottom:22px;z-index:25;border:0;border-radius:999px;
+  padding:14px 18px;background:var(--gold);color:#fff;font-weight:800;font-size:15px;cursor:pointer;
+  box-shadow:0 12px 32px #0003;display:flex;align-items:center;gap:8px;transition:.2s
 }
-.voice:hover{background:#2b2118}
+.globalWaiter:hover{transform:translateY(-2px);box-shadow:0 16px 36px #0004}
+@media(max-width:640px){.globalWaiter{inset-inline:14px;bottom:14px;justify-content:center;width:calc(100% - 28px)}}
 .emptyState{display:none;text-align:center;padding:45px 20px;color:var(--muted)}
 .overlay{position:fixed;inset:0;background:#000b;z-index:40;display:flex;align-items:center;justify-content:center;padding:20px}
 .overlay.hidden{display:none}
@@ -168,6 +170,8 @@ main{max-width:1280px;margin:auto;padding:22px 5% 60px}
   <div id="menu"></div>
   <div class="emptyState" id="emptyState">لا توجد نتائج مطابقة.</div>
 </main>
+
+<button class="globalWaiter" id="globalWaiter" type="button">🎙️ سارة</button>
 
 <div class="modal" id="modal">
   <div class="dialog">
@@ -256,7 +260,8 @@ const menu = [
 const TEXT={
  ar:{
   hero:'اسأل النادلة بالصوت أو الكتابة.',
-  askWaiter:'🎙️ اطلب النادلة',
+  askWaiter:'🎙️ سارة',
+  waiterGeneral:'سارة — النادلة',
   siteLang:'🌐 العربية',
   waiterTitle:'بأي لغة ترغب في التحدث مع النادلة؟',
   waiterSub:'اختر اللغة وسأرحب بك ثم يمكنك التحدث مباشرة.',
@@ -274,11 +279,12 @@ const TEXT={
   quotaError:'حساب OpenAI API لا يملك رصيدًا كافيًا أو تم تجاوز الحصة. أضف وسيلة دفع/رصيد في منصة OpenAI ثم جرّب مرة أخرى.',
   permissionError:'مفتاح OpenAI لا يملك صلاحية استخدام هذا الموديل.',
   serverError:'حدث خطأ في خادم الذكاء الاصطناعي. راجع Render Logs.',
-  greet:(dish)=>`هلا والله 👋 أنا نادلتك. وش حاب تعرف عن ${dish[0]}؟`
+  greet:(dish)=>`هلا والله 👋 معك سارة. وش حاب تعرف عن ${dish[0]}؟`
  },
  fr:{
   hero:'Menu intelligent — appelez la serveuse virtuelle et parlez-lui au micro ou par écrit.',
-  askWaiter:'🎙️ Appeler la serveuse',
+  askWaiter:'🎙️ Sara — la serveuse',
+  waiterGeneral:'Sara — votre serveuse',
   siteLang:'🌐 Français',
   waiterTitle:'Dans quelle langue souhaitez-vous parler avec la serveuse ?',
   waiterSub:'Choisissez une langue, je vous accueillerai puis vous pourrez parler.',
@@ -300,7 +306,8 @@ const TEXT={
  },
  en:{
   hero:'Smart menu — call the virtual waitress and speak by microphone or text.',
-  askWaiter:'🎙️ Call the waitress',
+  askWaiter:'🎙️ Sara — Waitress',
+  waiterGeneral:'Sara — Your Waitress',
   siteLang:'🌐 English',
   waiterTitle:'Which language would you like to use with the waitress?',
   waiterSub:'Choose a language and I’ll welcome you, then you can start speaking.',
@@ -506,7 +513,7 @@ function applySiteLanguage(lang){
  document.querySelector('#waiterLangTitle').textContent=TEXT[lang].waiterTitle;
  document.querySelector('#waiterLangSubtitle').textContent=TEXT[lang].waiterSub;
  cancelWaiter.textContent=TEXT[lang].close;
- document.querySelectorAll('.voice').forEach(b=>b.textContent=TEXT[lang].askWaiter);
+ const gw=document.querySelector('#globalWaiter'); if(gw) gw.textContent=TEXT[lang].askWaiter;
  refreshMenuLanguage();
  updateSearchPlaceholder();
  welcomeOverlay.classList.add('hidden');
@@ -519,6 +526,8 @@ document.querySelectorAll('[data-site-lang]').forEach((btn)=>{
  });
 });
 document.querySelector('#changeSiteLang').onclick=()=>welcomeOverlay.classList.remove('hidden');
+const globalWaiter=document.querySelector('#globalWaiter');
+if(globalWaiter) globalWaiter.onclick=()=>openWaiter();
 
 menu.forEach((s,i)=>{
  const b=document.createElement('button');
@@ -552,10 +561,8 @@ menu.forEach((s,i)=>{
      <div class="cardBody">
        <h3>${d[0]}</h3>
        <div class="desc">${d[1]}</div>
-       <button class="voice">${TEXT[siteLanguage||'ar'].askWaiter}</button>
      </div>`;
 
-   c.querySelector('.voice').onclick=()=>openWaiter(d);
    grid.appendChild(c);
  });
 
@@ -585,27 +592,29 @@ function closeRealtime(){
 
 function realtimeInstructions(){
   const lang=waiterLanguage;
-  const dishName=translateMenuText(currentDish[0],lang);
-  const dishDesc=translateMenuText(currentDish[1],lang);
-  const visiblePrice=lang==='ar'?displayPrice(currentDish[2],'ar'):currentDish[2];
+  const fullMenu=compactMenu();
 
   const languageRule=
     lang==='ar'
-      ?`تكلم باللهجة السعودية البيضاء الطبيعية فقط، وتميل بشكل خفيف للهجة النجدية. صوتك أنثوي واضح ومشرق ودافئ، والنطق واضح وغير مكتوم، والسرعة متوسطة وهادية شوي. خلك مثل نادلة سعودية شابة وراقية تتكلم بعفوية. استخدم عبارات سعودية طبيعية مثل: هلا، وش ودك، أبشر، تمام، من عيوني، من غير مبالغة. تجنب تمامًا اللهجة المصرية والشامية والتونسية، ولا تستخدم الفصحى الرسمية إلا إذا احتجت توضيح دقيق. لا تمط الكلمات ولا تكثر من الهمهمة.`
+      ?`تكلمي بلهجة سعودية بيضاء طبيعية تميل لنجد، بنبرة دافئة وواضحة. استخدمي كلام يومي مثل: هلا، أبشري/أبشر، وش ودك، تبي، تمام، من عيوني، بدون مبالغة. تجنبي الفصحى الرسمية واللهجات المصرية والشامية والتونسية.`
       :lang==='fr'
       ?`Parle uniquement en français naturel, chaleureux et conversationnel.`
       :`Speak only in natural, warm conversational English.`;
 
-  return `أنت النادلة الصوتية لمقهى Café Victor Hugo في المرسى.
+  return `اسمك سارة. أنت النادلة الصوتية العامة لمقهى Café Victor Hugo في المرسى.
 ${languageRule}
-تكلم كإنسان حقيقي وليس كمساعد آلي.
-خلي الرد غالبًا جملة أو جملتين، واسأل سؤال متابعة قصير إذا احتجت.
-لا تخترع مكونات أو حساسية أو أسعار غير موجودة في المنيو.
-الطبق الحالي: ${dishName}.
-الوصف: ${dishDesc}.
-السعر الظاهر للعميل: ${visiblePrice}.
-${lang==='ar'?'الأسعار المعروضة بالعربية محولة تقريبياً من الدينار التونسي إلى الريال السعودي.':''}
-إذا بدأ العميل يتكلم أثناء كلامك، توقف فورًا واسمعه.`;
+عرّفي نفسك دائمًا باسم سارة عند الترحيب الأول فقط. أنت مسؤولة عن المنيو كامل، ولست مرتبطة بصنف محدد.
+افهمي كل الأصناف والأقسام والأسعار والمكونات الموجودة في بيانات المنيو أدناه.
+إذا سأل العميل عن اقتراح، قارني بين الأصناف المناسبة حسب ذوقه وميزانيته وعدد الأشخاص.
+إذا سأل عن سعر غير مدرج بعلامة — فقولي إن السعر غير مدرج.
+لا تخترعي مكونات أو حساسية أو أسعار أو توفر غير موجود في المنيو.
+${lang==='ar'?'إذا ذكرتِ السعر للعميل العربي، استخدمي السعر الظاهر له بالريال السعودي تقريبياً عند توفر سعر رقمي، ويمكنك ذكر أنه تقريبي إذا احتجت.':''}
+تكلمي كإنسانة حقيقية وليس كمساعد آلي.
+خلي الرد غالبًا جملة أو جملتين، واسألي سؤال متابعة قصير إذا احتجت.
+إذا بدأ العميل يتكلم أثناء كلامك، توقفي فورًا واسمعيه.
+
+بيانات المنيو كاملة:
+${JSON.stringify(fullMenu)}`;
 }
 
 function handleRealtimeEvent(event){
@@ -716,10 +725,10 @@ async function startRealtime(){
         response:{
           instructions:
             waiterLanguage==='ar'
-              ?`رحّب بجملة قصيرة جدًا وبلهجة سعودية بيضاء طبيعية، بنبرة دافئة وواضحة، مثل: هلا والله، أنا معك. وش ودك تعرف عن ${translateMenuText(currentDish[0],'ar')}؟ لا تستخدم فصحى ولا لهجة غير سعودية.`
+              ?`ابدئي بترحيب قصير وطبيعي باللهجة السعودية، واذكري اسم المطعم واسمك بوضوح. قولي: هلا والله، حياك في Café Victor Hugo، معك سارة، كيف أقدر أخدمك؟ لا تقولي كلمة نادلتك في الترحيب، ولا تذكري أي تفاصيل تقنية.`
               :waiterLanguage==='fr'
-              ?`Accueille très brièvement le client et demande ce qu'il veut savoir sur ${translateMenuText(currentDish[0],'fr')}.`
-              :`Give a very brief welcome and ask what the guest wants to know about ${translateMenuText(currentDish[0],'en')}.`
+              ?`Accueille brièvement le client, mentionne clairement le restaurant Café Victor Hugo et présente-toi comme Sara, sa serveuse. Puis demande comment tu peux l'aider avec le menu.`
+              :`Give a very brief welcome, clearly mention Café Victor Hugo, introduce yourself as Sara, the guest's waitress, then ask how you can help with the menu.`
         }
       }));
     });
@@ -759,8 +768,8 @@ async function startRealtime(){
   }
 }
 
-function openWaiter(d){
- currentDish=d; conversationHistory=[];
+function openWaiter(){
+ currentDish=null; conversationHistory=[];
  waiterLanguage=siteLanguage||'ar'; permissionHelp.classList.remove('show');
  waiterLangStep.classList.remove('hidden'); chatStep.classList.add('hidden'); modal.classList.add('show');
 }
@@ -770,7 +779,7 @@ document.querySelectorAll('[data-waiter-lang]').forEach(b=>b.onclick=async()=>{
  waiterLangStep.classList.add('hidden');
  chatStep.classList.remove('hidden');
 
- title.textContent=translateMenuText(currentDish[0],waiterLanguage);
+ title.textContent=TEXT[waiterLanguage].waiterGeneral;
 
  const t=TEXT[waiterLanguage];
  input.placeholder=t.placeholder;
@@ -858,7 +867,7 @@ async function fetchJSON(url,options,timeout=45000){
 async function askAI(question){
  return fetchJSON('/api/ai',{
   method:'POST',headers:{'Content-Type':'application/json'},
-  body:JSON.stringify({question,dish:{name:translateMenuText(currentDish[0],waiterLanguage),description:translateMenuText(currentDish[1],waiterLanguage),price:currentDish[2]},menu:compactMenu(),history:conversationHistory.slice(-10),language:waiterLanguage})
+  body:JSON.stringify({question,dish:null,menu:compactMenu(),history:conversationHistory.slice(-10),language:waiterLanguage})
  });
 }
 
