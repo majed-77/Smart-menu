@@ -56,7 +56,6 @@ app.get("/api/diagnostics", async (req, res) => {
   try {
     const response = await openai.responses.create({
       model: "gpt-4o-mini",
-      realtimeModel: "gpt-realtime-1.5",
       input: "Reply with exactly: OK",
       max_output_tokens: 16
     });
@@ -135,16 +134,23 @@ app.post("/api/realtime-call", async (req, res) => {
 
     // Call the official Realtime WebRTC endpoint directly.
     // This avoids depending on a particular OpenAI Node SDK version.
-    const form = new FormData();
-    form.append(
-      "sdp",
-      new Blob([sdp], { type: "application/sdp" }),
-      "offer.sdp"
-    );
-    form.append(
-      "session",
-      new Blob([JSON.stringify(session)], { type: "application/json" }),
-      "session.json"
+    // IMPORTANT: OpenAI expects these multipart parts as normal form fields
+    // with explicit content types, not as file uploads with filenames.
+    // Node's FormData + Blob adds filename=... and OpenAI may parse the
+    // request as files instead of the required `sdp` field. Build multipart
+    // explicitly so it matches the documented curl request exactly.
+    const boundary = `----SmartMenuRealtime${Date.now().toString(16)}`;
+    const multipartBody = Buffer.from(
+      `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="sdp"\r\n` +
+      `Content-Type: application/sdp\r\n\r\n` +
+      String(sdp) + `\r\n` +
+      `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="session"\r\n` +
+      `Content-Type: application/json\r\n\r\n` +
+      JSON.stringify(session) + `\r\n` +
+      `--${boundary}--\r\n`,
+      "utf8"
     );
 
     const openaiResponse = await fetch(
@@ -152,9 +158,11 @@ app.post("/api/realtime-call", async (req, res) => {
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${apiKey}`
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+          "Content-Length": String(multipartBody.length)
         },
-        body: form
+        body: multipartBody
       }
     );
 
