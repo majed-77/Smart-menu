@@ -99,20 +99,27 @@ menu.forEach((s,i)=>{
  s.items.forEach(d=>{const c=document.createElement('article'); c.className='card'; c.innerHTML=`${d[3]?'<span class="signature">Signature Victor</span>':''}<h3>${d[0]}</h3><div class="desc">${d[1]}</div><div class="price">${d[2]}</div><button class="voice">🎙️ Demander à la serveuse</button>`; c.querySelector('.voice').onclick=()=>startVoice(d); grid.appendChild(c)});
  root.appendChild(sec);
 });
-/* ===== Serveuse virtuelle 100% navigateur — voix française, aucun compte requis ===== */
+/* ===== Serveuse virtuelle — OpenAI + audio compatible Safari/iPhone/Chrome ===== */
 const modal=document.querySelector('#modal'), status=document.querySelector('#status'),
       title=document.querySelector('#modalDish'), orb=document.querySelector('#orb'),
       transcript=document.querySelector('#transcript'), input=document.querySelector('#askInput'),
       micBtn=document.querySelector('#micBtn'), endBtn=document.querySelector('#end'),
       langButtons=[...document.querySelectorAll('.langBtn')];
+
 let currentDish=null;
 let selectedLanguage='auto';
 let lastDetectedLanguage='fr';
+let conversationHistory=[];
+let mediaRecorder=null;
+let mediaStream=null;
+let audioChunks=[];
+let isRecording=false;
+let currentAudio=null;
 
 const uiText={
- ar:{placeholder:'اكتب سؤالك… مثال: هل الطبق حار؟',listen:'أنا أستمع…',ready:'اسأل سؤالًا آخر بالكتابة أو الميكروفون 🎤',thinking:'النادلة تفكر… ✨',micUnavailable:'🎤 الميكروفون غير مدعوم في هذا المتصفح، اكتب سؤالك.',aiUnavailable:'تعذر الاتصال بالـAI — تم استخدام الرد المحلي.',end:'إنهاء'},
- fr:{placeholder:"Tapez votre question… (ex: c'est épicé ?)",listen:"Je vous écoute…",ready:"Posez une autre question, à l'écrit ou au micro 🎤",thinking:'La serveuse réfléchit… ✨',micUnavailable:'🎤 Micro non supporté sur ce navigateur, tapez votre question.',aiUnavailable:'AI indisponible — réponse locale utilisée.',end:'Terminer'},
- en:{placeholder:'Type your question… e.g. is it spicy?',listen:'I’m listening…',ready:'Ask another question by text or microphone 🎤',thinking:'The waitress is thinking… ✨',micUnavailable:'🎤 Microphone is not supported in this browser. Type your question.',aiUnavailable:'AI unavailable — local fallback used.',end:'End'}
+ ar:{placeholder:'اكتب سؤالك… مثال: هل الطبق حار؟',listen:'أنا أستمع… اضغط مرة أخرى لإرسال التسجيل 🎤',ready:'اسأل سؤالًا آخر بالكتابة أو الميكروفون 🎤',thinking:'النادلة تفكر… ✨',transcribing:'جارٍ فهم كلامك… 🎧',micUnavailable:'تعذر تشغيل الميكروفون. تأكد من السماح للموقع باستخدامه.',aiUnavailable:'تعذر الاتصال بالـAI. حاول مرة أخرى.',end:'إنهاء'},
+ fr:{placeholder:"Tapez votre question… (ex: c'est épicé ?)",listen:"Je vous écoute… appuyez encore pour envoyer 🎤",ready:"Posez une autre question, à l'écrit ou au micro 🎤",thinking:'La serveuse réfléchit… ✨',transcribing:'Je comprends votre message… 🎧',micUnavailable:"Impossible d'utiliser le micro. Vérifiez l'autorisation du navigateur.",aiUnavailable:"Impossible de joindre l'AI. Réessayez.",end:'Terminer'},
+ en:{placeholder:'Type your question… e.g. is it spicy?',listen:'I’m listening… tap again to send 🎤',ready:'Ask another question by text or microphone 🎤',thinking:'The waitress is thinking… ✨',transcribing:'Understanding your voice… 🎧',micUnavailable:'Unable to use the microphone. Check browser permission.',aiUnavailable:'Unable to reach the AI. Please try again.',end:'End'}
 };
 
 function detectLanguage(text){
@@ -123,15 +130,14 @@ function detectLanguage(text){
 function activeLanguage(text=''){
  if(selectedLanguage!=='auto') return selectedLanguage;
  if(text) lastDetectedLanguage=detectLanguage(text);
- return lastDetectedLanguage || 'fr';
+ return lastDetectedLanguage||'fr';
 }
-function speechLocale(lang){ return lang==='ar'?'ar-SA':lang==='en'?'en-US':'fr-FR'; }
 function refreshLanguageUI(){
- const lang=activeLanguage();
- const t=uiText[lang];
- input.placeholder=t.placeholder; endBtn.textContent=t.end;
+ const lang=activeLanguage(), t=uiText[lang];
+ input.placeholder=t.placeholder;
+ endBtn.textContent=t.end;
  langButtons.forEach(b=>b.classList.toggle('active',b.dataset.lang===selectedLanguage));
- if(recognition) recognition.lang=speechLocale(lang);
+ document.querySelector('.dialog').dir=lang==='ar'?'rtl':'ltr';
 }
 langButtons.forEach(b=>b.addEventListener('click',()=>{
  selectedLanguage=b.dataset.lang;
@@ -140,84 +146,14 @@ langButtons.forEach(b=>b.addEventListener('click',()=>{
  status.textContent=uiText[activeLanguage()].ready;
 }));
 
-/* --- اختيار صوت مناسب حسب اللغة --- */
-let availableVoices=[];
-function loadVoices(){
- if(!('speechSynthesis' in window)) return;
- availableVoices=speechSynthesis.getVoices();
+function addBubble(role,text){
+ const b=document.createElement('div');
+ b.className='bubble '+role;
+ b.textContent=text;
+ b.dir=detectLanguage(text)==='ar'?'rtl':'ltr';
+ transcript.appendChild(b);
+ transcript.scrollTop=transcript.scrollHeight;
 }
-function pickVoice(lang){
- const locale=speechLocale(lang).toLowerCase();
- const base=lang.toLowerCase();
- return availableVoices.find(v=>v.lang.toLowerCase()===locale)
-   || availableVoices.find(v=>v.lang.toLowerCase().startsWith(base))
-   || null;
-}
-if('speechSynthesis' in window){loadVoices(); speechSynthesis.onvoiceschanged=loadVoices;}
-
-function speak(text){
- if(!('speechSynthesis' in window)) return;
- speechSynthesis.cancel();
- const lang=activeLanguage(text);
- const u=new SpeechSynthesisUtterance(text);
- u.lang=speechLocale(lang);
- const voice=pickVoice(lang); if(voice) u.voice=voice;
- u.rate=lang==='ar'?0.96:1; u.pitch=1.03;
- orb.classList.add('speaking');
- u.onend=()=>orb.classList.remove('speaking');
- speechSynthesis.speak(u);
-}
-
-/* --- Reconnaissance vocale (Chrome/Edge). Repli clavier si indisponible --- */
-const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-let recognition=null;
-if(SR){
- recognition=new SR(); recognition.lang=speechLocale(activeLanguage()); recognition.interimResults=false; recognition.maxAlternatives=1;
- recognition.onresult=e=>{ input.value=e.results[0][0].transcript; if(selectedLanguage==='auto') lastDetectedLanguage=detectLanguage(input.value); refreshLanguageUI(); micBtn.classList.remove('listening'); ask(); };
- recognition.onerror=()=>{ micBtn.classList.remove('listening'); status.textContent=uiText[activeLanguage()].micUnavailable; };
- recognition.onend=()=>micBtn.classList.remove('listening');
-}else{
- micBtn.title='Microphone / ميكروفون';
-}
-micBtn.onclick=()=>{
- if(!recognition){ status.textContent=uiText[activeLanguage()].micUnavailable; return; }
- recognition.lang=speechLocale(activeLanguage());
- micBtn.classList.add('listening'); status.textContent=uiText[activeLanguage()].listen;
- try{ recognition.start(); }catch(e){}
-};
-
-/* --- Le "cerveau" : répond à partir des infos du plat déjà présentes dans le menu --- */
-function normalize(s){return (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');}
-function generateAnswer(dish, question){
- const [name,desc,price]=dish, q=normalize(question), d=normalize(desc);
- const meatWords=['poulet','boeuf','viande','jambon','thon','saumon','crevette','anchois','dinde','agneau','bacon','charcuterie','bresaola','pepperoni'];
- const containsMeat=meatWords.some(w=>d.includes(w));
-
- if(/allerg|gluten|noix|lactose|arachide/.test(q))
-  return `Je n'ai pas la liste complète des allergènes sous les yeux pour ${name}. Pour toute allergie, demandez confirmation à notre équipe en salle avant de commander, par précaution.`;
- if(/epic|piment|pic[ea]/.test(q))
-  return `D'après notre carte, ${name} n'est pas signalé comme épicé. Si vous êtes sensible aux épices, n'hésitez pas à le confirmer avec notre équipe en cuisine.`;
- if(/vege|vegetarien|viande dedans|y a de la viande/.test(q))
-  return containsMeat ? `${name} contient de la viande ou du poisson : ${desc}.` : `D'après la composition indiquée, ${name} ne semble pas contenir de viande — mais vérifiez avec notre équipe si vous suivez un régime strict.`;
- if(/prix|coute|combien ca coute/.test(q))
-  return (price && price!=='—') ? `${name} est à ${price}.` : `Je n'ai pas de prix fixe affiché pour ${name}, notre équipe en salle pourra vous renseigner.`;
- if(/portion|personne|taille/.test(q)){
-  const m=name.match(/\((\d+)\s*pers/i);
-  return m ? `${name} est prévu pour ${m[1]} personne${m[1]>1?'s':''}.` : `${name} est servi en portion individuelle.`;
- }
- if(/ingredient|compose|contient|dedans|c'est quoi/.test(q))
-  return `${name} est composé de : ${desc}.`;
-
- return `Pour ${name}, voici ce que je peux vous dire : ${desc}. Pour une question plus précise, notre équipe en salle se fera un plaisir de vous répondre.`;
-}
-
-function addBubble(role, text){
- const b=document.createElement('div'); b.className='bubble '+role; b.textContent=text;
- transcript.appendChild(b); transcript.scrollTop=transcript.scrollHeight;
-}
-
-/* --- AI حقيقي عبر الخادم: المفتاح يبقى خارج المتصفح --- */
-let conversationHistory=[];
 
 function compactMenu(){
  return menu.map(section=>({
@@ -229,32 +165,43 @@ function compactMenu(){
 async function askAI(question){
  const payload={
    question,
-   dish: currentDish ? {name:currentDish[0],description:currentDish[1],price:currentDish[2]} : null,
-   menu: compactMenu(),
-   history: conversationHistory.slice(-10),
-   language: selectedLanguage,
-   detectedLanguage: activeLanguage(question)
+   dish:currentDish?{name:currentDish[0],description:currentDish[1],price:currentDish[2]}:null,
+   menu:compactMenu(),
+   history:conversationHistory.slice(-10),
+   language:selectedLanguage,
+   detectedLanguage:activeLanguage(question)
  };
-
- const res=await fetch('/api/ai',{
-   method:'POST',
-   headers:{'Content-Type':'application/json'},
-   body:JSON.stringify(payload)
- });
- if(!res.ok){
-   let details='';
-   try{ details=(await res.json()).error||''; }catch(e){}
-   throw new Error(details || `HTTP ${res.status}`);
- }
- const data=await res.json();
- if(!data.answer) throw new Error('Réponse AI vide');
+ const res=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+ const data=await res.json().catch(()=>({}));
+ if(!res.ok) throw new Error(data.error||`HTTP ${res.status}`);
+ if(!data.answer) throw new Error('Empty AI response');
  return data.answer;
+}
+
+async function speakAI(text){
+ try{
+   if(currentAudio){currentAudio.pause();currentAudio=null;}
+   const lang=activeLanguage(text);
+   const res=await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,language:lang})});
+   if(!res.ok) throw new Error('TTS failed');
+   const blob=await res.blob();
+   const url=URL.createObjectURL(blob);
+   const audio=new Audio(url);
+   currentAudio=audio;
+   orb.classList.add('speaking');
+   audio.onended=()=>{orb.classList.remove('speaking');URL.revokeObjectURL(url);if(currentAudio===audio)currentAudio=null;};
+   audio.onerror=()=>{orb.classList.remove('speaking');URL.revokeObjectURL(url);};
+   await audio.play();
+ }catch(err){
+   console.warn('TTS:',err);
+   orb.classList.remove('speaking');
+ }
 }
 
 async function ask(){
  const q=(input.value||'').trim();
- if(!q || !currentDish) return;
- addBubble('user', q); input.value='';
+ if(!q||!currentDish) return;
+ addBubble('user',q); input.value='';
  if(selectedLanguage==='auto') lastDetectedLanguage=detectLanguage(q);
  refreshLanguageUI();
  conversationHistory.push({role:'user',content:q});
@@ -262,21 +209,76 @@ async function ask(){
  input.disabled=true; micBtn.disabled=true;
  try{
    const answer=await askAI(q);
-   addBubble('assistant', answer);
+   addBubble('assistant',answer);
    conversationHistory.push({role:'assistant',content:answer});
-   speak(answer);
    status.textContent=uiText[activeLanguage(answer)].ready;
+   await speakAI(answer);
  }catch(err){
    console.error(err);
-   const fallback=generateAnswer(currentDish,q);
-   addBubble('assistant', fallback);
-   speak(fallback);
    status.textContent=uiText[activeLanguage()].aiUnavailable;
  }finally{
    input.disabled=false; micBtn.disabled=false; input.focus();
  }
 }
-input.addEventListener('keydown', e=>{ if(e.key==='Enter' && !input.disabled) ask(); });
+input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!input.disabled)ask();});
+
+function preferredMimeType(){
+ const types=['audio/mp4','audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus'];
+ return types.find(t=>window.MediaRecorder&&MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(t))||'';
+}
+async function startRecording(){
+ if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder){
+   status.textContent=uiText[activeLanguage()].micUnavailable; return;
+ }
+ try{
+   mediaStream=await navigator.mediaDevices.getUserMedia({audio:true});
+   const mimeType=preferredMimeType();
+   mediaRecorder=new MediaRecorder(mediaStream,mimeType?{mimeType}:undefined);
+   audioChunks=[];
+   mediaRecorder.ondataavailable=e=>{if(e.data&&e.data.size)audioChunks.push(e.data);};
+   mediaRecorder.onstop=sendRecording;
+   mediaRecorder.start();
+   isRecording=true;
+   micBtn.classList.add('listening'); micBtn.textContent='⏹';
+   status.textContent=uiText[activeLanguage()].listen;
+ }catch(err){
+   console.error(err);
+   status.textContent=uiText[activeLanguage()].micUnavailable;
+ }
+}
+function stopRecording(){
+ if(!isRecording||!mediaRecorder)return;
+ isRecording=false;
+ micBtn.classList.remove('listening'); micBtn.textContent='🎤';
+ mediaRecorder.stop();
+}
+async function sendRecording(){
+ try{
+   status.textContent=uiText[activeLanguage()].transcribing;
+   micBtn.disabled=true;
+   const type=mediaRecorder?.mimeType||'audio/webm';
+   const blob=new Blob(audioChunks,{type});
+   const ext=type.includes('mp4')?'m4a':type.includes('ogg')?'ogg':'webm';
+   const form=new FormData();
+   form.append('audio',blob,`question.${ext}`);
+   form.append('language',selectedLanguage);
+   const res=await fetch('/api/transcribe',{method:'POST',body:form});
+   const data=await res.json().catch(()=>({}));
+   if(!res.ok||!data.text)throw new Error(data.error||'Transcription failed');
+   input.value=data.text;
+   if(selectedLanguage==='auto')lastDetectedLanguage=detectLanguage(data.text);
+   refreshLanguageUI();
+   await ask();
+ }catch(err){
+   console.error(err);
+   status.textContent=uiText[activeLanguage()].micUnavailable;
+ }finally{
+   micBtn.disabled=false;
+   if(mediaStream){mediaStream.getTracks().forEach(t=>t.stop());mediaStream=null;}
+   mediaRecorder=null; audioChunks=[];
+ }
+}
+micBtn.onclick=()=>isRecording?stopRecording():startRecording();
 
 function startVoice(d){
  currentDish=d; conversationHistory=[]; title.textContent=d[0]; modal.classList.add('show');
@@ -284,19 +286,21 @@ function startVoice(d){
  const lang=activeLanguage();
  const intros={
    ar:`مرحبًا! أنا نادلتك الافتراضية. أنت تشاهد ${d[0]}. الوصف: ${d[1]}. اسألني عن المكونات أو السعر أو المقارنة أو الترشيحات.`,
-   fr:`Bonjour ! Je suis votre serveuse virtuelle. Vous regardez ${d[0]}. ${d[1]}. Posez-moi une question : ingrédients, prix, comparaison ou recommandation.`,
+   fr:`Bonjour ! Je suis votre serveuse virtuelle. Vous regardez ${d[0]}. ${d[1]}. Posez-moi une question sur les ingrédients, le prix, une comparaison ou une recommandation.`,
    en:`Hello! I’m your virtual waitress. You’re viewing ${d[0]}. ${d[1]}. Ask me about ingredients, price, comparisons, or recommendations.`
  };
  const intro=intros[lang];
- addBubble('assistant', intro); conversationHistory.push({role:'assistant',content:intro}); speak(intro);
+ addBubble('assistant',intro); conversationHistory.push({role:'assistant',content:intro});
  status.textContent=uiText[lang].ready;
+ speakAI(intro);
 }
-
 refreshLanguageUI();
 
 endBtn.onclick=()=>{
- if('speechSynthesis' in window) speechSynthesis.cancel();
- if(recognition){ try{recognition.stop();}catch(e){} }
+ if(isRecording)stopRecording();
+ if(mediaStream){mediaStream.getTracks().forEach(t=>t.stop());mediaStream=null;}
+ if(currentAudio){currentAudio.pause();currentAudio=null;}
  modal.classList.remove('show'); currentDish=null;
 };
+
 </script></body></html>
