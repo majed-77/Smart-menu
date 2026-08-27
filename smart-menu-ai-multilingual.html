@@ -2,56 +2,126 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Café Victor Hugo — La Marsa</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Café Victor Hugo — Smart Menu</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
 <style>
-:root{--ink:#21170f;--gold:#b88935;--cream:#f7f1e7;--card:#fffdf9;--muted:#776b60}
-*{box-sizing:border-box}body{margin:0;background:var(--cream);color:var(--ink);font-family:Cairo,Arial,sans-serif}
-header{position:sticky;top:0;z-index:5;background:rgba(33,23,15,.96);color:#fff;padding:18px 5%;box-shadow:0 4px 18px #0002}
-.brand{font-family:"Playfair Display",serif;font-size:28px}.sub{opacity:.75;font-size:13px}
-nav{display:flex;gap:8px;overflow:auto;padding-top:12px}nav button{white-space:nowrap;border:1px solid #ffffff33;background:#ffffff12;color:#fff;border-radius:999px;padding:8px 12px}
-main{max-width:1200px;margin:auto;padding:28px 5%}.hero{text-align:center;padding:25px 0 35px}.hero h1{font-family:"Playfair Display",serif;font-size:42px;margin:0 0 8px}.hero p{color:var(--muted)}
-section{margin:30px 0}.section-title{font-family:"Playfair Display",serif;font-size:29px;border-bottom:1px solid #d8c7ae;padding-bottom:10px}
-.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.card{background:var(--card);border:1px solid #eadfce;border-radius:18px;padding:18px;box-shadow:0 8px 25px #4b321011;position:relative}
-.card h3{margin:0 0 8px;font-size:20px}.desc{color:var(--muted);font-size:14px;line-height:1.8;min-height:25px}.price{position:absolute;left:16px;top:16px;background:var(--gold);color:#fff;border-radius:999px;padding:7px 11px;font-weight:800}.signature{display:inline-block;background:#21170f;color:#fff;border-radius:999px;padding:4px 8px;font-size:11px;margin-bottom:8px}
-.voice{margin-top:14px;width:100%;border:0;border-radius:12px;padding:11px;background:#21170f;color:#fff;font-family:inherit;font-weight:700;cursor:pointer}
-.modal{position:fixed;inset:0;background:#0009;display:none;align-items:center;justify-content:center;z-index:20;padding:20px}.modal.show{display:flex}.dialog{background:#fffdf9;border-radius:24px;padding:28px;max-width:460px;width:100%;text-align:center;max-height:88vh;display:flex;flex-direction:column}.orb{width:70px;height:70px;margin:14px auto;border-radius:50%;background:var(--gold);animation:pulse 1.2s infinite;flex-shrink:0}.orb.speaking{animation:pulse .5s infinite}.end{border:0;background:#9b2c2c;color:white;padding:12px 24px;border-radius:999px;font-family:inherit;font-weight:700;margin-top:14px;cursor:pointer;flex-shrink:0}@keyframes pulse{50%{transform:scale(1.12);opacity:.65}}
-#status{color:var(--muted);font-size:13px;margin:4px 0 10px}
-.transcript{text-align:right;overflow-y:auto;flex:1;min-height:60px;max-height:38vh;padding:4px 2px;display:flex;flex-direction:column;gap:8px}
-.bubble{max-width:85%;padding:10px 14px;border-radius:14px;font-size:14px;line-height:1.6;text-align:left}
-.bubble.assistant{background:#f1e6d2;align-self:flex-start;border-bottom-left-radius:4px}
-.bubble.user{background:#21170f;color:#fff;align-self:flex-end;border-bottom-right-radius:4px}
-.langRow{display:flex;gap:7px;justify-content:center;flex-wrap:wrap;margin:0 0 10px}.langBtn{border:1px solid #d8c7ae;background:#fffdf9;color:var(--ink);border-radius:999px;padding:7px 11px;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer}.langBtn.active{background:var(--ink);color:#fff;border-color:var(--ink)}
-.askRow{display:flex;gap:8px;margin-top:12px;flex-shrink:0}
-.askRow input{flex:1;border:1px solid #d8c7ae;border-radius:999px;padding:11px 16px;font-family:inherit;font-size:14px}
+:root{--ink:#21170f;--gold:#b88935;--cream:#f7f1e7;--card:#fffdf9;--muted:#776b60;--danger:#9b2c2c;--ok:#2f855a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--cream);color:var(--ink);font-family:Cairo,Arial,sans-serif}
+button,input{font-family:inherit}
+header{position:sticky;top:0;z-index:5;background:rgba(33,23,15,.97);color:#fff;padding:16px 5%;box-shadow:0 4px 18px #0002}
+.brandRow{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.brand{font-family:"Playfair Display",serif;font-size:28px}
+.sub{opacity:.75;font-size:13px}
+.siteLang{border:1px solid #ffffff44;background:#ffffff12;color:#fff;border-radius:999px;padding:8px 12px;cursor:pointer}
+nav{display:flex;gap:8px;overflow:auto;padding-top:12px}
+nav button{white-space:nowrap;border:1px solid #ffffff33;background:#ffffff12;color:#fff;border-radius:999px;padding:8px 12px;cursor:pointer}
+main{max-width:1200px;margin:auto;padding:28px 5%}
+.hero{text-align:center;padding:25px 0 35px}
+.hero h1{font-family:"Playfair Display",serif;font-size:42px;margin:0 0 8px}
+.hero p{color:var(--muted)}
+section{margin:30px 0}
+.section-title{font-family:"Playfair Display",serif;font-size:29px;border-bottom:1px solid #d8c7ae;padding-bottom:10px}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.card{background:var(--card);border:1px solid #eadfce;border-radius:18px;padding:18px;box-shadow:0 8px 25px #4b321011;position:relative}
+.card h3{margin:0 0 8px;font-size:20px;padding-inline-end:72px}
+.desc{color:var(--muted);font-size:14px;line-height:1.8;min-height:25px}
+.price{position:absolute;inset-inline-end:16px;top:16px;background:var(--gold);color:#fff;border-radius:999px;padding:7px 11px;font-weight:800}
+.signature{display:inline-block;background:#21170f;color:#fff;border-radius:999px;padding:4px 8px;font-size:11px;margin-bottom:8px}
+.voice{margin-top:14px;width:100%;border:0;border-radius:12px;padding:12px;background:#21170f;color:#fff;font-weight:700;cursor:pointer}
+.overlay{position:fixed;inset:0;background:#000b;z-index:40;display:flex;align-items:center;justify-content:center;padding:20px}
+.overlay.hidden{display:none}
+.welcomeCard,.dialog{background:#fffdf9;border-radius:26px;max-width:500px;width:100%;box-shadow:0 25px 70px #0005}
+.welcomeCard{padding:30px;text-align:center}
+.welcomeCard h1{font-family:"Playfair Display",serif;margin:0 0 8px}
+.welcomeCard p{color:var(--muted);line-height:1.7}
+.languageGrid{display:grid;grid-template-columns:1fr;gap:10px;margin-top:20px}
+.languageChoice{border:1px solid #dccdb8;background:white;border-radius:16px;padding:14px;font-size:16px;font-weight:700;cursor:pointer}
+.languageChoice:hover{border-color:var(--gold)}
+.modal{position:fixed;inset:0;background:#000a;display:none;align-items:center;justify-content:center;z-index:30;padding:18px}
+.modal.show{display:flex}
+.dialog{padding:24px;max-height:92vh;display:flex;flex-direction:column;text-align:center}
+.waiterLangStep h2,.chatStep h2{margin:0 0 6px}
+.waiterLangStep p{color:var(--muted)}
+.chatStep.hidden,.waiterLangStep.hidden{display:none}
+.orb{width:74px;height:74px;margin:12px auto;border-radius:50%;background:var(--gold);box-shadow:0 0 0 0 #b8893555;transition:.2s}
+.orb.speaking{animation:pulse .8s infinite}
+@keyframes pulse{50%{transform:scale(1.08);box-shadow:0 0 0 16px #b8893500}}
+#status{color:var(--muted);font-size:13px;margin:4px 0 10px;min-height:22px}
+.transcript{overflow-y:auto;flex:1;min-height:120px;max-height:38vh;padding:6px 2px;display:flex;flex-direction:column;gap:8px}
+.bubble{max-width:86%;padding:10px 14px;border-radius:14px;font-size:14px;line-height:1.7;text-align:start}
+.bubble.assistant{background:#f1e6d2;align-self:flex-start}
+.bubble.user{background:#21170f;color:#fff;align-self:flex-end}
+.askRow{display:flex;gap:8px;margin-top:12px}
+.askRow input{flex:1;border:1px solid #d8c7ae;border-radius:999px;padding:11px 16px;font-size:14px;min-width:0}
 .askRow input:focus{outline:2px solid var(--gold)}
-.askRow button{border:0;background:var(--gold);color:#fff;border-radius:50%;width:44px;height:44px;font-size:18px;cursor:pointer;flex-shrink:0}
-.askRow button.listening{background:#9b2c2c;animation:pulse .6s infinite}
-@media(max-width:700px){.grid{grid-template-columns:1fr}.hero h1{font-size:34px}}
+.micBtn{border:0;background:var(--gold);color:white;border-radius:50%;width:48px;height:48px;font-size:19px;cursor:pointer;flex-shrink:0}
+.micBtn.recording{background:var(--danger);animation:pulse .7s infinite}
+.micBtn:disabled{opacity:.5;cursor:not-allowed}
+.end{border:0;background:var(--danger);color:#fff;padding:11px 22px;border-radius:999px;font-weight:700;margin-top:12px;cursor:pointer}
+.permissionHelp{display:none;background:#fff5f5;border:1px solid #fed7d7;color:#742a2a;padding:10px;border-radius:12px;font-size:12px;line-height:1.6;margin-top:8px}
+.permissionHelp.show{display:block}
+.recordHint{font-size:11px;color:var(--muted);margin-top:6px}
+@media(max-width:700px){.grid{grid-template-columns:1fr}.hero h1{font-size:34px}.dialog{padding:18px}}
 </style>
 </head>
 <body>
-<header><div class="brand">Café Victor Hugo</div><div class="sub">La Marsa • Café & Restaurant</div><nav id="nav"></nav></header>
-<main><div class="hero"><h1>Bienvenue chez Victor Hugo</h1><p>منيو فاخر بلمسة فرنسية ومتوسطية — اسألي النادلة الصوتية عن أي طبق.</p></div><div id="menu"></div></main>
-<div class="modal" id="modal"><div class="dialog">
- <h2 id="modalDish">Notre serveuse virtuelle</h2>
- <div class="orb" id="orb"></div>
- <p id="status">Bienvenue</p>
- <div class="langRow" id="langRow">
-   <button class="langBtn active" data-lang="auto">Auto</button>
-   <button class="langBtn" data-lang="ar">العربية</button>
-   <button class="langBtn" data-lang="fr">Français</button>
-   <button class="langBtn" data-lang="en">English</button>
- </div>
- <div class="transcript" id="transcript"></div>
- <div class="askRow">
-   <input id="askInput" type="text" placeholder="Tapez votre question… (ex: c'est épicé ?)" autocomplete="off">
-   <button id="micBtn" title="Poser la question au micro">🎤</button>
- </div>
- <button class="end" id="end">Terminer</button>
-</div></div>
+<div class="overlay" id="welcomeOverlay">
+  <div class="welcomeCard">
+    <h1>Café Victor Hugo</h1>
+    <p id="welcomePrompt">اختر لغتك • Choose your language • Choisissez votre langue</p>
+    <div class="languageGrid">
+      <button class="languageChoice" data-site-lang="ar">🇸🇦 العربية</button>
+      <button class="languageChoice" data-site-lang="fr">🇫🇷 Français</button>
+      <button class="languageChoice" data-site-lang="en">🇬🇧 English</button>
+    </div>
+  </div>
+</div>
+
+<header>
+  <div class="brandRow">
+    <div><div class="brand">Café Victor Hugo</div><div class="sub">La Marsa • Café & Restaurant</div></div>
+    <button class="siteLang" id="changeSiteLang">🌐 العربية</button>
+  </div>
+  <nav id="nav"></nav>
+</header>
+
+<main>
+  <div class="hero"><h1>Bienvenue chez Victor Hugo</h1><p id="heroText"></p></div>
+  <div id="menu"></div>
+</main>
+
+<div class="modal" id="modal">
+  <div class="dialog">
+    <div class="waiterLangStep" id="waiterLangStep">
+      <h2 id="waiterLangTitle">بأي لغة ترغب في التحدث مع النادلة؟</h2>
+      <p id="waiterLangSubtitle">اختر اللغة وسأرحب بك ثم يمكنك التحدث مباشرة.</p>
+      <div class="languageGrid">
+        <button class="languageChoice" data-waiter-lang="ar">🇸🇦 العربية</button>
+        <button class="languageChoice" data-waiter-lang="fr">🇫🇷 Français</button>
+        <button class="languageChoice" data-waiter-lang="en">🇬🇧 English</button>
+      </div>
+      <button class="end" id="cancelWaiter">إغلاق</button>
+    </div>
+
+    <div class="chatStep hidden" id="chatStep">
+      <h2 id="modalDish"></h2>
+      <div class="orb" id="orb"></div>
+      <p id="status"></p>
+      <div class="transcript" id="transcript"></div>
+      <div class="askRow">
+        <input id="askInput" type="text" autocomplete="off">
+        <button class="micBtn" id="micBtn" aria-label="Microphone">🎤</button>
+      </div>
+      <div class="recordHint" id="recordHint"></div>
+      <div class="permissionHelp" id="permissionHelp"></div>
+      <button class="end" id="end">إنهاء</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const menu = [
  {cat:"Petit Déjeuner",items:[
@@ -91,216 +161,321 @@ const menu = [
  {cat:"Desserts",items:[["Banana Split","Banane et glace","23.00 DT"],["Assiette de Fruits","Fruits frais","30.00 DT"]]}
 ];
 
+const TEXT={
+ ar:{
+  hero:'منيو ذكي — اطلب النادلة الافتراضية واسألها بالصوت أو الكتابة.',
+  askWaiter:'🎙️ اطلب النادلة',
+  siteLang:'🌐 العربية',
+  waiterTitle:'بأي لغة ترغب في التحدث مع النادلة؟',
+  waiterSub:'اختر اللغة وسأرحب بك ثم يمكنك التحدث مباشرة.',
+  close:'إغلاق', end:'إنهاء',
+  placeholder:'اكتب سؤالك…',
+  ready:'جاهزة لخدمتك — اضغط الميكروفون وابدأ الكلام 🎤',
+  recording:'أستمع إليك… اضغط ⏹ عند الانتهاء.',
+  transcribing:'جارٍ فهم كلامك…',
+  thinking:'لحظة، أجهز لك الإجابة…',
+  micError:'تعذر تشغيل الميكروفون.',
+  permission:'على iPhone: افتح إعدادات الموقع في Safari واسمح للميكروفون، ثم أعد تحميل الصفحة.',
+  hint:'اضغط 🎤 وتكلم. عند سكوتك 1.5 ثانية سأرسل السؤال تلقائيًا، ويمكنك الضغط على ⏹ للإرسال فورًا.',
+  aiError:'تعذر الاتصال بالنادلة الآن. جرّب مرة أخرى.',
+  greet:(dish)=>`أهلًا وسهلًا بك في Café Victor Hugo. أنا نادلتك الافتراضية. أنت تشاهد ${dish[0]}. اسألني عن المكونات أو السعر أو اطلب مني اقتراحًا مناسبًا لك.`
+ },
+ fr:{
+  hero:'Menu intelligent — appelez la serveuse virtuelle et parlez-lui au micro ou par écrit.',
+  askWaiter:'🎙️ Appeler la serveuse',
+  siteLang:'🌐 Français',
+  waiterTitle:'Dans quelle langue souhaitez-vous parler avec la serveuse ?',
+  waiterSub:'Choisissez une langue, je vous accueillerai puis vous pourrez parler.',
+  close:'Fermer', end:'Terminer',
+  placeholder:'Écrivez votre question…',
+  ready:'Je suis prête — appuyez sur le micro et parlez 🎤',
+  recording:"Je vous écoute… appuyez sur ⏹ quand vous avez terminé.",
+  transcribing:'Je comprends votre message…',
+  thinking:'Un instant, je prépare ma réponse…',
+  micError:"Impossible d'utiliser le microphone.",
+  permission:"Sur iPhone : autorisez le microphone pour ce site dans Safari, puis rechargez la page.",
+  hint:'Appuyez sur 🎤 et parlez. Après 1,5 s de silence, la question part automatiquement. ⏹ envoie immédiatement.',
+  aiError:"Impossible de joindre la serveuse. Réessayez.",
+  greet:(dish)=>`Bienvenue au Café Victor Hugo. Je suis votre serveuse virtuelle. Vous regardez ${dish[0]}. Posez-moi une question sur les ingrédients, le prix ou demandez-moi une recommandation.`
+ },
+ en:{
+  hero:'Smart menu — call the virtual waitress and speak by microphone or text.',
+  askWaiter:'🎙️ Call the waitress',
+  siteLang:'🌐 English',
+  waiterTitle:'Which language would you like to use with the waitress?',
+  waiterSub:'Choose a language and I’ll welcome you, then you can start speaking.',
+  close:'Close', end:'End',
+  placeholder:'Type your question…',
+  ready:'I’m ready — tap the microphone and speak 🎤',
+  recording:'I’m listening… tap ⏹ when you are done.',
+  transcribing:'Understanding your voice…',
+  thinking:'One moment, I’m preparing your answer…',
+  micError:'Unable to use the microphone.',
+  permission:'On iPhone: allow microphone access for this website in Safari, then reload the page.',
+  hint:'Tap 🎤 and speak. After 1.5 seconds of silence, it sends automatically. Tap ⏹ to send immediately.',
+  aiError:'Unable to reach the waitress. Please try again.',
+  greet:(dish)=>`Welcome to Café Victor Hugo. I’m your virtual waitress. You’re viewing ${dish[0]}. Ask me about ingredients, price, or let me recommend something for you.`
+ }
+};
+
+let siteLanguage='';
+let waiterLanguage='ar';
+let currentDish=null;
+let conversationHistory=[];
+let recorder=null, stream=null, chunks=[], recording=false, currentAudio=null;
+let audioContext=null, analyser=null, vadFrame=null;
+let speechStarted=false, speechStartAt=0, silenceStartAt=0;
+const SILENCE_MS=1500, MIN_SPEECH_MS=300, SPEECH_THRESHOLD=0.035;
+
+const welcomeOverlay=document.querySelector('#welcomeOverlay');
 const nav=document.querySelector('#nav'), root=document.querySelector('#menu');
+const modal=document.querySelector('#modal'), waiterLangStep=document.querySelector('#waiterLangStep'), chatStep=document.querySelector('#chatStep');
+const title=document.querySelector('#modalDish'), orb=document.querySelector('#orb'), status=document.querySelector('#status');
+const transcript=document.querySelector('#transcript'), input=document.querySelector('#askInput'), micBtn=document.querySelector('#micBtn');
+const endBtn=document.querySelector('#end'), cancelWaiter=document.querySelector('#cancelWaiter'), permissionHelp=document.querySelector('#permissionHelp');
+
+
+const MENU_I18N={
+ ar:{
+  categories:{"Petit Déjeuner":"الفطور","Cafés by Victoria Arduino":"القهوة","Signature Victor":"مشروبات فيكتور المميزة","Frappuccino":"فرابتشينو","Les Jus Frais":"العصائر الطازجة","Milkshakes":"ميلك شيك","Pizzas":"البيتزا","Burger":"البرغر","Panini":"بانيني","Crêpes Salées":"الكريب المالح","Pancakes":"البان كيك","Salades":"السلطات","Entrées":"المقبلات","Pâtes":"المعكرونة","Plats":"الأطباق الرئيسية","Desserts":"الحلويات"},
+  words:[
+   ["Petit Déjeuner","الفطور"],["Le Matinal","الفطور الصباحي"],["Victorien","فيكتوريان"],["Healthy","الصحي"],["Le Duo Hugo","ثنائي هوغو"],["Le Marsois","فطور المرسى"],
+   ["1 pers","شخص واحد"],["2 pers","شخصان"],["Café","قهوة"],["café","قهوة"],["jus","عصير"],["viennoiserie","كرواسون"],["pain toasté","توست"],["confiture","مربى"],["beurre","زبدة"],["chocolat","شوكولاتة"],["œuf","بيض"],["salade","سلطة"],["fruit de saison","فاكهة موسمية"],
+   ["thé","شاي"],["yaourt nature","زبادي طبيعي"],["graines de chia","بذور الشيا"],["saumon fumé","سلمون مدخن"],["avocat","أفوكادو"],
+   ["Pomme","تفاح"],["Pêche","خوخ"],["Banane","موز"],["Kiwi","كيوي"],["Orange","برتقال"],["Ananas","أناناس"],["Fraise","فراولة"],["Melon","شمام"],["Grenade","رمان"],
+   ["Citronnade","ليمونادة"],["amandes","لوز"],["menthe","نعناع"],["Vanille","فانيليا"],["vanille","فانيليا"],["noisette","بندق"],["caramel","كراميل"],["pistache","فستق"],
+   ["Burger Classique","برغر كلاسيكي"],["Burger Truffe","برغر بالكمأة"],["Chiken Cheese","برغر دجاج بالجبن"],["poulet","دجاج"],["Poulet","دجاج"],["bœuf","لحم بقري"],["Bœuf","لحم بقري"],["fromage","جبن"],["thon","تونة"],["Thon","تونة"],["crevettes","روبيان"],["champignons","فطر"],["Champignons","فطر"],
+   ["Crêpe Fromage","كريب بالجبن"],["Crêpe Végétarienne","كريب نباتي"],["Crêpe Classique","كريب كلاسيكي"],["Crêpe Thon","كريب بالتونة"],["Crêpe Tunisienne","كريب تونسي"],["Crêpe Saumon","كريب بالسلمون"],
+   ["Salade César","سلطة سيزر"],["Salade Niçoise","سلطة نيسواز"],["Salade Burrata","سلطة بوراتا"],["Salade Caprese","سلطة كابريزي"],
+   ["Soupe de Lentilles","شوربة عدس"],["Soupe aux Champignons","شوربة فطر"],["Bisque de Crevettes","شوربة روبيان"],["Crème de Légumes","شوربة خضار كريمية"],
+   ["Lasagne Bolognaise","لازانيا بولونيز"],["Lasagne Saumon","لازانيا بالسلمون"],["Spaghetti Fruits de Mer","سباغيتي بالمأكولات البحرية"],["Emince Poulet","شرائح دجاج"],["Emince de Boeuf","شرائح لحم بقري"],["Filet de Bœuf","فيليه لحم بقري"],["Souris d'Agneau","موزة غنم"],["Assiette de Fruits","طبق فواكه"],
+   ["Pizza tomate","بيتزا طماطم"],["Pizza végétarienne","بيتزا نباتية"],["Pizza au thon","بيتزا بالتونة"],["Pizza pepperoni","بيتزا بيبروني"],["Pizza quatre fromages","بيتزا أربعة أجبان"],["Pizza à la truffe","بيتزا بالكمأة"],["Pizza burrata","بيتزا بوراتا"],["Pizza au saumon","بيتزا بالسلمون"],["Pizza fruits de mer","بيتزا بالمأكولات البحرية"],
+   ["Pâtes","معكرونة"],["pâtes","معكرونة"],["Ravioli","رافيولي"],["Lasagne","لازانيا"],["Spaghetti","سباغيتي"],["légumes","خضار"],["riz","أرز"],["pommes de terre","بطاطس"],["Fruits frais","فواكه طازجة"]
+  ]
+ },
+ en:{
+  categories:{"Petit Déjeuner":"Breakfast","Cafés by Victoria Arduino":"Coffee","Signature Victor":"Victor Signature","Frappuccino":"Frappuccino","Les Jus Frais":"Fresh Juices","Milkshakes":"Milkshakes","Pizzas":"Pizzas","Burger":"Burgers","Panini":"Panini","Crêpes Salées":"Savory Crêpes","Pancakes":"Pancakes","Salades":"Salads","Entrées":"Starters","Pâtes":"Pasta","Plats":"Main Courses","Desserts":"Desserts"},
+  words:[
+   ["Petit Déjeuner","Breakfast"],["Le Matinal","Morning Breakfast"],["Victorien","Victorien"],["Healthy","Healthy"],["Le Duo Hugo","Hugo Duo"],["Le Marsois","La Marsa Breakfast"],["1 pers","1 person"],["2 pers","2 people"],
+   ["café","coffee"],["Café","Coffee"],["jus","juice"],["viennoiserie","pastry"],["pain toasté","toast"],["confiture","jam"],["beurre","butter"],["œuf","egg"],["salade","salad"],["fruit de saison","seasonal fruit"],["thé","tea"],["yaourt nature","plain yogurt"],["graines de chia","chia seeds"],["saumon fumé","smoked salmon"],["avocat","avocado"],
+   ["Pomme","Apple"],["Pêche","Peach"],["Banane","Banana"],["Ananas","Pineapple"],["Fraise","Strawberry"],["Grenade","Pomegranate"],["Citronnade","Lemonade"],["amandes","almonds"],["menthe","mint"],["noisette","hazelnut"],
+   ["Burger Classique","Classic Burger"],["Burger Truffe","Truffle Burger"],["Chiken Cheese","Chicken Cheese Burger"],["poulet","chicken"],["Poulet","Chicken"],["bœuf","beef"],["Bœuf","Beef"],["fromage","cheese"],["thon","tuna"],["Thon","Tuna"],["crevettes","shrimp"],["champignons","mushrooms"],["Champignons","Mushrooms"],
+   ["Crêpe Fromage","Cheese Crêpe"],["Crêpe Végétarienne","Vegetarian Crêpe"],["Crêpe Classique","Classic Crêpe"],["Crêpe Thon","Tuna Crêpe"],["Crêpe Tunisienne","Tunisian Crêpe"],["Crêpe Saumon","Salmon Crêpe"],
+   ["Salade César","Caesar Salad"],["Salade Niçoise","Niçoise Salad"],["Salade Burrata","Burrata Salad"],["Salade Caprese","Caprese Salad"],
+   ["Soupe de Lentilles","Lentil Soup"],["Soupe aux Champignons","Mushroom Soup"],["Bisque de Crevettes","Shrimp Bisque"],["Crème de Légumes","Cream of Vegetable Soup"],
+   ["Lasagne Bolognaise","Bolognese Lasagna"],["Lasagne Saumon","Salmon Lasagna"],["Spaghetti Fruits de Mer","Seafood Spaghetti"],["Emince Poulet","Sliced Chicken"],["Emince de Boeuf","Sliced Beef"],["Filet de Bœuf","Beef Fillet"],["Souris d'Agneau","Lamb Shank"],["Assiette de Fruits","Fresh Fruit Plate"],
+   ["Pizza végétarienne","Vegetarian pizza"],["Pizza au thon","Tuna pizza"],["Pizza quatre fromages","Four-cheese pizza"],["Pizza à la truffe","Truffle pizza"],["Pizza au saumon","Salmon pizza"],["Pizza fruits de mer","Seafood pizza"],
+   ["Pâtes","Pasta"],["pâtes","pasta"],["légumes","vegetables"],["riz","rice"],["pommes de terre","potatoes"],["Fruits frais","fresh fruit"]
+  ]
+ }
+};
+function translateMenuText(value,lang){
+ if(lang==='fr'||!lang) return value;
+ const pack=MENU_I18N[lang]; if(!pack) return value;
+ let out=value;
+ (pack.words||[]).forEach(([a,b])=>{out=out.split(a).join(b)});
+ return out;
+}
+function menuCategory(value,lang){
+ return (MENU_I18N[lang]&&MENU_I18N[lang].categories[value])||value;
+}
+function refreshMenuLanguage(){
+ document.querySelectorAll('#nav button').forEach((b,i)=>{if(menu[i]) b.textContent=menuCategory(menu[i].cat,siteLanguage)});
+ document.querySelectorAll('#menu section').forEach((sec,i)=>{
+   if(!menu[i]) return;
+   const h=sec.querySelector('.section-title'); if(h) h.textContent=menuCategory(menu[i].cat,siteLanguage);
+   sec.querySelectorAll('.card').forEach((card,j)=>{
+     const d=menu[i].items[j]; if(!d) return;
+     const h3=card.querySelector('h3'), desc=card.querySelector('.desc');
+     if(h3) h3.textContent=translateMenuText(d[0],siteLanguage);
+     if(desc) desc.textContent=translateMenuText(d[1],siteLanguage);
+     const sig=card.querySelector('.signature'); if(sig) sig.textContent=siteLanguage==='ar'?'اختيار فيكتور':siteLanguage==='en'?'Victor Signature':'Signature Victor';
+   });
+ });
+}
+
+function applySiteLanguage(lang){
+ siteLanguage=lang;
+ document.documentElement.lang=lang; document.documentElement.dir=lang==='ar'?'rtl':'ltr';
+ document.querySelector('#heroText').textContent=TEXT[lang].hero;
+ const h1=document.querySelector('h1');
+ if(h1) h1.textContent=lang==='ar'?'مرحبًا بكم في فيكتور هوغو':lang==='en'?'Welcome to Victor Hugo':'Bienvenue chez Victor Hugo';
+ document.querySelector('#changeSiteLang').textContent=TEXT[lang].siteLang;
+ document.querySelector('#waiterLangTitle').textContent=TEXT[lang].waiterTitle;
+ document.querySelector('#waiterLangSubtitle').textContent=TEXT[lang].waiterSub;
+ cancelWaiter.textContent=TEXT[lang].close;
+ document.querySelectorAll('.voice').forEach(b=>b.textContent=TEXT[lang].askWaiter);
+ refreshMenuLanguage();
+ welcomeOverlay.classList.add('hidden');
+}
+document.querySelectorAll('[data-site-lang]').forEach(b=>b.onclick=()=>applySiteLanguage(b.dataset.siteLang));
+document.querySelector('#changeSiteLang').onclick=()=>welcomeOverlay.classList.remove('hidden');
+
 menu.forEach((s,i)=>{
  const b=document.createElement('button'); b.textContent=s.cat; b.onclick=()=>document.getElementById('s'+i).scrollIntoView({behavior:'smooth'}); nav.appendChild(b);
  const sec=document.createElement('section'); sec.id='s'+i; sec.innerHTML=`<h2 class="section-title">${s.cat}</h2><div class="grid"></div>`;
  const grid=sec.querySelector('.grid');
- s.items.forEach(d=>{const c=document.createElement('article'); c.className='card'; c.innerHTML=`${d[3]?'<span class="signature">Signature Victor</span>':''}<h3>${d[0]}</h3><div class="desc">${d[1]}</div><div class="price">${d[2]}</div><button class="voice">🎙️ Demander à la serveuse</button>`; c.querySelector('.voice').onclick=()=>startVoice(d); grid.appendChild(c)});
+ s.items.forEach(d=>{
+   const c=document.createElement('article'); c.className='card';
+   c.innerHTML=`${d[3]?'<span class="signature">Signature Victor</span>':''}<h3>${d[0]}</h3><div class="desc">${d[1]}</div><div class="price">${d[2]}</div><button class="voice">${TEXT[siteLanguage||'ar'].askWaiter}</button>`;
+   c.querySelector('.voice').onclick=()=>openWaiter(d); grid.appendChild(c);
+ });
  root.appendChild(sec);
 });
-/* ===== Serveuse virtuelle — OpenAI + audio compatible Safari/iPhone/Chrome ===== */
-const modal=document.querySelector('#modal'), status=document.querySelector('#status'),
-      title=document.querySelector('#modalDish'), orb=document.querySelector('#orb'),
-      transcript=document.querySelector('#transcript'), input=document.querySelector('#askInput'),
-      micBtn=document.querySelector('#micBtn'), endBtn=document.querySelector('#end'),
-      langButtons=[...document.querySelectorAll('.langBtn')];
 
-let currentDish=null;
-let selectedLanguage='auto';
-let lastDetectedLanguage='fr';
-let conversationHistory=[];
-let mediaRecorder=null;
-let mediaStream=null;
-let audioChunks=[];
-let isRecording=false;
-let currentAudio=null;
 
-const uiText={
- ar:{placeholder:'اكتب سؤالك… مثال: هل الطبق حار؟',listen:'أنا أستمع… اضغط مرة أخرى لإرسال التسجيل 🎤',ready:'اسأل سؤالًا آخر بالكتابة أو الميكروفون 🎤',thinking:'النادلة تفكر… ✨',transcribing:'جارٍ فهم كلامك… 🎧',micUnavailable:'تعذر تشغيل الميكروفون. تأكد من السماح للموقع باستخدامه.',aiUnavailable:'تعذر الاتصال بالـAI. حاول مرة أخرى.',end:'إنهاء'},
- fr:{placeholder:"Tapez votre question… (ex: c'est épicé ?)",listen:"Je vous écoute… appuyez encore pour envoyer 🎤",ready:"Posez une autre question, à l'écrit ou au micro 🎤",thinking:'La serveuse réfléchit… ✨',transcribing:'Je comprends votre message… 🎧',micUnavailable:"Impossible d'utiliser le micro. Vérifiez l'autorisation du navigateur.",aiUnavailable:"Impossible de joindre l'AI. Réessayez.",end:'Terminer'},
- en:{placeholder:'Type your question… e.g. is it spicy?',listen:'I’m listening… tap again to send 🎤',ready:'Ask another question by text or microphone 🎤',thinking:'The waitress is thinking… ✨',transcribing:'Understanding your voice… 🎧',micUnavailable:'Unable to use the microphone. Check browser permission.',aiUnavailable:'Unable to reach the AI. Please try again.',end:'End'}
-};
-
-function detectLanguage(text){
- if(/[\u0600-\u06FF]/.test(text||'')) return 'ar';
- if(/[àâçéèêëîïôùûüÿœæ]/i.test(text||'') || /\b(bonjour|merci|prix|plat|avec|sans|pour|je|vous|est|une|des|du|de|le|la)\b/i.test(text||'')) return 'fr';
- return 'en';
+function openWaiter(d){
+ currentDish=d; conversationHistory=[];
+ waiterLanguage=siteLanguage||'ar'; permissionHelp.classList.remove('show');
+ waiterLangStep.classList.remove('hidden'); chatStep.classList.add('hidden'); modal.classList.add('show');
 }
-function activeLanguage(text=''){
- if(selectedLanguage!=='auto') return selectedLanguage;
- if(text) lastDetectedLanguage=detectLanguage(text);
- return lastDetectedLanguage||'fr';
-}
-function refreshLanguageUI(){
- const lang=activeLanguage(), t=uiText[lang];
- input.placeholder=t.placeholder;
- endBtn.textContent=t.end;
- langButtons.forEach(b=>b.classList.toggle('active',b.dataset.lang===selectedLanguage));
- document.querySelector('.dialog').dir=lang==='ar'?'rtl':'ltr';
-}
-langButtons.forEach(b=>b.addEventListener('click',()=>{
- selectedLanguage=b.dataset.lang;
- if(selectedLanguage!=='auto') lastDetectedLanguage=selectedLanguage;
- refreshLanguageUI();
- status.textContent=uiText[activeLanguage()].ready;
-}));
+cancelWaiter.onclick=closeWaiter;
+document.querySelectorAll('[data-waiter-lang]').forEach(b=>b.onclick=async()=>{
+ waiterLanguage=b.dataset.waiterLang;
+ waiterLangStep.classList.add('hidden'); chatStep.classList.remove('hidden');
+ title.textContent=translateMenuText(currentDish[0],waiterLanguage);
+ const t=TEXT[waiterLanguage];
+ input.placeholder=t.placeholder; endBtn.textContent=t.end; document.querySelector('#recordHint').textContent=t.hint;
+ transcript.innerHTML=''; permissionHelp.classList.remove('show');
+ const localizedDish=[translateMenuText(currentDish[0],waiterLanguage),translateMenuText(currentDish[1],waiterLanguage),currentDish[2],currentDish[3]];
+ const greeting=t.greet(localizedDish);
+ addBubble('assistant',greeting); conversationHistory.push({role:'assistant',content:greeting});
+ status.textContent=t.ready;
+ await speakAI(greeting);
+});
 
 function addBubble(role,text){
- const b=document.createElement('div');
- b.className='bubble '+role;
- b.textContent=text;
- b.dir=detectLanguage(text)==='ar'?'rtl':'ltr';
- transcript.appendChild(b);
- transcript.scrollTop=transcript.scrollHeight;
+ const b=document.createElement('div'); b.className='bubble '+role; b.textContent=text;
+ b.dir=/[\u0600-\u06FF]/.test(text)?'rtl':'ltr';
+ transcript.appendChild(b); transcript.scrollTop=transcript.scrollHeight;
 }
-
 function compactMenu(){
- return menu.map(section=>({
-   category:section.cat,
-   items:section.items.map(d=>({name:d[0],description:d[1],price:d[2]}))
- }));
+ return menu.map(s=>({category:s.cat,items:s.items.map(d=>({name:d[0],description:d[1],price:d[2]}))}));
 }
-
+async function fetchJSON(url,options,timeout=45000){
+ const controller=new AbortController(); const timer=setTimeout(()=>controller.abort(),timeout);
+ try{
+   const r=await fetch(url,{...options,signal:controller.signal});
+   const data=await r.json().catch(()=>({}));
+   if(!r.ok) throw new Error(data.error||`HTTP ${r.status}`);
+   return data;
+ }finally{clearTimeout(timer)}
+}
 async function askAI(question){
- const payload={
-   question,
-   dish:currentDish?{name:currentDish[0],description:currentDish[1],price:currentDish[2]}:null,
-   menu:compactMenu(),
-   history:conversationHistory.slice(-10),
-   language:selectedLanguage,
-   detectedLanguage:activeLanguage(question)
- };
- const res=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
- const data=await res.json().catch(()=>({}));
- if(!res.ok) throw new Error(data.error||`HTTP ${res.status}`);
- if(!data.answer) throw new Error('Empty AI response');
- return data.answer;
+ return fetchJSON('/api/ai',{
+  method:'POST',headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({question,dish:{name:currentDish[0],description:currentDish[1],price:currentDish[2]},menu:compactMenu(),history:conversationHistory.slice(-10),language:waiterLanguage})
+ });
 }
-
 async function speakAI(text){
  try{
    if(currentAudio){currentAudio.pause();currentAudio=null;}
-   const lang=activeLanguage(text);
-   const res=await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,language:lang})});
-   if(!res.ok) throw new Error('TTS failed');
-   const blob=await res.blob();
-   const url=URL.createObjectURL(blob);
-   const audio=new Audio(url);
-   currentAudio=audio;
-   orb.classList.add('speaking');
+   const r=await fetch('/api/tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,language:waiterLanguage})});
+   if(!r.ok) return;
+   const blob=await r.blob(), url=URL.createObjectURL(blob), audio=new Audio(url);
+   currentAudio=audio; orb.classList.add('speaking');
    audio.onended=()=>{orb.classList.remove('speaking');URL.revokeObjectURL(url);if(currentAudio===audio)currentAudio=null;};
    audio.onerror=()=>{orb.classList.remove('speaking');URL.revokeObjectURL(url);};
    await audio.play();
- }catch(err){
-   console.warn('TTS:',err);
-   orb.classList.remove('speaking');
- }
+ }catch(e){console.warn('TTS',e);orb.classList.remove('speaking');}
 }
-
-async function ask(){
- const q=(input.value||'').trim();
- if(!q||!currentDish) return;
- addBubble('user',q); input.value='';
- if(selectedLanguage==='auto') lastDetectedLanguage=detectLanguage(q);
- refreshLanguageUI();
- conversationHistory.push({role:'user',content:q});
- status.textContent=uiText[activeLanguage(q)].thinking;
- input.disabled=true; micBtn.disabled=true;
+async function submitQuestion(q){
+ q=(q||'').trim(); if(!q)return;
+ addBubble('user',q); conversationHistory.push({role:'user',content:q});
+ input.value=''; input.disabled=true; micBtn.disabled=true; status.textContent=TEXT[waiterLanguage].thinking;
  try{
-   const answer=await askAI(q);
-   addBubble('assistant',answer);
-   conversationHistory.push({role:'assistant',content:answer});
-   status.textContent=uiText[activeLanguage(answer)].ready;
-   await speakAI(answer);
- }catch(err){
-   console.error(err);
-   status.textContent=uiText[activeLanguage()].aiUnavailable;
- }finally{
-   input.disabled=false; micBtn.disabled=false; input.focus();
- }
+  const data=await askAI(q); const answer=data.answer;
+  addBubble('assistant',answer); conversationHistory.push({role:'assistant',content:answer});
+  status.textContent=TEXT[waiterLanguage].ready; await speakAI(answer);
+ }catch(e){console.error(e);status.textContent=TEXT[waiterLanguage].aiError;}
+ finally{input.disabled=false;micBtn.disabled=false;}
 }
-input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!input.disabled)ask();});
+input.addEventListener('keydown',e=>{if(e.key==='Enter')submitQuestion(input.value)});
 
-function preferredMimeType(){
- const types=['audio/mp4','audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus'];
- return types.find(t=>window.MediaRecorder&&MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(t))||'';
+function bestMime(){
+ if(!window.MediaRecorder)return '';
+ const types=['audio/mp4','audio/webm;codecs=opus','audio/webm'];
+ return types.find(t=>MediaRecorder.isTypeSupported?.(t))||'';
+}
+function stopVAD(){
+ if(vadFrame){cancelAnimationFrame(vadFrame);vadFrame=null;}
+ if(audioContext){audioContext.close().catch(()=>{});audioContext=null;}
+ analyser=null; speechStarted=false; speechStartAt=0; silenceStartAt=0;
+}
+function startVAD(){
+ if(!stream || !(window.AudioContext||window.webkitAudioContext)) return;
+ const AC=window.AudioContext||window.webkitAudioContext;
+ audioContext=new AC();
+ const source=audioContext.createMediaStreamSource(stream);
+ analyser=audioContext.createAnalyser();
+ analyser.fftSize=1024; analyser.smoothingTimeConstant=.25; source.connect(analyser);
+ const data=new Uint8Array(analyser.fftSize);
+ const tick=()=>{
+  if(!recording||!analyser)return;
+  analyser.getByteTimeDomainData(data);
+  let sum=0;
+  for(let i=0;i<data.length;i++){const x=(data[i]-128)/128;sum+=x*x;}
+  const rms=Math.sqrt(sum/data.length), now=performance.now();
+  if(rms>SPEECH_THRESHOLD){
+   if(!speechStarted){speechStarted=true;speechStartAt=now;}
+   silenceStartAt=0;
+  }else if(speechStarted && now-speechStartAt>=MIN_SPEECH_MS){
+   if(!silenceStartAt)silenceStartAt=now;
+   if(now-silenceStartAt>=SILENCE_MS){stopRecording();return;}
+  }
+  vadFrame=requestAnimationFrame(tick);
+ };
+ vadFrame=requestAnimationFrame(tick);
 }
 async function startRecording(){
- if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder){
-   status.textContent=uiText[activeLanguage()].micUnavailable; return;
+ permissionHelp.classList.remove('show');
+ if(!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder){
+  status.textContent=TEXT[waiterLanguage].micError; permissionHelp.textContent=TEXT[waiterLanguage].permission; permissionHelp.classList.add('show'); return;
  }
  try{
-   mediaStream=await navigator.mediaDevices.getUserMedia({audio:true});
-   const mimeType=preferredMimeType();
-   mediaRecorder=new MediaRecorder(mediaStream,mimeType?{mimeType}:undefined);
-   audioChunks=[];
-   mediaRecorder.ondataavailable=e=>{if(e.data&&e.data.size)audioChunks.push(e.data);};
-   mediaRecorder.onstop=sendRecording;
-   mediaRecorder.start();
-   isRecording=true;
-   micBtn.classList.add('listening'); micBtn.textContent='⏹';
-   status.textContent=uiText[activeLanguage()].listen;
- }catch(err){
-   console.error(err);
-   status.textContent=uiText[activeLanguage()].micUnavailable;
+  stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}});
+  chunks=[]; const mime=bestMime(); recorder=new MediaRecorder(stream,mime?{mimeType:mime}:undefined);
+  recorder.ondataavailable=e=>{if(e.data?.size)chunks.push(e.data)};
+  recorder.onstop=sendVoice;
+  recorder.start(250); recording=true; micBtn.classList.add('recording'); micBtn.textContent='⏹'; status.textContent=TEXT[waiterLanguage].recording;
+  startVAD();
+ }catch(e){
+  console.error(e); status.textContent=TEXT[waiterLanguage].micError; permissionHelp.textContent=TEXT[waiterLanguage].permission; permissionHelp.classList.add('show');
  }
 }
 function stopRecording(){
- if(!isRecording||!mediaRecorder)return;
- isRecording=false;
- micBtn.classList.remove('listening'); micBtn.textContent='🎤';
- mediaRecorder.stop();
+ if(!recording)return;
+ recording=false; stopVAD(); micBtn.classList.remove('recording'); micBtn.textContent='🎤';
+ if(recorder&&recorder.state!=='inactive')recorder.stop();
 }
-async function sendRecording(){
+async function sendVoice(){
  try{
-   status.textContent=uiText[activeLanguage()].transcribing;
-   micBtn.disabled=true;
-   const type=mediaRecorder?.mimeType||'audio/webm';
-   const blob=new Blob(audioChunks,{type});
-   const ext=type.includes('mp4')?'m4a':type.includes('ogg')?'ogg':'webm';
-   const form=new FormData();
-   form.append('audio',blob,`question.${ext}`);
-   form.append('language',selectedLanguage);
-   const res=await fetch('/api/transcribe',{method:'POST',body:form});
-   const data=await res.json().catch(()=>({}));
-   if(!res.ok||!data.text)throw new Error(data.error||'Transcription failed');
-   input.value=data.text;
-   if(selectedLanguage==='auto')lastDetectedLanguage=detectLanguage(data.text);
-   refreshLanguageUI();
-   await ask();
- }catch(err){
-   console.error(err);
-   status.textContent=uiText[activeLanguage()].micUnavailable;
+  status.textContent=TEXT[waiterLanguage].transcribing; micBtn.disabled=true;
+  const mime=recorder.mimeType||'audio/webm'; const ext=mime.includes('mp4')?'m4a':'webm';
+  const blob=new Blob(chunks,{type:mime});
+  if(blob.size<800) throw new Error('Recording too short');
+  const form=new FormData(); form.append('audio',blob,'voice.'+ext); form.append('language',waiterLanguage);
+  const r=await fetch('/api/transcribe',{method:'POST',body:form});
+  const data=await r.json().catch(()=>({}));
+  if(!r.ok||!data.text) throw new Error(data.error||'Transcription failed');
+  await submitQuestion(data.text);
+ }catch(e){
+  console.error(e); status.textContent=TEXT[waiterLanguage].micError;
  }finally{
-   micBtn.disabled=false;
-   if(mediaStream){mediaStream.getTracks().forEach(t=>t.stop());mediaStream=null;}
-   mediaRecorder=null; audioChunks=[];
+  micBtn.disabled=false; chunks=[];
+  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}
  }
 }
-micBtn.onclick=()=>isRecording?stopRecording():startRecording();
+micBtn.onclick=()=>recording?stopRecording():startRecording();
 
-function startVoice(d){
- currentDish=d; conversationHistory=[]; title.textContent=d[0]; modal.classList.add('show');
- transcript.innerHTML=''; input.value=''; refreshLanguageUI();
- const lang=activeLanguage();
- const intros={
-   ar:`مرحبًا! أنا نادلتك الافتراضية. أنت تشاهد ${d[0]}. الوصف: ${d[1]}. اسألني عن المكونات أو السعر أو المقارنة أو الترشيحات.`,
-   fr:`Bonjour ! Je suis votre serveuse virtuelle. Vous regardez ${d[0]}. ${d[1]}. Posez-moi une question sur les ingrédients, le prix, une comparaison ou une recommandation.`,
-   en:`Hello! I’m your virtual waitress. You’re viewing ${d[0]}. ${d[1]}. Ask me about ingredients, price, comparisons, or recommendations.`
- };
- const intro=intros[lang];
- addBubble('assistant',intro); conversationHistory.push({role:'assistant',content:intro});
- status.textContent=uiText[lang].ready;
- speakAI(intro);
-}
-refreshLanguageUI();
-
-endBtn.onclick=()=>{
- if(isRecording)stopRecording();
- if(mediaStream){mediaStream.getTracks().forEach(t=>t.stop());mediaStream=null;}
+function closeWaiter(){
+ stopVAD();
+ if(recording) stopRecording();
+ if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}
  if(currentAudio){currentAudio.pause();currentAudio=null;}
- modal.classList.remove('show'); currentDish=null;
-};
-
-</script></body></html>
+ modal.classList.remove('show'); currentDish=null; conversationHistory=[];
+}
+endBtn.onclick=closeWaiter;
+</script>
+</body>
+</html>
