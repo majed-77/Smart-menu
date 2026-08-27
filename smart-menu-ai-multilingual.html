@@ -201,6 +201,11 @@ main{max-width:1280px;margin:auto;padding:22px 5% 60px}
 </div>
 
 <script>
+/* Safari/iOS audio globals */
+var speechAudioContext = window.speechAudioContext || null;
+var speechSource = window.speechSource || null;
+var speechUnlocked = false;
+
 const menu = [
  {cat:"Petit Déjeuner",items:[
   ["Le Matinal (1 pers)","café, jus, viennoiserie, mlewi, pain toasté, confiture, beurre, chocolat","15.00 DT"],
@@ -614,7 +619,7 @@ async function speakAI(text){
       try{currentAudio.pause();}catch(e){}
       currentAudio=null;
     }
-    if(speechSource){
+    if(typeof speechSource !== 'undefined' && speechSource){
       try{speechSource.stop();}catch(e){}
       speechSource=null;
     }
