@@ -56,6 +56,7 @@ app.get("/api/diagnostics", async (req, res) => {
   try {
     const response = await openai.responses.create({
       model: "gpt-4o-mini",
+      realtimeModel: "gpt-realtime-1.5",
       input: "Reply with exactly: OK",
       max_output_tokens: 16
     });
@@ -82,6 +83,74 @@ app.get("/api/diagnostics", async (req, res) => {
 // IMPORTANT: this route matches the HTML payload exactly:
 // { question, dish, menu, history, language }
 // ======================================================
+
+// ======================================================
+// REALTIME VOICE — WebRTC proxy
+// Browser sends SDP; API key stays on Render.
+// ======================================================
+app.post("/api/realtime-call", async (req, res) => {
+  try {
+    const { sdp, language = "ar", instructions = "" } = req.body || {};
+
+    if (!apiKey) {
+      return res.status(401).json({
+        ok: false,
+        code: "invalid_api_key",
+        message: "مفتاح OpenAI غير موجود."
+      });
+    }
+
+    if (!sdp) {
+      return res.status(400).json({
+        ok: false,
+        code: "NO_SDP",
+        message: "WebRTC SDP is required."
+      });
+    }
+
+    const session = {
+      type: "realtime",
+      model: "gpt-realtime-1.5",
+      instructions: String(instructions || ""),
+      output_modalities: ["audio"],
+      max_output_tokens: 220,
+      audio: {
+        input: {
+          turn_detection: {
+            type: "server_vad",
+            create_response: true,
+            interrupt_response: true,
+            silence_duration_ms: 650
+          },
+          transcription: {
+            model: "gpt-4o-mini-transcribe",
+            language: ["ar","fr","en"].includes(language) ? language : undefined
+          }
+        },
+        output: {
+          voice: "marin"
+        }
+      }
+    };
+
+    const call = await openai.realtime.calls.create({ sdp, session });
+    const answerSdp = await call.text();
+
+    return res.json({
+      ok: true,
+      sdp: answerSdp
+    });
+  } catch (error) {
+    console.error("Realtime call error:", error);
+    const e = normalizeOpenAIError(error);
+    return res.status(e.status || 500).json({
+      ok: false,
+      code: e.code,
+      message: e.message
+    });
+  }
+});
+
 app.post("/api/ai", async (req, res) => {
   try {
     const {
