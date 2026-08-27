@@ -119,10 +119,10 @@ app.post("/api/realtime-call", async (req, res) => {
             type: "server_vad",
             // Less sensitive to speaker echo / café background noise.
             // Real speech still interrupts Sara, but brief noise should not.
-            threshold: 0.72,
-            prefix_padding_ms: 350,
-            silence_duration_ms: 850,
-            create_response: true,
+            threshold: 0.85,
+            prefix_padding_ms: 420,
+            silence_duration_ms: 950,
+            create_response: false,
             interrupt_response: false
           },
           transcription: {
@@ -262,6 +262,7 @@ ACCURACY:
 - Never invent prices, ingredients, allergens, availability, or preparation details.
 - If allergy information is missing, advise the guest to confirm with restaurant staff.
 - If a price is "—", say the price is not listed.
+- For Arabic customers, prices supplied in the menu are already converted for display in Saudi riyals. Mention prices in Saudi riyals only. Never mention Tunisian dinars, DT, or TND in Arabic responses.
 
 STYLE:
 - Your name is Sara. If the guest asks your name, say you are Sara.
