@@ -1,207 +1,498 @@
-import express from "express";
-import path from "path";
-import OpenAI from "openai";
-import multer from "multer";
-import fs from "fs";
-import os from "os";
-import crypto from "crypto";
-import { fileURLToPath } from "url";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const express = require("express");
+const path = require("path");
+const OpenAI = require("openai");
+const multer = require("multer");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const apiKey = process.env.OPENAI_API_KEY || "";
-const openai = new OpenAI({ apiKey });
 
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 15 * 1024 * 1024 }
-});
+// ======================================================
+// OpenAI
+// ======================================================
 
-app.use(express.json({ limit: "3mb" }));
-app.use(express.static(__dirname));
-
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "smart-menu-ai-multilingual.html"));
-});
-
-function apiErrorPayload(error) {
-  const status = Number(error?.status || error?.response?.status || 500);
-  const rawCode = error?.code || error?.error?.code || error?.response?.data?.error?.code || "";
-  const rawMessage =
-    error?.error?.message ||
-    error?.response?.data?.error?.message ||
-    error?.message ||
-    "OpenAI request failed.";
-
-  let code = rawCode || "server_error";
-  if (status === 401) code = "invalid_api_key";
-  if (status === 403 && !rawCode) code = "permission_denied";
-  if (status === 429 && /quota|billing|credit/i.test(rawMessage)) code = "insufficient_quota";
-
-  return {
-    status,
-    body: {
-      error: rawMessage,
-      code
-    }
-  };
+if (!process.env.OPENAI_API_KEY) {
+  console.warn("⚠️ OPENAI_API_KEY is not configured.");
 }
 
-app.get("/api/health", (req, res) => {
-  res.json({
-    ok: true,
-    service: "Smart Menu AI",
-    apiKeyConfigured: Boolean(apiKey),
-    textModel: "gpt-4o-mini",
-    transcriptionModel: "gpt-4o-mini-transcribe",
-    speechModel: "gpt-4o-mini-tts"
-  });
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
 });
 
-// Makes one tiny text request so the browser can tell whether the key/quota really works.
-app.get("/api/diagnostics", async (req, res) => {
-  if (!apiKey) {
-    return res.status(401).json({
-      ok: false,
-      code: "invalid_api_key",
-      error: "OPENAI_API_KEY is not configured on Render."
-    });
+// ======================================================
+// Middleware
+// ======================================================
+
+app.use(express.json({ limit: "5mb" }));
+app.use(express.urlencoded({ extended: true }));
+
+// ملفات الموقع
+app.use(express.static(__dirname));
+
+// رفع الصوت في الذاكرة
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 15 * 1024 * 1024
   }
+});
+
+// ======================================================
+// الصفحة الرئيسية
+// ======================================================
+
+app.get("/", (req, res) => {
+  res.sendFile(
+    path.join(__dirname, "smart-menu-ai-multilingual.html")
+  );
+});
+
+// ======================================================
+// فحص السيرفر و OpenAI
+// ======================================================
+
+app.get("/api/diagnostics", async (req, res) => {
   try {
+    if (!process.env.OPENAI_API_KEY) {
+      return res.status(500).json({
+        ok: false,
+        error: "OPENAI_API_KEY_NOT_CONFIGURED",
+        message: "OPENAI_API_KEY غير موجود في Render."
+      });
+    }
+
     const response = await openai.responses.create({
       model: "gpt-4o-mini",
       input: "Reply with exactly: OK",
-      max_output_tokens: 5
+      max_output_tokens: 16
     });
-    const text = response.output_text?.trim() || "";
-    return res.json({ ok: true, textModel: "gpt-4o-mini", result: text });
+
+    return res.json({
+      ok: true,
+      openai: true,
+      model: "gpt-4o-mini",
+      message: "Smart Menu server and OpenAI are working.",
+      response: response.output_text || "OK"
+    });
+
   } catch (error) {
-    console.error("DIAGNOSTICS ERROR:", error);
-    const {status, body} = apiErrorPayload(error);
-    return res.status(status).json({ ok: false, ...body });
+    console.error("Diagnostics error:", error);
+
+    return res.status(error.status || 500).json({
+      ok: false,
+      error: error.code || error.type || "OPENAI_ERROR",
+      message:
+        error?.error?.message ||
+        error?.message ||
+        "حدث خطأ أثناء الاتصال بـ OpenAI."
+    });
   }
 });
+
+// ======================================================
+// AI waiter
+// ======================================================
 
 app.post("/api/ai", async (req, res) => {
   try {
-    const { question, dish, menu, history = [], language = "ar" } = req.body;
-    if (!question) return res.status(400).json({ error: "Question is required.", code: "bad_request" });
-    if (!apiKey) return res.status(401).json({ error: "OPENAI_API_KEY is not configured.", code: "invalid_api_key" });
+    const {
+      message,
+      language = "ar",
+      itemName = "",
+      itemDescription = "",
+      itemPrice = ""
+    } = req.body || {};
 
-    const langRule =
-      language === "ar"
-        ? "Answer only in natural Arabic. Keep original branded dish names when useful."
-        : language === "en"
-        ? "Answer only in natural English. Keep original branded dish names when useful."
-        : "Réponds uniquement en français naturel. Conserve les noms de plats de marque si nécessaire.";
+    if (!process.env.OPENAI_API_KEY) {
+      return res.status(500).json({
+        ok: false,
+        error: "OPENAI_API_KEY_NOT_CONFIGURED",
+        message: "مفتاح OpenAI غير موجود في إعدادات Render."
+      });
+    }
 
-    const instructions = `You are the virtual waitress for Café Victor Hugo in La Marsa.
-${langRule}
-Be warm, concise, natural and helpful.
-Use only the menu information provided by the application.
-Never invent prices, ingredients, allergens, availability, or preparation details.
-If allergy information is unavailable, tell the guest to confirm with restaurant staff.
-Prices are in Tunisian dinars (DT).`;
+    if (!message || !message.trim()) {
+      return res.status(400).json({
+        ok: false,
+        error: "EMPTY_MESSAGE",
+        message: "الرجاء كتابة أو قول سؤالك."
+      });
+    }
 
-    const menuContext = JSON.stringify({ selectedDish: dish || null, menu: menu || [] });
-    const conversation = history.slice(-8).map(m => ({
-      role: m.role === "assistant" ? "assistant" : "user",
-      content: String(m.content || "")
-    })).filter(m => m.content);
+    // تحديد لغة المحادثة
+    let languageInstruction;
+
+    if (language === "fr") {
+      languageInstruction =
+        "Réponds uniquement en français naturel et poli.";
+    } else if (language === "en") {
+      languageInstruction =
+        "Reply only in natural, polite English.";
+    } else {
+      languageInstruction =
+        "أجب باللغة العربية فقط وبأسلوب طبيعي ومهذب وواضح.";
+    }
+
+    const systemPrompt = `
+You are the virtual AI waitress for Café Victor Hugo in La Marsa.
+
+Your job is to help customers understand the menu and choose food or drinks.
+
+LANGUAGE:
+${languageInstruction}
+
+IMPORTANT RULES:
+- Be friendly, professional, warm and concise.
+- Speak like a real restaurant waiter/waitress.
+- Answer the customer's actual question directly.
+- Do not repeat the same greeting in every response.
+- Do not invent ingredients, prices or menu information.
+- If information is not available, clearly say that and suggest asking the restaurant staff.
+- If the customer asks about allergies, clearly explain that restaurant staff should confirm allergen safety.
+- If the customer asks for a recommendation, use the menu item information available in the conversation.
+- Keep normal spoken answers relatively short because the answer may be read aloud.
+- Never mention APIs, OpenAI, prompts, servers or technical details to the customer.
+
+CURRENT MENU ITEM:
+Name: ${itemName || "Not specified"}
+Description: ${itemDescription || "Not specified"}
+Price: ${itemPrice || "Not specified"}
+`;
 
     const response = await openai.responses.create({
       model: "gpt-4o-mini",
-      instructions,
-      input: [
-        { role: "user", content: "MENU DATA:\n" + menuContext },
-        ...conversation,
-        { role: "user", content: question }
-      ],
-      max_output_tokens: 250
+
+      instructions: systemPrompt,
+
+      input: message.trim(),
+
+      max_output_tokens: 300
     });
 
     const answer = response.output_text?.trim();
-    if (!answer) throw new Error("The AI returned an empty response.");
-    res.json({ answer });
-  } catch (error) {
-    console.error("AI ERROR:", error);
-    const {status, body} = apiErrorPayload(error);
-    res.status(status).json(body);
-  }
-});
 
-app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
-  let tempPath = "";
-  try {
-    if (!req.file) return res.status(400).json({ error: "Audio file is required.", code: "bad_request" });
-    if (!apiKey) return res.status(401).json({ error: "OPENAI_API_KEY is not configured.", code: "invalid_api_key" });
+    if (!answer) {
+      return res.status(500).json({
+        ok: false,
+        error: "EMPTY_AI_RESPONSE",
+        message: "لم يتم استلام رد من الذكاء الاصطناعي."
+      });
+    }
 
-    const mime = req.file.mimetype || "";
-    const ext =
-      mime.includes("mp4") ? ".m4a" :
-      mime.includes("mpeg") ? ".mp3" :
-      mime.includes("wav") ? ".wav" :
-      mime.includes("ogg") ? ".ogg" : ".webm";
-
-    tempPath = path.join(os.tmpdir(), `smart-menu-${crypto.randomUUID()}${ext}`);
-    await fs.promises.writeFile(tempPath, req.file.buffer);
-
-    const args = {
-      file: fs.createReadStream(tempPath),
-      model: "gpt-4o-mini-transcribe"
-    };
-    if (["ar","fr","en"].includes(req.body.language)) args.language = req.body.language;
-
-    const transcription = await openai.audio.transcriptions.create(args);
-    const text = transcription.text?.trim();
-    if (!text) return res.status(422).json({ error: "No speech was detected.", code: "no_speech" });
-
-    res.json({ text });
-  } catch (error) {
-    console.error("TRANSCRIBE ERROR:", error);
-    const {status, body} = apiErrorPayload(error);
-    res.status(status).json(body);
-  } finally {
-    if (tempPath) fs.promises.unlink(tempPath).catch(() => {});
-  }
-});
-
-app.post("/api/tts", async (req, res) => {
-  try {
-    const { text, language = "ar" } = req.body;
-    if (!text) return res.status(400).json({ error: "Text is required.", code: "bad_request" });
-    if (!apiKey) return res.status(401).json({ error: "OPENAI_API_KEY is not configured.", code: "invalid_api_key" });
-
-    const style =
-      language === "ar"
-        ? "Speak warm, clear Arabic naturally, like a professional restaurant waitress."
-        : language === "fr"
-        ? "Parle en français avec une voix chaleureuse, claire et professionnelle."
-        : "Speak warm, clear English naturally, like a professional restaurant waitress.";
-
-    const audio = await openai.audio.speech.create({
-      model: "gpt-4o-mini-tts",
-      voice: "coral",
-      input: text,
-      instructions: style,
-      response_format: "mp3"
+    return res.json({
+      ok: true,
+      answer
     });
 
-    const buffer = Buffer.from(await audio.arrayBuffer());
-    res.setHeader("Content-Type", "audio/mpeg");
-    res.setHeader("Cache-Control", "no-store");
-    res.send(buffer);
   } catch (error) {
-    console.error("TTS ERROR:", error);
-    const {status, body} = apiErrorPayload(error);
-    res.status(status).json(body);
+    console.error("AI error:", error);
+
+    let friendlyMessage =
+      error?.error?.message ||
+      error?.message ||
+      "تعذر الاتصال بالذكاء الاصطناعي.";
+
+    if (error.status === 401) {
+      friendlyMessage =
+        "مفتاح OpenAI غير صحيح أو غير صالح.";
+    }
+
+    if (error.status === 429) {
+      friendlyMessage =
+        "تم الوصول إلى حد استخدام OpenAI أو لا يوجد رصيد كافٍ في الحساب.";
+    }
+
+    return res.status(error.status || 500).json({
+      ok: false,
+      error: error.code || error.type || "AI_ERROR",
+      message: friendlyMessage
+    });
   }
 });
 
+// ======================================================
+// Speech to Text
+// تحويل صوت العميل إلى كتابة
+// ======================================================
+
+app.post(
+  "/api/transcribe",
+  upload.single("audio"),
+  async (req, res) => {
+
+    try {
+
+      if (!process.env.OPENAI_API_KEY) {
+        return res.status(500).json({
+          ok: false,
+          error: "OPENAI_API_KEY_NOT_CONFIGURED",
+          message: "مفتاح OpenAI غير موجود."
+        });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({
+          ok: false,
+          error: "NO_AUDIO",
+          message: "لم يتم استلام ملف صوتي."
+        });
+      }
+
+      const language = req.body.language || "ar";
+
+      let filename = "speech.webm";
+
+      if (
+        req.file.mimetype &&
+        req.file.mimetype.includes("mp4")
+      ) {
+        filename = "speech.mp4";
+      }
+
+      if (
+        req.file.mimetype &&
+        req.file.mimetype.includes("mpeg")
+      ) {
+        filename = "speech.mp3";
+      }
+
+      if (
+        req.file.mimetype &&
+        req.file.mimetype.includes("wav")
+      ) {
+        filename = "speech.wav";
+      }
+
+      const audioFile = new File(
+        [req.file.buffer],
+        filename,
+        {
+          type:
+            req.file.mimetype ||
+            "audio/webm"
+        }
+      );
+
+      const transcriptionOptions = {
+        file: audioFile,
+        model: "gpt-4o-mini-transcribe"
+      };
+
+      // نحدد اللغة عندما يختارها العميل
+      if (language === "ar") {
+        transcriptionOptions.language = "ar";
+      }
+
+      if (language === "en") {
+        transcriptionOptions.language = "en";
+      }
+
+      if (language === "fr") {
+        transcriptionOptions.language = "fr";
+      }
+
+      const transcription =
+        await openai.audio.transcriptions.create(
+          transcriptionOptions
+        );
+
+      const text =
+        transcription.text?.trim() || "";
+
+      if (!text) {
+        return res.status(400).json({
+          ok: false,
+          error: "NO_SPEECH_DETECTED",
+          message:
+            "لم أتمكن من سماع كلام واضح. حاول مرة أخرى."
+        });
+      }
+
+      return res.json({
+        ok: true,
+        text
+      });
+
+    } catch (error) {
+
+      console.error(
+        "Transcription error:",
+        error
+      );
+
+      return res.status(
+        error.status || 500
+      ).json({
+        ok: false,
+        error:
+          error.code ||
+          error.type ||
+          "TRANSCRIPTION_ERROR",
+
+        message:
+          error?.error?.message ||
+          error?.message ||
+          "تعذر تحويل الصوت إلى نص."
+      });
+    }
+  }
+);
+
+// ======================================================
+// Text to Speech
+// تحويل رد النادلة إلى صوت
+// ======================================================
+
+app.post("/api/tts", async (req, res) => {
+
+  try {
+
+    const {
+      text,
+      language = "ar"
+    } = req.body || {};
+
+    if (!process.env.OPENAI_API_KEY) {
+      return res.status(500).json({
+        ok: false,
+        error: "OPENAI_API_KEY_NOT_CONFIGURED",
+        message: "مفتاح OpenAI غير موجود."
+      });
+    }
+
+    if (!text || !text.trim()) {
+      return res.status(400).json({
+        ok: false,
+        error: "EMPTY_TEXT",
+        message:
+          "لا يوجد نص لتحويله إلى صوت."
+      });
+    }
+
+    let voiceInstructions;
+
+    if (language === "fr") {
+      voiceInstructions =
+        "Speak naturally in French with a warm, elegant restaurant waitress tone. Do not sound robotic.";
+    } else if (language === "en") {
+      voiceInstructions =
+        "Speak naturally in English with a warm and professional restaurant waitress tone. Do not sound robotic.";
+    } else {
+      voiceInstructions =
+        "تحدث بالعربية بشكل طبيعي وواضح وهادئ، بنبرة نادلة مطعم راقية وودودة. لا تتحدث بنبرة آلية.";
+    }
+
+    const speech =
+      await openai.audio.speech.create({
+        model: "gpt-4o-mini-tts",
+        voice: "coral",
+        input: text.trim(),
+        instructions: voiceInstructions,
+        response_format: "mp3"
+      });
+
+    const buffer =
+      Buffer.from(
+        await speech.arrayBuffer()
+      );
+
+    res.setHeader(
+      "Content-Type",
+      "audio/mpeg"
+    );
+
+    res.setHeader(
+      "Content-Length",
+      buffer.length
+    );
+
+    res.setHeader(
+      "Cache-Control",
+      "no-store"
+    );
+
+    return res.send(buffer);
+
+  } catch (error) {
+
+    console.error("TTS error:", error);
+
+    return res.status(
+      error.status || 500
+    ).json({
+      ok: false,
+      error:
+        error.code ||
+        error.type ||
+        "TTS_ERROR",
+
+      message:
+        error?.error?.message ||
+        error?.message ||
+        "تعذر تشغيل صوت النادلة."
+    });
+  }
+});
+
+// ======================================================
+// Health check
+// ======================================================
+
+app.get("/health", (req, res) => {
+  res.json({
+    ok: true,
+    service: "Smart Menu AI",
+    timestamp: new Date().toISOString()
+  });
+});
+
+// ======================================================
+// 404 API
+// ======================================================
+
+app.use("/api", (req, res) => {
+  res.status(404).json({
+    ok: false,
+    error: "NOT_FOUND",
+    message: "API endpoint not found."
+  });
+});
+
+// ======================================================
+// Error handler
+// ======================================================
+
+app.use((error, req, res, next) => {
+
+  console.error(
+    "Server error:",
+    error
+  );
+
+  res.status(500).json({
+    ok: false,
+    error: "SERVER_ERROR",
+    message:
+      error?.message ||
+      "حدث خطأ في السيرفر."
+  });
+});
+
+// ======================================================
+// Start Server
+// ======================================================
+
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`✅ Smart Menu AI running on port ${PORT}`);
-  console.log(`OpenAI key configured: ${Boolean(apiKey)}`);
+
+  console.log(
+    `✅ Smart Menu AI server running on port ${PORT}`
+  );
+
+  console.log(
+    `🔑 OpenAI API Key: ${
+      process.env.OPENAI_API_KEY
+        ? "Configured"
+        : "NOT CONFIGURED"
+    }`
+  );
+
 });
