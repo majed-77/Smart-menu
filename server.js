@@ -2,6 +2,9 @@ import express from "express";
 import path from "path";
 import OpenAI from "openai";
 import multer from "multer";
+import fs from "fs";
+import os from "os";
+import crypto from "crypto";
 import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -9,418 +12,127 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 12 * 1024 * 1024
-  }
+  limits: { fileSize: 12 * 1024 * 1024 }
 });
 
-if (!process.env.OPENAI_API_KEY) {
-  console.warn("⚠️ OPENAI_API_KEY is not configured.");
-}
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
-
-app.use(express.json({ limit: "2mb" }));
-
+app.use(express.json({ limit: "3mb" }));
 app.use(express.static(__dirname));
 
 app.get("/", (req, res) => {
-  res.sendFile(
-    path.join(
-      __dirname,
-      "smart-menu-ai-multilingual.html"
-    )
-  );
+  res.sendFile(path.join(__dirname, "smart-menu-ai-multilingual.html"));
 });
 
 app.get("/api/health", (req, res) => {
-  res.json({
-    ok: true,
-    service: "Smart Menu AI"
-  });
+  res.json({ ok: true, apiKeyConfigured: Boolean(process.env.OPENAI_API_KEY) });
 });
-
-
-// ===============================
-// AI CHAT
-// ===============================
 
 app.post("/api/ai", async (req, res) => {
-
   try {
+    const { question, dish, menu, history = [], language = "ar" } = req.body;
+    if (!question) return res.status(400).json({ error: "Question is required." });
 
-    const {
-      question,
-      dish,
-      menu,
-      history = [],
-      language = "auto",
-      detectedLanguage
-    } = req.body;
+    const langRule =
+      language === "ar" ? "Answer only in natural Arabic. Keep French menu item names unchanged." :
+      language === "en" ? "Answer only in natural English. Keep French menu item names unchanged." :
+      "Réponds uniquement en français naturel.";
 
+    const instructions = `You are the virtual waitress for Café Victor Hugo in La Marsa.
+${langRule}
+Be warm, concise, natural and helpful.
+Use only the provided menu data. Never invent prices, ingredients, allergens, availability, or preparation details.
+If allergy information is missing, advise the guest to confirm with restaurant staff.
+Prices are in Tunisian dinars (DT).`;
 
-    if (!question) {
-      return res.status(400).json({
-        error: "Question is required."
-      });
-    }
+    const context = JSON.stringify({ selectedDish: dish || null, menu: menu || [] });
+    const conversation = history.slice(-10).map(m => ({
+      role: m.role === "assistant" ? "assistant" : "user",
+      content: String(m.content || "")
+    })).filter(m => m.content);
 
-
-    const chosen =
-      language === "auto"
-        ? (detectedLanguage || "fr")
-        : language;
-
-
-    const languageInstruction =
-      chosen === "ar"
-
-        ? `
-Always answer in natural Arabic.
-Keep original French dish names unchanged.
-`
-
-        : chosen === "en"
-
-        ? `
-Always answer in natural English.
-Keep original French dish names unchanged.
-`
-
-        : `
-Réponds toujours en français naturel.
-`;
-
-
-    const instructions = `
-You are the virtual AI waitress for Café Victor Hugo in La Marsa.
-
-${languageInstruction}
-
-Only use information in the provided menu.
-
-Never invent:
-
-- prices
-- ingredients
-- allergens
-- availability
-- preparation details
-
-If allergy information is unavailable,
-tell the customer to confirm with restaurant staff.
-
-If a price is "—",
-say that the price is not listed.
-
-You may compare menu items.
-
-You may recommend food and drinks according
-to the customer's budget and preferences.
-
-Be warm, concise and conversational.
-
-Prices are in DT.
-`;
-
-
-    const context = {
-      selectedDish: dish || null,
-      menu: menu || []
-    };
-
-
-    const conversation = history
-      .slice(-10)
-      .map(message => ({
-
-        role:
-          message.role === "assistant"
-            ? "assistant"
-            : "user",
-
-        content:
-          String(
-            message.content ||
-            message.text ||
-            ""
-          )
-
-      }))
-      .filter(message =>
-        message.content.trim()
-      );
-
-
-    const response =
-      await openai.responses.create({
-
-        model: "gpt-4.1-mini",
-
-        instructions,
-
-        input: [
-
-          {
-            role: "user",
-
-            content:
-              "Restaurant menu context:\n" +
-              JSON.stringify(context)
-          },
-
-          ...conversation,
-
-          {
-            role: "user",
-            content: question
-          }
-
-        ]
-
-      });
-
-
-    res.json({
-
-      answer:
-        response.output_text || ""
-
+    const response = await openai.responses.create({
+      model: "gpt-4.1-mini",
+      instructions,
+      input: [
+        { role: "user", content: "MENU DATA:\n" + context },
+        ...conversation,
+        { role: "user", content: question }
+      ]
     });
 
-
+    const answer = response.output_text?.trim();
+    if (!answer) throw new Error("Empty model response");
+    res.json({ answer });
   } catch (error) {
-
-    console.error(
-      "AI error:",
-      error
-    );
-
-    res.status(500).json({
-
-      error:
-        "AI request failed."
-
-    });
-
+    console.error("AI ERROR", error);
+    res.status(500).json({ error: error?.message || "AI request failed." });
   }
-
 });
 
+app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
+  let tempPath = "";
+  try {
+    if (!req.file) return res.status(400).json({ error: "Audio file is required." });
 
-// ===============================
-// SPEECH TO TEXT
-// ===============================
+    const ext =
+      req.file.mimetype?.includes("mp4") ? ".m4a" :
+      req.file.mimetype?.includes("mpeg") ? ".mp3" :
+      req.file.mimetype?.includes("wav") ? ".wav" : ".webm";
 
-app.post(
-  "/api/transcribe",
+    tempPath = path.join(os.tmpdir(), `smart-menu-${crypto.randomUUID()}${ext}`);
+    await fs.promises.writeFile(tempPath, req.file.buffer);
 
-  upload.single("audio"),
-
-  async (req, res) => {
-
-    try {
-
-      if (!req.file) {
-
-        return res.status(400).json({
-
-          error:
-            "Audio file is required."
-
-        });
-
-      }
-
-
-      const file =
-        new File(
-
-          [req.file.buffer],
-
-          req.file.originalname ||
-          "question.webm",
-
-          {
-
-            type:
-              req.file.mimetype ||
-              "audio/webm"
-
-          }
-
-        );
-
-
-      const options = {
-
-        file,
-
-        model:
-          "gpt-4o-mini-transcribe"
-
-      };
-
-
-      if (
-        req.body.language &&
-        req.body.language !== "auto"
-      ) {
-
-        options.language =
-          req.body.language;
-
-      }
-
-
-      const transcription =
-        await openai.audio.transcriptions.create(
-          options
-        );
-
-
-      res.json({
-
-        text:
-          transcription.text || ""
-
-      });
-
-
-    } catch (error) {
-
-      console.error(
-        "Transcription error:",
-        error
-      );
-
-
-      res.status(500).json({
-
-        error:
-          "Voice transcription failed."
-
-      });
-
+    const args = {
+      file: fs.createReadStream(tempPath),
+      model: "gpt-4o-mini-transcribe"
+    };
+    if (req.body.language && ["ar","fr","en"].includes(req.body.language)) {
+      args.language = req.body.language;
     }
 
+    const transcription = await openai.audio.transcriptions.create(args);
+    const text = transcription.text?.trim();
+    if (!text) throw new Error("No speech detected");
+    res.json({ text });
+  } catch (error) {
+    console.error("TRANSCRIBE ERROR", error);
+    res.status(500).json({ error: error?.message || "Voice transcription failed." });
+  } finally {
+    if (tempPath) fs.promises.unlink(tempPath).catch(() => {});
   }
-);
+});
 
+app.post("/api/tts", async (req, res) => {
+  try {
+    const { text, language = "ar" } = req.body;
+    if (!text) return res.status(400).json({ error: "Text is required." });
 
-// ===============================
-// TEXT TO SPEECH
-// ===============================
+    const style =
+      language === "ar" ? "Speak warm, clear Arabic naturally, like a professional restaurant waitress." :
+      language === "fr" ? "Parle en français avec une voix chaleureuse, claire et professionnelle." :
+      "Speak warm, clear English naturally, like a professional restaurant waitress.";
 
-app.post(
-  "/api/tts",
+    const audio = await openai.audio.speech.create({
+      model: "gpt-4o-mini-tts",
+      voice: "coral",
+      input: text,
+      instructions: style,
+      response_format: "mp3"
+    });
 
-  async (req, res) => {
-
-    try {
-
-      const {
-        text
-      } = req.body;
-
-
-      if (!text) {
-
-        return res.status(400).json({
-
-          error:
-            "Text is required."
-
-        });
-
-      }
-
-
-      const audio =
-        await openai.audio.speech.create({
-
-          model:
-            "gpt-4o-mini-tts",
-
-          voice:
-            "coral",
-
-          input:
-            text,
-
-          instructions:
-            `
-Speak warmly and naturally
-like a professional café waitress.
-
-Preserve the language
-of the input.
-`
-
-        });
-
-
-      const buffer =
-        Buffer.from(
-          await audio.arrayBuffer()
-        );
-
-
-      res.setHeader(
-        "Content-Type",
-        "audio/mpeg"
-      );
-
-
-      res.setHeader(
-        "Cache-Control",
-        "no-store"
-      );
-
-
-      res.send(
-        buffer
-      );
-
-
-    } catch (error) {
-
-      console.error(
-        "TTS error:",
-        error
-      );
-
-
-      res.status(500).json({
-
-        error:
-          "Speech generation failed."
-
-      });
-
-    }
-
+    const buffer = Buffer.from(await audio.arrayBuffer());
+    res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("Cache-Control", "no-store");
+    res.send(buffer);
+  } catch (error) {
+    console.error("TTS ERROR", error);
+    res.status(500).json({ error: error?.message || "Speech generation failed." });
   }
-);
+});
 
-
-// ===============================
-// START SERVER
-// ===============================
-
-app.listen(
-  PORT,
-  "0.0.0.0",
-  () => {
-
-    console.log(
-      `✅ Smart Menu AI server running on port ${PORT}`
-    );
-
-  }
-);
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`✅ Smart Menu AI running on port ${PORT}`);
+});
