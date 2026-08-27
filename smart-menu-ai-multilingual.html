@@ -206,7 +206,6 @@ var speechAudioContext = window.speechAudioContext || null;
 var speechSource = window.speechSource || null;
 var speechUnlocked = false;
 
-
 const TND_TO_SAR=1.2956;
 function displayPrice(raw,lang){
   if(raw==='—') return lang==='ar'?'السعر غير مدرج':'—';
@@ -263,13 +262,13 @@ const TEXT={
   waiterSub:'اختر اللغة وسأرحب بك ثم يمكنك التحدث مباشرة.',
   close:'إغلاق', end:'إنهاء',
   placeholder:'اكتب سؤالك…',
-  ready:'أنا معك، تكلم على طول 🎤',
-  recording:'أسمعك… تكلم عادي.',
+  ready:'أنا معك، اضغط المايك وتكلم 🎤',
+  recording:'أسمعك… وإذا خلصت اسكت شوي أو اضغط ⏹.',
   transcribing:'لحظة أفهم كلامك…',
   thinking:'ثواني وبرد عليك…',
   micError:'تعذر تشغيل الميكروفون.',
   permission:'على iPhone: افتح إعدادات الموقع في Safari واسمح للميكروفون، ثم أعد تحميل الصفحة.',
-  hint:'المايك شغال تلقائيًا. تكلم عادي، وإذا بدأت تتكلم وأنا أتكلم بسكت لك مباشرة.',
+  hint:'المايك يشتغل تلقائيًا بعد اختيار لغة النادلة. تكلم عادي، وإذا بدأت تتكلم وأنا أتكلم بسكت لك مباشرة.',
   aiError:'تعذر الاتصال بالنادلة الآن.',
   apiKeyError:'مفتاح OpenAI غير موجود أو غير صحيح.',
   quotaError:'حساب OpenAI API لا يملك رصيدًا كافيًا أو تم تجاوز الحصة. أضف وسيلة دفع/رصيد في منصة OpenAI ثم جرّب مرة أخرى.',
@@ -357,9 +356,7 @@ let realtimeMicStream=null;
 let realtimeRemoteAudio=null;
 let realtimeConnected=false;
 let realtimeStarting=false;
-let realtimeTranscriptBuffer='';
 let realtimeAssistantBuffer='';
-
 let conversationHistory=[];
 let recorder=null, stream=null, chunks=[], recording=false, currentAudio=null;
 let audioContext=null, analyser=null, vadFrame=null;
@@ -517,9 +514,52 @@ function applySiteLanguage(lang){
 document.querySelectorAll('[data-site-lang]').forEach((btn)=>{
  btn.addEventListener('click',()=>{
    const lang=btn.dataset.siteLang;
-   if(!lang) return;
+   if(!lang)return;
    applySiteLanguage(lang);
  });
+});
+document.querySelector('#changeSiteLang').onclick=()=>welcomeOverlay.classList.remove('hidden');
+
+menu.forEach((s,i)=>{
+ const b=document.createElement('button');
+ b.textContent=s.cat;
+ b.onclick=()=>document.getElementById('s'+i).scrollIntoView({behavior:'smooth',block:'start'});
+ nav.appendChild(b);
+
+ const sec=document.createElement('section');
+ sec.id='s'+i;
+ sec.dataset.category=s.cat;
+ sec.innerHTML=`<h2 class="section-title"><span>${s.cat}</span><span class="section-count">${s.items.length}</span></h2><div class="grid"></div>`;
+
+ const grid=sec.querySelector('.grid');
+
+ s.items.forEach(d=>{
+   const c=document.createElement('article');
+   c.className='card';
+   c.dataset.search=(s.cat+' '+d[0]+' '+d[1]).toLowerCase();
+
+   const img=itemImage(d[0]);
+   const media=img
+     ? `<img class="foodImage" loading="lazy" src="${img}" alt="${d[0]}" onerror="this.outerHTML='<div class=&quot;foodFallback&quot;>${imageFallback(d[0])}</div>'">`
+     : `<div class="foodFallback">${imageFallback(d[0])}</div>`;
+
+   c.innerHTML=`
+     <div class="foodImageWrap">
+       ${media}
+       ${d[3]?'<span class="signature">Signature Victor</span>':''}
+       <div class="price">${displayPrice(d[2],siteLanguage||"ar")}</div>
+     </div>
+     <div class="cardBody">
+       <h3>${d[0]}</h3>
+       <div class="desc">${d[1]}</div>
+       <button class="voice">${TEXT[siteLanguage||'ar'].askWaiter}</button>
+     </div>`;
+
+   c.querySelector('.voice').onclick=()=>openWaiter(d);
+   grid.appendChild(c);
+ });
+
+ root.appendChild(sec);
 });
 
 
@@ -534,9 +574,12 @@ function closeRealtime(){
   }
   if(realtimeRemoteAudio){
     try{realtimeRemoteAudio.pause();realtimeRemoteAudio.srcObject=null;}catch(e){}
-    realtimeRemoteAudio.remove();
+    try{realtimeRemoteAudio.remove();}catch(e){}
   }
-  realtimeDC=null; realtimePC=null; realtimeMicStream=null; realtimeRemoteAudio=null;
+  realtimeDC=null;
+  realtimePC=null;
+  realtimeMicStream=null;
+  realtimeRemoteAudio=null;
   orb.classList.remove('speaking');
 }
 
@@ -548,50 +591,55 @@ function realtimeInstructions(){
 
   const languageRule=
     lang==='ar'
-      ?`تكلم باللهجة السعودية الطبيعية فقط. لا تستخدم الفصحى الرسمية. خلك خفيف وعفوي مثل نادلة سعودية حقيقية. استخدم عبارات طبيعية مثل "هلا"، "أبشر"، "وش ودك"، "تمام" بدون مبالغة.`
+      ?`تكلم باللهجة السعودية الطبيعية فقط، بشكل خفيف وعفوي وواضح. لا تستخدم الفصحى الرسمية. خلك مثل نادلة سعودية حقيقية، واستخدم عبارات يومية طبيعية مثل هلا، أبشر، وش ودك، تمام، من عيوني بدون مبالغة.`
       :lang==='fr'
       ?`Parle uniquement en français naturel, chaleureux et conversationnel.`
       :`Speak only in natural, warm conversational English.`;
 
   return `أنت النادلة الصوتية لمقهى Café Victor Hugo في المرسى.
 ${languageRule}
-تكلم كإنسان حقيقي، مو كمساعد آلي. الرد غالبًا جملة أو جملتين فقط.
-إذا احتجت اسأل سؤال متابعة قصير وطبيعي.
-لا تخترع مكونات أو حساسية أو أسعار غير موجودة.
+تكلم كإنسان حقيقي وليس كمساعد آلي.
+خلي الرد غالبًا جملة أو جملتين، واسأل سؤال متابعة قصير إذا احتجت.
+لا تخترع مكونات أو حساسية أو أسعار غير موجودة في المنيو.
 الطبق الحالي: ${dishName}.
 الوصف: ${dishDesc}.
 السعر الظاهر للعميل: ${visiblePrice}.
-${lang==='ar'?'الأسعار العربية محولة تقريبياً من الدينار التونسي إلى الريال السعودي، فلا تقل إنها سعر الدفع الفعلي إلا إذا سأل العميل.':''}
-إذا بدأ العميل يتكلم وأنت تتكلم، توقف فورًا واسمعه.`;
+${lang==='ar'?'الأسعار المعروضة بالعربية محولة تقريبياً من الدينار التونسي إلى الريال السعودي.':''}
+إذا بدأ العميل يتكلم أثناء كلامك، توقف فورًا واسمعه.`;
 }
 
 function handleRealtimeEvent(event){
   let e;
   try{e=JSON.parse(event.data);}catch(err){return;}
 
-  // User started speaking: visually interrupt assistant.
   if(e.type==='input_audio_buffer.speech_started'){
     orb.classList.remove('speaking');
-    status.textContent=waiterLanguage==='ar'?'أسمعك…':waiterLanguage==='fr'?"Je vous écoute…":"I'm listening…";
+    status.textContent=
+      waiterLanguage==='ar'?'أسمعك…':
+      waiterLanguage==='fr'?"Je vous écoute…":
+      "I'm listening…";
   }
 
   if(e.type==='input_audio_buffer.speech_stopped'){
-    status.textContent=waiterLanguage==='ar'?'ثواني وبرد عليك…':waiterLanguage==='fr'?'Un instant…':'One moment…';
+    status.textContent=
+      waiterLanguage==='ar'?'ثواني وبرد عليك…':
+      waiterLanguage==='fr'?'Un instant…':
+      'One moment…';
   }
 
-  // Assistant audio lifecycle.
   if(e.type==='response.audio.delta' || e.type==='response.output_audio.delta'){
     orb.classList.add('speaking');
   }
+
   if(e.type==='response.audio.done' || e.type==='response.output_audio.done' || e.type==='response.done'){
     orb.classList.remove('speaking');
     status.textContent=TEXT[waiterLanguage].ready;
   }
 
-  // Assistant transcript, event names supported across realtime versions.
   if(e.type==='response.audio_transcript.delta' || e.type==='response.output_audio_transcript.delta'){
     realtimeAssistantBuffer += e.delta || '';
   }
+
   if(e.type==='response.audio_transcript.done' || e.type==='response.output_audio_transcript.done'){
     const text=(e.transcript || realtimeAssistantBuffer || '').trim();
     if(text){
@@ -601,7 +649,6 @@ function handleRealtimeEvent(event){
     realtimeAssistantBuffer='';
   }
 
-  // Input transcription when the session emits it.
   if(e.type==='conversation.item.input_audio_transcription.completed'){
     const text=(e.transcript||'').trim();
     if(text){
@@ -621,11 +668,6 @@ function handleRealtimeEvent(event){
 async function startRealtime(){
   if(realtimeConnected || realtimeStarting) return;
   realtimeStarting=true;
-  showDiagnostic(
-    waiterLanguage==='ar'?'جارٍ تشغيل المحادثة الصوتية المباشرة…':
-    waiterLanguage==='fr'?'Démarrage de la conversation vocale…':
-    'Starting live voice conversation…', true
-  );
 
   try{
     const pc=new RTCPeerConnection();
@@ -646,29 +688,34 @@ async function startRealtime(){
     const stream=await navigator.mediaDevices.getUserMedia({
       audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}
     });
+
     realtimeMicStream=stream;
     stream.getTracks().forEach(track=>pc.addTrack(track,stream));
 
     const dc=pc.createDataChannel('oai-events');
     realtimeDC=dc;
     dc.addEventListener('message',handleRealtimeEvent);
+
     dc.addEventListener('open',()=>{
       realtimeConnected=true;
       realtimeStarting=false;
       status.textContent=TEXT[waiterLanguage].ready;
+
       showDiagnostic(
-        waiterLanguage==='ar'?'✅ المحادثة الصوتية المباشرة جاهزة — تكلم على طول':
-        waiterLanguage==='fr'?'✅ Conversation vocale prête — parlez directement':
-        '✅ Live voice is ready — just start speaking', true
+        waiterLanguage==='ar'
+          ?'✅ المايك جاهز — تكلم على طول'
+          :waiterLanguage==='fr'
+          ?'✅ Micro prêt — parlez directement'
+          :'✅ Microphone ready — just start speaking',
+        true
       );
 
-      // Brief natural welcome, generated by realtime voice itself.
       dc.send(JSON.stringify({
         type:'response.create',
         response:{
           instructions:
             waiterLanguage==='ar'
-              ?`رحّب باختصار جدًا باللهجة السعودية وقل: هلا والله، أنا معك. وش ودك تعرف عن ${translateMenuText(currentDish[0],'ar')}؟`
+              ?`رحب باختصار جدًا باللهجة السعودية وقل بشكل طبيعي: هلا والله، أنا معك. وش ودك تعرف عن ${translateMenuText(currentDish[0],'ar')}؟`
               :waiterLanguage==='fr'
               ?`Accueille très brièvement le client et demande ce qu'il veut savoir sur ${translateMenuText(currentDish[0],'fr')}.`
               :`Give a very brief welcome and ask what the guest wants to know about ${translateMenuText(currentDish[0],'en')}.`
@@ -679,16 +726,14 @@ async function startRealtime(){
     const offer=await pc.createOffer();
     await pc.setLocalDescription(offer);
 
-    const payload={
-      sdp:offer.sdp,
-      language:waiterLanguage,
-      instructions:realtimeInstructions()
-    };
-
     const r=await fetch('/api/realtime-call',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(payload)
+      body:JSON.stringify({
+        sdp:offer.sdp,
+        language:waiterLanguage,
+        instructions:realtimeInstructions()
+      })
     });
 
     const data=await r.json().catch(()=>({}));
@@ -700,17 +745,18 @@ async function startRealtime(){
     console.error('Realtime start failed',e);
     realtimeStarting=false;
     closeRealtime();
+
     const msg=
       waiterLanguage==='ar'
-        ?`تعذر تشغيل المحادثة الصوتية المباشرة: ${e.message}`
+        ?`تعذر تشغيل المحادثة الصوتية: ${e.message}`
         :waiterLanguage==='fr'
-        ?`Impossible de démarrer la voix en direct : ${e.message}`
+        ?`Impossible de démarrer la voix : ${e.message}`
         :`Could not start live voice: ${e.message}`;
+
     status.textContent=msg;
     showDiagnostic(msg,false);
   }
 }
-
 
 function openWaiter(d){
  currentDish=d; conversationHistory=[];
@@ -722,6 +768,7 @@ document.querySelectorAll('[data-waiter-lang]').forEach(b=>b.onclick=async()=>{
  waiterLanguage=b.dataset.waiterLang;
  waiterLangStep.classList.add('hidden');
  chatStep.classList.remove('hidden');
+
  title.textContent=translateMenuText(currentDish[0],waiterLanguage);
 
  const t=TEXT[waiterLanguage];
@@ -733,7 +780,7 @@ document.querySelectorAll('[data-waiter-lang]').forEach(b=>b.onclick=async()=>{
  conversationHistory=[];
 
  status.textContent=
-   waiterLanguage==='ar'?'شغّلت المايك، تكلم على طول…':
+   waiterLanguage==='ar'?'شغلت المايك، تكلم على طول…':
    waiterLanguage==='fr'?'Activation du micro…':
    'Turning on the microphone…';
 
@@ -810,7 +857,7 @@ async function fetchJSON(url,options,timeout=45000){
 async function askAI(question){
  return fetchJSON('/api/ai',{
   method:'POST',headers:{'Content-Type':'application/json'},
-  body:JSON.stringify({question,dish:{name:translateMenuText(currentDish[0],waiterLanguage),description:translateMenuText(currentDish[1],waiterLanguage),price:waiterLanguage==='ar'?displayPrice(currentDish[2],'ar'):currentDish[2],sourcePrice:currentDish[2]},menu:compactMenu(),history:conversationHistory.slice(-10),language:waiterLanguage})
+  body:JSON.stringify({question,dish:{name:translateMenuText(currentDish[0],waiterLanguage),description:translateMenuText(currentDish[1],waiterLanguage),price:currentDish[2]},menu:compactMenu(),history:conversationHistory.slice(-10),language:waiterLanguage})
  });
 }
 
@@ -940,7 +987,6 @@ async function speakAI(text){
   }
 }
 async function submitQuestion(q){
- if(realtimeRemoteAudio){try{realtimeRemoteAudio.muted=true;}catch(e){}}
  q=(q||'').trim(); if(!q)return;
  addBubble('user',q); conversationHistory.push({role:'user',content:q});
  input.value=''; input.disabled=true; micBtn.disabled=true; status.textContent=TEXT[waiterLanguage].thinking;
@@ -962,10 +1008,7 @@ async function submitQuestion(q){
   status.textContent=message;
   showDiagnostic(message,false);
  }
- finally{
-   input.disabled=false; micBtn.disabled=false;
-   if(realtimeRemoteAudio){try{realtimeRemoteAudio.muted=false;}catch(e){}}
- }
+ finally{input.disabled=false;micBtn.disabled=false;}
 }
 input.addEventListener('keydown',async e=>{
  if(e.key==='Enter'){
@@ -1058,8 +1101,10 @@ micBtn.onclick=()=>{
  if(!track) return;
  track.enabled=!track.enabled;
  micBtn.textContent=track.enabled?'🎤':'🔇';
- status.textContent=track.enabled?TEXT[waiterLanguage].ready:
-   (waiterLanguage==='ar'?'المايك مكتوم':waiterLanguage==='fr'?'Micro coupé':'Microphone muted');
+ status.textContent=
+   track.enabled
+     ?TEXT[waiterLanguage].ready
+     :(waiterLanguage==='ar'?'المايك مكتوم':waiterLanguage==='fr'?'Micro coupé':'Microphone muted');
 };
 
 function closeWaiter(){
