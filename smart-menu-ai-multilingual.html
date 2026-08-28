@@ -804,7 +804,7 @@ function isExplicitBookingConfirmation(text){
   const hasApprove=/(اعتمد|اعتمدي|اكدي|اكد|ثبت|ثبتي|نفذ|نفذي|سجل|سجلي)/.test(t);
   const hasYes=/(^|\s)(نعم|ايه|اي|تمام|اوكي|موافق|خلاص|صح)(\s|$)/.test(t);
   const bookingWord=/(الحجز|الطلب)/.test(t);
-  return hasApprove || (hasYes && bookingWord);
+  return hasApprove || (hasYes && (bookingWord || altAwaitingBookingApproval()));
 }
 function cancelRealtimeAssistantForBargeIn(){
   if(!realtimeDC || realtimeDC.readyState!=='open') return;
@@ -1184,13 +1184,18 @@ function normalizeAltBookingApprovalTranscript(text){
   const raw=String(text||'').trim();
   if(!altAwaitingBookingApproval()) return raw;
   const t=raw.toLowerCase().replace(/[.!؟?،,]/g,'').trim();
-  // Keep a short approval short. Never echo/provider-expand seed vocabulary.
-  if(/^(evet|chatgpt|yes|yeah|yep|ok|okay|تمام|نعم|ايه|اي|اعتمد|اعتمدي)$/.test(t)) return 'اعتمد';
-  // Defensive cleanup for rare STT expansions of a one-word approval. If the
-  // transcript contains several approval synonyms, collapse it to one intent.
-  const approvalHits=(t.match(/اعتمد(?:ي)?|اثبت|أثبت|اكد|أكد|نعم|ايه|إيه|تمام|موافق|evet|chatgpt/g)||[]).length;
-  if(approvalHits>=3 && t.length<140) return 'اعتمد';
+  if(/^(evet|chatgpt|yes|yeah|yep|ok|okay|si|sí|eh|nem|nem természet|nem termeszet|oui|تمام|نعم|ايه|إيه|اي|اعتمد|اعتمدي)$/.test(t)) return 'اعتمد';
+  const approvalHits=(t.match(/اعتمد(?:ي)?|اثبت|أثبت|اكد|أكد|نعم|ايه|إيه|تمام|موافق|evet|yes|sí|si|oui/g)||[]).length;
+  if(approvalHits>=2 && t.length<140) return 'اعتمد';
   return raw;
+}
+function exp3CanConfirmBookingNow(){
+  const a=exp3BookingArgsFromState();
+  return Boolean(a.name && a.phone && Number(a.party_size)>0 && a.date && a.time);
+}
+async function exp3ConfirmBookingDirectly(){
+  const args=exp3BookingArgsFromState();
+  return handleAltBookingTool({name:'confirm_booking_order',arguments:JSON.stringify(args)});
 }
 async function processAltVoice(blob,mime){
   altBusy=true;
@@ -1206,9 +1211,13 @@ async function processAltVoice(blob,mime){
     if(saraEngine==='hybrid3')exp3UpdateBookingState(q,'user');
     addBubble('user',q); conversationHistory.push({role:'user',content:q});
     status.textContent=isExplicitBookingConfirmation(q)&&waiterLanguage==='ar'?'تمام، أعتمد الحجز…':TEXT[waiterLanguage].thinking;
-    const data=await askAltSara(q);
     let answer='';
-    if(data.toolCall?.name==='confirm_booking_order') answer=await handleAltBookingTool(data.toolCall); else answer=String(data.answer||'').trim();
+    if(saraEngine==='hybrid3' && altAwaitingBookingApproval() && isExplicitBookingConfirmation(q) && exp3CanConfirmBookingNow()){
+      answer=await exp3ConfirmBookingDirectly();
+    }else{
+      const data=await askAltSara(q);
+      if(data.toolCall?.name==='confirm_booking_order') answer=await handleAltBookingTool(data.toolCall); else answer=String(data.answer||'').trim();
+    }
     if(!answer)throw new Error('No answer');
     if(saraEngine==='hybrid3')exp3UpdateBookingState(answer,'assistant');
     addBubble('assistant',answer); conversationHistory.push({role:'assistant',content:answer}); status.textContent=TEXT[waiterLanguage].ready;
