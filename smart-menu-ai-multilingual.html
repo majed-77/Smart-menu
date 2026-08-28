@@ -1184,8 +1184,12 @@ function normalizeAltBookingApprovalTranscript(text){
   const raw=String(text||'').trim();
   if(!altAwaitingBookingApproval()) return raw;
   const t=raw.toLowerCase().replace(/[.!؟?،,]/g,'').trim();
-  // Short STT hallucinations observed on iPhone for Arabic one-word approvals.
-  if(/^(evet|chatgpt|yes|yeah|yep|ok|okay|تمام|نعم|ايه|اي|اعتمد|اعتمدي)$/.test(t)) return 'اعتمدي الحجز';
+  // Keep a short approval short. Never echo/provider-expand seed vocabulary.
+  if(/^(evet|chatgpt|yes|yeah|yep|ok|okay|تمام|نعم|ايه|اي|اعتمد|اعتمدي)$/.test(t)) return 'اعتمد';
+  // Defensive cleanup for rare STT expansions of a one-word approval. If the
+  // transcript contains several approval synonyms, collapse it to one intent.
+  const approvalHits=(t.match(/اعتمد(?:ي)?|اثبت|أثبت|اكد|أكد|نعم|ايه|إيه|تمام|موافق|evet|chatgpt/g)||[]).length;
+  if(approvalHits>=3 && t.length<140) return 'اعتمد';
   return raw;
 }
 async function processAltVoice(blob,mime){

@@ -976,12 +976,12 @@ app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
       { type: mime }
     );
 
+    // Keep STT neutral. Do not seed it with booking/approval words: short
+    // utterances such as "اعتمد" can otherwise be expanded into the prompt
+    // vocabulary instead of being transcribed literally.
     const options = {
       file: audioFile,
-      model: "gpt-4o-mini-transcribe",
-      prompt: language === "ar"
-        ? "محادثة عربية سعودية داخل مطعم Café Victor Hugo. كلمات متوقعة: اعتمد، اعتمدي الحجز، أثبت الحجز، نعم، إيه، تمام، حجز، طاولة، واتساب. اكتب الكلام العربي فقط كما نُطق ولا تترجمه إلى التركية أو الإنجليزية."
-        : undefined
+      model: "gpt-4o-mini-transcribe"
     };
 
     if (["ar", "fr", "en"].includes(language)) {
