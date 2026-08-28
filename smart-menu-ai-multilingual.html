@@ -1043,8 +1043,14 @@ function exp3UpdateBookingState(text,role='user'){
   let raw=normalizeArabicDigitsExp3(String(text||'')).replace(/\s+/g,' ').trim(); if(!raw)return;
   const phone=exp3PhoneDigitsFromSpeech(raw);
   if(phone)altBookingState.phone=phone;
-  let m=raw.match(/(?:اسم(?:\s+الحجز)?|باسم)\s+([\u0600-\u06FF]{2,})(?=\s+(?:رقم|والرقم|واتساب|رقم الواتساب|لـ|لشخص|اليوم|بكره|غدا|غدًا|الساعة)|$)/i);
+  let m=raw.match(/(?:اسم(?:\s+الحجز)?|اسمي|باسم)\s+([\u0600-\u06FF]{2,})(?=\s+(?:رقم|والرقم|واتساب|رقم الواتساب|لـ|لشخص|اليوم|بكره|غدا|غدًا|الساعة)|$)/i);
   if(m)altBookingState.name=m[1];
+  // Sara's booking summary is also authoritative context. Keep the same booking state
+  // instead of making the guest repeat their name at final confirmation.
+  if(role==='assistant'&&!altBookingState.name){
+    m=raw.match(/(?:^|[،,.]\s*)تمام\s+([\u0600-\u06FF]{2,})(?=[،,.\s])/);
+    if(m&&!/(حجز|الحجز|تمام|اكيد|أكيد)/.test(m[1]))altBookingState.name=m[1];
+  }
   if(role==='user'&&!altBookingState.name){
     m=raw.match(/^([\u0600-\u06FF]{2,})$/); if(m&&!/(اعتمد|تمام|نعم|ايه|حجز|واتساب)/.test(m[1]))altBookingState.name=m[1];
   }
