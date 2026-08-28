@@ -14,6 +14,7 @@ const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
 const TWILIO_WHATSAPP_FROM = process.env.TWILIO_WHATSAPP_FROM || "";
 const TWILIO_MESSAGING_SERVICE_SID = process.env.TWILIO_MESSAGING_SERVICE_SID || "";
 const TWILIO_CONTENT_SID = process.env.TWILIO_CONTENT_SID || "";
+const RESTAURANT_WHATSAPP_TO = process.env.RESTAURANT_WHATSAPP_TO || "";
 const CRON_SECRET = process.env.CRON_SECRET || "";
 const RESTAURANT_TIMEZONE = process.env.RESTAURANT_TIMEZONE || "Africa/Tunis";
 
@@ -164,6 +165,91 @@ function reminderCopy(reservation) {
   return `هلا ${name} 👋 تذكير بحجزك في Café Victor Hugo ${dateAr} الساعة ${timeAr}، لعدد ${party} ${party === 1 ? "شخص" : "أشخاص"}. ننتظرك 🌷`;
 }
 
+function twilioWhatsAppFrom() {
+  if (!TWILIO_WHATSAPP_FROM) return "";
+  return TWILIO_WHATSAPP_FROM.startsWith("whatsapp:")
+    ? TWILIO_WHATSAPP_FROM
+    : `whatsapp:${TWILIO_WHATSAPP_FROM}`;
+}
+
+function restaurantOrderCopy(reservation) {
+  const local = DateTime.fromJSDate(new Date(reservation.reservation_at), { zone: "utc" })
+    .setZone(RESTAURANT_TIMEZONE);
+  const items = Array.isArray(reservation.order_items) ? reservation.order_items : [];
+  const lines = items.length
+    ? items.map((item, index) => {
+        const qty = Math.max(1, Number(item?.quantity) || 1);
+        const name = String(item?.name || "صنف").trim();
+        const request = String(item?.specialRequest || "").trim();
+        const price = Number(item?.unitPriceSar);
+        const pricePart = Number.isFinite(price) ? ` — ${Math.round(price * qty * 100) / 100} ر.س` : "";
+        return `${index + 1}) ${qty} × ${name}${pricePart}${request ? `\n   ملاحظة: ${request}` : ""}`;
+      }).join("\n")
+    : "لا يوجد طلب مسبق";
+
+  const total = Number(reservation.order_total_sar || 0);
+  const notes = String(reservation.notes || "").trim();
+  return [
+    `🔔 حجز/طلب جديد — رقم ${reservation.confirmation_code}`,
+    `الاسم: ${reservation.customer_name}`,
+    `الجوال: ${reservation.phone}`,
+    `التاريخ: ${local.toFormat("dd/LL/yyyy")}`,
+    `الوقت: ${local.toFormat("HH:mm")}`,
+    `عدد الأشخاص: ${reservation.party_size}`,
+    "",
+    "الطلب:",
+    lines,
+    ...(items.length ? [`الإجمالي: ${Math.round(total * 100) / 100} ر.س`] : []),
+    ...(notes ? ["", `ملاحظات الحجز: ${notes}`] : []),
+    "",
+    `المصدر: ${reservation.source === "sara_voice" ? "سارة" : "نموذج الموقع"}`
+  ].join("\n");
+}
+
+async function sendTwilioWhatsApp({ to, body }) {
+  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) {
+    throw new Error("Twilio WhatsApp credentials are not configured.");
+  }
+  if (!TWILIO_MESSAGING_SERVICE_SID && !TWILIO_WHATSAPP_FROM) {
+    throw new Error("Set TWILIO_MESSAGING_SERVICE_SID or TWILIO_WHATSAPP_FROM.");
+  }
+
+  const normalizedTo = normalizeWhatsAppPhone(String(to || "").replace(/^whatsapp:/i, ""));
+  if (!normalizedTo) throw new Error("Invalid WhatsApp destination number.");
+
+  const params = new URLSearchParams();
+  params.set("To", `whatsapp:${normalizedTo}`);
+  if (TWILIO_MESSAGING_SERVICE_SID) {
+    params.set("MessagingServiceSid", TWILIO_MESSAGING_SERVICE_SID);
+  } else {
+    params.set("From", twilioWhatsAppFrom());
+  }
+  params.set("Body", String(body || "").slice(0, 1500));
+
+  const endpoint = `https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(TWILIO_ACCOUNT_SID)}/Messages.json`;
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      Authorization: "Basic " + Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString("base64"),
+      "Content-Type": "application/x-www-form-urlencoded"
+    },
+    body: params
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload?.message || `Twilio HTTP ${response.status}`);
+  return payload.sid || "sent";
+}
+
+async function sendRestaurantWhatsApp(reservation) {
+  if (!RESTAURANT_WHATSAPP_TO) {
+    throw new Error("RESTAURANT_WHATSAPP_TO is not configured.");
+  }
+  return sendTwilioWhatsApp({
+    to: RESTAURANT_WHATSAPP_TO,
+    body: restaurantOrderCopy(reservation)
+  });
+}
+
 async function sendWhatsAppReminder(reservation) {
   if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) {
     throw new Error("Twilio WhatsApp credentials are not configured.");
@@ -178,10 +264,7 @@ async function sendWhatsAppReminder(reservation) {
   if (TWILIO_MESSAGING_SERVICE_SID) {
     params.set("MessagingServiceSid", TWILIO_MESSAGING_SERVICE_SID);
   } else {
-    const from = TWILIO_WHATSAPP_FROM.startsWith("whatsapp:")
-      ? TWILIO_WHATSAPP_FROM
-      : `whatsapp:${TWILIO_WHATSAPP_FROM}`;
-    params.set("From", from);
+    params.set("From", twilioWhatsAppFrom());
   }
 
   // For production business-initiated WhatsApp reminders, configure an approved
@@ -341,8 +424,24 @@ app.post("/api/reservations", async (req, res) => {
 
     const row = inserted.rows[0];
     const local = DateTime.fromJSDate(new Date(row.reservation_at), { zone: "utc" }).setZone(RESTAURANT_TIMEZONE);
+
+    // The booking must remain confirmed even if WhatsApp is temporarily unavailable.
+    // Send a copy of every newly confirmed booking/order to the restaurant when configured.
+    let restaurantWhatsApp = { configured: Boolean(RESTAURANT_WHATSAPP_TO), sent: false };
+    if (RESTAURANT_WHATSAPP_TO) {
+      try {
+        const sid = await sendRestaurantWhatsApp(row);
+        restaurantWhatsApp = { configured: true, sent: true, sid };
+        console.log(`✅ Restaurant WhatsApp sent for booking ${row.confirmation_code}`);
+      } catch (notifyError) {
+        restaurantWhatsApp = { configured: true, sent: false, error: String(notifyError?.message || notifyError).slice(0, 300) };
+        console.error(`Restaurant WhatsApp failed for booking ${row.confirmation_code}:`, notifyError?.message || notifyError);
+      }
+    }
+
     return res.status(201).json({
       ok: true,
+      restaurantWhatsApp,
       reservation: {
         code: row.confirmation_code,
         name: row.customer_name,
@@ -909,6 +1008,7 @@ app.get("/health", (req, res) => {
     reservationsConfigured: Boolean(db),
     whatsappConfigured: Boolean(TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && (TWILIO_WHATSAPP_FROM || TWILIO_MESSAGING_SERVICE_SID)),
     whatsappTemplateConfigured: Boolean(TWILIO_CONTENT_SID),
+    restaurantWhatsAppConfigured: Boolean(RESTAURANT_WHATSAPP_TO),
     timestamp: new Date().toISOString()
   });
 });
@@ -936,6 +1036,7 @@ app.listen(PORT, "0.0.0.0", async () => {
   console.log(`🔑 OpenAI API Key: ${apiKey ? "Configured" : "NOT CONFIGURED"}`);
   console.log(`🗓️ Reservations DB: ${db ? "Configured" : "NOT CONFIGURED"}`);
   console.log(`💬 WhatsApp: ${TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN ? "Credentials configured" : "NOT CONFIGURED"}`);
+  console.log(`🏪 Restaurant WhatsApp: ${RESTAURANT_WHATSAPP_TO ? "Configured" : "NOT CONFIGURED"}`);
   try { await initReservationDatabase(); } catch (error) { console.error("Reservation DB init failed:", error); }
   // Built-in safety net. For production also configure a Render Cron Job to POST /api/reminders/run every 5 minutes.
   setInterval(() => processDueReservationReminders().catch(err => console.error("Reminder worker error:", err)), 60 * 1000).unref();
