@@ -978,7 +978,10 @@ app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
 
     const options = {
       file: audioFile,
-      model: "gpt-4o-mini-transcribe"
+      model: "gpt-4o-mini-transcribe",
+      prompt: language === "ar"
+        ? "محادثة عربية سعودية داخل مطعم Café Victor Hugo. كلمات متوقعة: اعتمد، اعتمدي الحجز، أثبت الحجز، نعم، إيه، تمام، حجز، طاولة، واتساب. اكتب الكلام العربي فقط كما نُطق ولا تترجمه إلى التركية أو الإنجليزية."
+        : undefined
     };
 
     if (["ar", "fr", "en"].includes(language)) {
@@ -1070,13 +1073,13 @@ app.post("/api/tts", async (req, res) => {
         ? "Parle naturellement en français, avec une voix chaleureuse et professionnelle de serveuse de restaurant."
         : language === "en"
         ? "Speak naturally in English, with a warm professional restaurant waitress tone."
-        : "ثبتي نفس شخصية الصوت في كل رد: امرأة سعودية شابة، دافئة وواثقة. تكلمي باللهجة السعودية البيضاء اليومية مع ميل نجدي خفيف وبإيقاع محادثة طبيعي ثابت. انطقي الحروف العربية بوضوح، خصوصًا الهمزة والعين والحاء والجيم، والتزمي بالتشكيل الموجود في النص لأنه مخصص لضبط النطق. لا تنتقلي للفصحى الرسمية ولا تغيّري طبقة الصوت أو الشخصية بين الجمل. اجعلي الرد قصيرًا ومباشرًا، بدون تمطيط أو أسلوب قراءة آلي.";
+        : "أنتِ سارة، موظفة سعودية شابة في مطعم، مو مذيعة ولا قارئة نص. تكلمي كسعودية في محادثة يومية حقيقية: لهجة سعودية بيضاء طبيعية بميل نجدي خفيف، نبرة دافئة وواثقة وودودة، وجمل قصيرة سريعة. لا تفصّحي الكلمات ولا تمدّي الحروف ولا ترفعي النبرة في نهاية كل جملة. اربطي الكلمات طبيعيًا مثل الكلام اليومي، وخلي الوقفات قصيرة جدًا. انطقي الهمزة والعين والحاء والجيم بوضوح والتزمي بالتشكيل الموجود فقط لضبط الكلمات الصعبة. ثبتي نفس العمر والشخصية وطبقة الصوت في كل رد. لا تبدين كمساعد آلي ولا كصوت إعلانات.";
 
     const ttsText = language === "ar" ? prepareArabicSaraTTS(cleanText) : cleanText;
 
     const speech = await openai.audio.speech.create({
       model: "gpt-4o-mini-tts",
-      voice: "coral",
+      voice: "marin",
       input: ttsText,
       instructions: voiceInstructions,
       speed: 1.0,
@@ -1264,7 +1267,7 @@ app.post("/api/sara-alt-chat", async (req, res) => {
         tools:[confirmBookingOrderTool],
         tool_choice:"auto",
         thinking:{ type:"disabled" },
-        max_tokens:160,
+        max_tokens:120,
         temperature:0.25
       })
     });

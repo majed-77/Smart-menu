@@ -1135,6 +1135,20 @@ function runAltVAD(){
   altVadFrame=requestAnimationFrame(tick);
 }
 
+function altAwaitingBookingApproval(){
+  const last=[...conversationHistory].reverse().find(m=>m?.role==='assistant');
+  const t=String(last?.content||'').replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا').toLowerCase();
+  return /(اعتمد الحجز|اعتمد\?|اثبت الحجز|اكد الحجز|أعتمد الحجز|أعتمد\؟)/.test(String(last?.content||'')) ||
+         (/(حجز|الحجز)/.test(t) && /(اعتمد|اكد|ثبت)/.test(t));
+}
+function normalizeAltBookingApprovalTranscript(text){
+  const raw=String(text||'').trim();
+  if(!altAwaitingBookingApproval()) return raw;
+  const t=raw.toLowerCase().replace(/[.!؟?،,]/g,'').trim();
+  // Short STT hallucinations observed on iPhone for Arabic one-word approvals.
+  if(/^(evet|chatgpt|yes|yeah|yep|ok|okay|تمام|نعم|ايه|اي|اعتمد|اعتمدي)$/.test(t)) return 'اعتمدي الحجز';
+  return raw;
+}
 async function processAltVoice(blob,mime){
   altBusy=true;
   try{
@@ -1144,7 +1158,8 @@ async function processAltVoice(blob,mime){
     const sttUrl=saraEngine==='hybrid3'?'/api/transcribe':'/api/sara-alt-transcribe';
     const r=await fetch(sttUrl,{method:'POST',body:form}); const d=await r.json().catch(()=>({}));
     if(!r.ok||!d.text)throw new Error(d.message||'Transcription failed');
-    const q=String(d.text).trim(); if(!q)return;
+    let q=String(d.text).trim(); if(!q)return;
+    q=normalizeAltBookingApprovalTranscript(q);
     addBubble('user',q); conversationHistory.push({role:'user',content:q});
     status.textContent=isExplicitBookingConfirmation(q)&&waiterLanguage==='ar'?'تمام، أعتمد الحجز…':TEXT[waiterLanguage].thinking;
     const data=await askAltSara(q);
@@ -1161,6 +1176,7 @@ async function processAltVoice(blob,mime){
 
 async function submitAltQuestion(q){
   q=String(q||'').trim();if(!q)return;
+  q=normalizeAltBookingApprovalTranscript(q);
   stopAltSpeechForBargeIn(); addBubble('user',q);conversationHistory.push({role:'user',content:q});input.value='';altBusy=true;status.textContent=TEXT[waiterLanguage].thinking;
   try{
     const data=await askAltSara(q); let answer='';
