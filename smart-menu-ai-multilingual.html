@@ -675,7 +675,9 @@ ${lang==='ar'?'للعميل العربي: لا تشرحي أن الأسعار م
 
 الحجز والطلب:
 - تقدرين تسوين حجز طاولة مع طلب مسبق من المنيو داخل نفس المحادثة.
-- إذا قال العميل إنه يبي يحجز، اجمعي: الاسم، رقم واتساب بصيغة دولية، عدد الأشخاص، التاريخ، والوقت. إذا أعطاك رقمًا محليًا ولم تعرفي الدولة، اسأليه عن الدولة قبل الحفظ. وإذا كان سعوديًا وأعطى رقمًا يبدأ بـ05 فحوّليه لصيغة +9665 بعد حذف الصفر الأول.
+- إذا قال العميل إنه يبي يحجز، اجمعي: الاسم، رقم واتساب، عدد الأشخاص، التاريخ، والوقت. إذا أعطاك رقمًا محليًا ولم تعرفي الدولة، اسأليه عن الدولة قبل الحفظ. وإذا كان سعوديًا وأعطى رقمًا يبدأ بـ05 فحوّليه لصيغة +9665 بعد حذف الصفر الأول.
+- رقم الجوال حساس جدًا: حافظي على ترتيب الأرقام كما قالها العميل حرفيًا ولا تبدّلين أو تعكسين أي رقم. قبل الاعتماد أعيدي الرقم مرة واحدة فقط للتأكيد. عند نطق الرقم قولي الأرقام رقمًا رقمًا وبنفس الترتيب، مثل: زائد، تسعة، ستة، ستة، خمسة... ولا تنطقيه كعدد كبير.
+- عند كتابة رقم الجوال اكتبيه بصيغة دولية متصلة تبدأ بعلامة + ومن دون مسافات، مثل +9665XXXXXXXX.
 - الطلب المسبق اختياري. إذا طلب أصناف، اجمعي اسم كل صنف والكمية وأي تعديل يطلبه. لا تضيفي صنفًا غير موجود في المنيو.
 - إذا نقصت معلومة اسألي عنها فقط، ولا تطلبي كل المعلومات مرة وحدة إذا كان بعضها معروف.
 - قبل الحفظ لازم تلخصين الحجز والطلب كاملًا بوضوح، ثم تسألين سؤال تأكيد صريح مثل: «أعتمد الحجز والطلب؟».
@@ -752,6 +754,21 @@ function resolveSaraOrderItem(requestedName){
   const unitPriceSar=Number.isFinite(tnd)?Math.round(tnd*TND_TO_SAR*100)/100:null;
   return {name:translateMenuText(d[0],waiterLanguage),canonicalName:d[0],unitPriceSar};
 }
+function normalizeSaraPhone(value){
+  let s=String(value||'')
+    .replace(/[٠-٩]/g,d=>String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+    .replace(/[۰-۹]/g,d=>String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+    .trim()
+    .replace(/[\s().-]/g,'')
+    .replace(/[^+\d]/g,'');
+  if(s.startsWith('00')) s='+'+s.slice(2);
+  if(/^05\d{8}$/.test(s)) s='+966'+s.slice(1);
+  if(/^9665\d{8}$/.test(s)) s='+'+s;
+  if(/^\d{8}$/.test(s)) s='+216'+s;
+  if(/^216\d{8}$/.test(s)) s='+'+s;
+  return s;
+}
+
 function saraToolMessage(kind,data={}){
   const lang=waiterLanguage||'ar';
   if(kind==='saving') return lang==='ar'?'لحظة، أعتمد الحجز والطلب…':lang==='fr'?'Un instant, je confirme votre réservation…':'One moment, I’m confirming your booking…';
@@ -780,7 +797,7 @@ async function handleSaraBookingTool(callId,argsText){
       resolved.push({name:found.canonicalName,displayName:found.name,quantity:Math.max(1,Math.min(20,Number(item?.quantity)||1)),specialRequest:String(item?.special_request||'').trim(),unitPriceSar:found.unitPriceSar});
     }
     const payload={
-      name:String(args.name||'').trim(),phone:String(args.phone||'').trim(),partySize:Number(args.party_size),date:String(args.date||''),time:String(args.time||''),notes:String(args.notes||'').trim(),language:waiterLanguage,source:'sara_voice',
+      name:String(args.name||'').trim(),phone:normalizeSaraPhone(args.phone),partySize:Number(args.party_size),date:String(args.date||''),time:String(args.time||''),notes:String(args.notes||'').trim(),language:waiterLanguage,source:'sara_voice',
       orderItems:resolved.map(x=>({name:x.canonicalName,quantity:x.quantity,specialRequest:x.specialRequest,unitPriceSar:x.unitPriceSar}))
     };
     const r=await fetch('/api/reservations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
@@ -1052,8 +1069,23 @@ document.querySelectorAll('[data-waiter-lang]').forEach(b=>b.onclick=async()=>{
 });
 
 function addBubble(role,text){
- const b=document.createElement('div'); b.className='bubble '+role; b.textContent=text;
+ const b=document.createElement('div'); b.className='bubble '+role;
  b.dir=/[\u0600-\u06FF]/.test(text)?'rtl':'ltr';
+ const raw=String(text||'');
+ const phoneRe=/(?:\+|00)?[0-9٠-٩۰-۹][0-9٠-٩۰-۹\s().-]{6,}[0-9٠-٩۰-۹]/g;
+ let last=0, match;
+ while((match=phoneRe.exec(raw))){
+   if(match.index>last) b.appendChild(document.createTextNode(raw.slice(last,match.index)));
+   const iso=document.createElement('bdi');
+   iso.dir='ltr';
+   iso.style.unicodeBidi='isolate';
+   iso.style.direction='ltr';
+   iso.style.display='inline-block';
+   iso.textContent=match[0];
+   b.appendChild(iso);
+   last=match.index+match[0].length;
+ }
+ if(last<raw.length) b.appendChild(document.createTextNode(raw.slice(last)));
  transcript.appendChild(b); transcript.scrollTop=transcript.scrollHeight;
 }
 function compactMenu(){
@@ -1424,4 +1456,3 @@ endBtn.onclick=closeWaiter;
 </script>
 </body>
 </html>
-
