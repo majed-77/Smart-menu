@@ -8,6 +8,12 @@ const { DateTime } = require("luxon");
 const app = express();
 const PORT = process.env.PORT || 3000;
 const apiKey = process.env.OPENAI_API_KEY || "";
+const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY || "";
+const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || "";
+const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY || "";
+const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || "";
+const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || "deepseek-v4-flash";
+const ELEVENLABS_MODEL = process.env.ELEVENLABS_MODEL || "eleven_flash_v2_5";
 const DATABASE_URL = process.env.DATABASE_URL || "";
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID || "";
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
@@ -1071,6 +1077,206 @@ app.post("/api/tts", async (req, res) => {
   }
 });
 
+
+// ======================================================
+// EXPERIMENTAL SARA ENGINE
+// Deepgram STT -> DeepSeek V4 Flash -> ElevenLabs TTS
+// Keeps the existing OpenAI Realtime engine untouched as a fallback.
+// ======================================================
+function altEngineConfigured() {
+  return Boolean(DEEPGRAM_API_KEY && DEEPSEEK_API_KEY && ELEVENLABS_API_KEY && ELEVENLABS_VOICE_ID);
+}
+
+function altLanguageName(language) {
+  if (language === "fr") return "French";
+  if (language === "en") return "English";
+  return "Saudi Arabic";
+}
+
+function altSaraInstructions({ language = "ar", menu = [] } = {}) {
+  const today = DateTime.now().setZone(RESTAURANT_TIMEZONE).toISODate();
+  const languageRule = language === "fr"
+    ? "Speak only natural, warm conversational French."
+    : language === "en"
+    ? "Speak only natural, warm conversational English."
+    : "تكلمي فقط باللهجة السعودية البيضاء الطبيعية، تميل بشكل خفيف لنجد. استخدمي كلام يومي مثل هلا، أبشر، وش ودك، تبي، تمام، من عيوني. تجنبي الفصحى الرسمية واللهجات المصرية والشامية والتونسية.";
+
+  return `Your name is Sara. You are the voice waitress for Café Victor Hugo.
+Today in the restaurant timezone (${RESTAURANT_TIMEZONE}) is ${today}.
+${languageRule}
+
+MENU AND SERVICE:
+- You know the supplied menu and should use only its data for items, descriptions and prices.
+- Never invent an item, ingredient, allergen, price or availability.
+- For Arabic guests, menu prices are already prepared for display in Saudi riyals. Say prices naturally as "26 ريال" and never mention TND/DT.
+- Keep normal replies short and conversational, usually 1-3 sentences.
+- Sound like a real waitress, not a chatbot, and never mention APIs/models/providers.
+
+BOOKING + OPTIONAL PRE-ORDER:
+- You can collect name, WhatsApp phone, party size, date, time, notes, and optional menu items/quantities/modifications.
+- Preserve phone digit order exactly. Saudi local 05xxxxxxxx may be normalized to +9665xxxxxxxx.
+- Ask only for missing information.
+- Before saving, summarize the booking/order and ask for explicit confirmation.
+- NEVER call confirm_booking_order until the guest clearly confirms.
+- CRITICAL INTERRUPTION RULE: if you were summarizing and the guest interrupts with a clear approval such as "تمام اعتمدي", "اعتمدي الحجز", "نعم اعتمدي", "إيه اعتمدي" or an equivalent, call confirm_booking_order immediately using the latest agreed details. Do not repeat the summary and do not ask for confirmation again.
+- If the interruption changes a detail instead of confirming, update it and ask for confirmation again.
+- When calling the tool, date must be YYYY-MM-DD and time HH:mm (24-hour).
+
+MENU DATA:
+${JSON.stringify(menu)}`;
+}
+
+const confirmBookingOrderTool = {
+  type: "function",
+  function: {
+    name: "confirm_booking_order",
+    description: "Save the booking and optional pre-order only after the guest has explicitly confirmed the latest summary.",
+    strict: true,
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        name: { type: "string" },
+        phone: { type: "string" },
+        party_size: { type: "integer", minimum: 1, maximum: 30 },
+        date: { type: "string", description: "YYYY-MM-DD" },
+        time: { type: "string", description: "HH:mm in restaurant local time" },
+        notes: { type: "string" },
+        order_items: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              item_name: { type: "string" },
+              quantity: { type: "integer", minimum: 1, maximum: 20 },
+              special_request: { type: "string" }
+            },
+            required: ["item_name", "quantity", "special_request"]
+          }
+        }
+      },
+      required: ["name", "phone", "party_size", "date", "time", "notes", "order_items"]
+    }
+  }
+};
+
+app.get("/api/sara-alt-status", (req, res) => {
+  return res.json({
+    ok: true,
+    configured: altEngineConfigured(),
+    deepgram: Boolean(DEEPGRAM_API_KEY),
+    deepseek: Boolean(DEEPSEEK_API_KEY),
+    elevenlabs: Boolean(ELEVENLABS_API_KEY && ELEVENLABS_VOICE_ID),
+    deepseekModel: DEEPSEEK_MODEL,
+    elevenlabsModel: ELEVENLABS_MODEL
+  });
+});
+
+app.post("/api/sara-alt-transcribe", upload.single("audio"), async (req, res) => {
+  try {
+    if (!DEEPGRAM_API_KEY) return res.status(401).json({ ok:false, code:"DEEPGRAM_NOT_CONFIGURED", message:"مفتاح Deepgram غير موجود في Render." });
+    if (!req.file) return res.status(400).json({ ok:false, code:"NO_AUDIO", message:"لم يتم استلام ملف صوتي." });
+    const language = ["ar","fr","en"].includes(req.body?.language) ? req.body.language : "ar";
+    const dgLanguage = language === "ar" ? "ar-SA" : language === "fr" ? "fr" : "en-US";
+    const qs = new URLSearchParams({ model:"nova-3", language:dgLanguage, smart_format:"true", punctuate:"true" });
+    const response = await fetch(`https://api.deepgram.com/v1/listen?${qs.toString()}`, {
+      method:"POST",
+      headers:{
+        Authorization:`Token ${DEEPGRAM_API_KEY}`,
+        "Content-Type": req.file.mimetype || "audio/webm"
+      },
+      body:req.file.buffer
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data?.err_msg || data?.message || `Deepgram HTTP ${response.status}`);
+    const text = String(data?.results?.channels?.[0]?.alternatives?.[0]?.transcript || "").trim();
+    if (!text) return res.status(422).json({ ok:false, code:"NO_SPEECH_DETECTED", message: language === "ar" ? "ما سمعت كلام واضح." : "No clear speech was detected." });
+    return res.json({ ok:true, text });
+  } catch (error) {
+    console.error("Deepgram transcription error:", error);
+    return res.status(502).json({ ok:false, code:"DEEPGRAM_ERROR", message:error?.message || "تعذر تحويل الصوت إلى نص." });
+  }
+});
+
+app.post("/api/sara-alt-chat", async (req, res) => {
+  try {
+    if (!DEEPSEEK_API_KEY) return res.status(401).json({ ok:false, code:"DEEPSEEK_NOT_CONFIGURED", message:"مفتاح DeepSeek غير موجود في Render." });
+    const { question = "", history = [], menu = [], language = "ar", greeting = false } = req.body || {};
+    const q = String(question || "").trim();
+    if (!q && !greeting) return res.status(400).json({ ok:false, code:"EMPTY_MESSAGE", message:"لا يوجد كلام لإرساله إلى سارة." });
+
+    const cleanHistory = Array.isArray(history) ? history.slice(-20).map(m => ({
+      role: m?.role === "assistant" ? "assistant" : "user",
+      content: String(m?.content || m?.text || "").trim()
+    })).filter(m => m.content) : [];
+    const messages = [
+      { role:"system", content:altSaraInstructions({ language, menu }) },
+      ...cleanHistory,
+      { role:"user", content: greeting
+        ? (language === "ar" ? "ابدئي الآن بالترحيب فقط: هلا والله، حياك في Café Victor Hugo، معك سارة، كيف أقدر أخدمك؟" : language === "fr" ? "Accueille brièvement le client et demande comment tu peux l'aider." : "Give a very brief welcome and ask how you can help.")
+        : q }
+    ];
+
+    const response = await fetch("https://api.deepseek.com/chat/completions", {
+      method:"POST",
+      headers:{ Authorization:`Bearer ${DEEPSEEK_API_KEY}`, "Content-Type":"application/json" },
+      body:JSON.stringify({
+        model:DEEPSEEK_MODEL,
+        messages,
+        tools:[confirmBookingOrderTool],
+        tool_choice:"auto",
+        thinking:{ type:"disabled" },
+        max_tokens:350,
+        temperature:0.35
+      })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data?.error?.message || data?.message || `DeepSeek HTTP ${response.status}`);
+    const message = data?.choices?.[0]?.message || {};
+    const call = Array.isArray(message.tool_calls) ? message.tool_calls.find(x => x?.function?.name === "confirm_booking_order") : null;
+    if (call) {
+      return res.json({ ok:true, toolCall:{ id:call.id || `alt_${Date.now()}`, name:"confirm_booking_order", arguments:String(call.function?.arguments || "{}") } });
+    }
+    const answer = String(message.content || "").trim();
+    if (!answer) return res.status(502).json({ ok:false, code:"EMPTY_AI_RESPONSE", message:"لم تصل إجابة من سارة." });
+    return res.json({ ok:true, answer });
+  } catch (error) {
+    console.error("DeepSeek Sara error:", error);
+    return res.status(502).json({ ok:false, code:"DEEPSEEK_ERROR", message:error?.message || "تعذر تشغيل سارة عبر DeepSeek." });
+  }
+});
+
+app.post("/api/sara-alt-tts", async (req, res) => {
+  try {
+    if (!ELEVENLABS_API_KEY || !ELEVENLABS_VOICE_ID) return res.status(401).json({ ok:false, code:"ELEVENLABS_NOT_CONFIGURED", message:"مفتاح أو Voice ID الخاص بـ ElevenLabs غير موجود في Render." });
+    const text = String(req.body?.text || "").trim();
+    if (!text) return res.status(400).json({ ok:false, code:"EMPTY_TEXT", message:"لا يوجد نص لتحويله إلى صوت." });
+    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(ELEVENLABS_VOICE_ID)}/stream?output_format=mp3_44100_128`, {
+      method:"POST",
+      headers:{ "xi-api-key":ELEVENLABS_API_KEY, "Content-Type":"application/json", Accept:"audio/mpeg" },
+      body:JSON.stringify({
+        text:text.slice(0, 2200),
+        model_id:ELEVENLABS_MODEL,
+        language_code: req.body?.language === "ar" ? "ar" : req.body?.language === "fr" ? "fr" : "en",
+        voice_settings:{ stability:0.45, similarity_boost:0.8, style:0.25, use_speaker_boost:true }
+      })
+    });
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      throw new Error(detail.slice(0,300) || `ElevenLabs HTTP ${response.status}`);
+    }
+    const buffer = Buffer.from(await response.arrayBuffer());
+    res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("Content-Length", buffer.length);
+    res.setHeader("Cache-Control", "no-store");
+    return res.send(buffer);
+  } catch (error) {
+    console.error("ElevenLabs TTS error:", error);
+    return res.status(502).json({ ok:false, code:"ELEVENLABS_ERROR", message:error?.message || "تعذر تشغيل صوت ElevenLabs." });
+  }
+});
+
 app.get("/health", (req, res) => {
   res.json({
     ok: true,
@@ -1080,6 +1286,7 @@ app.get("/health", (req, res) => {
     whatsappConfigured: Boolean(TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && (TWILIO_WHATSAPP_FROM || TWILIO_MESSAGING_SERVICE_SID)),
     whatsappTemplateConfigured: Boolean(TWILIO_CONTENT_SID),
     restaurantWhatsAppConfigured: Boolean(RESTAURANT_WHATSAPP_TO),
+    altSaraConfigured: altEngineConfigured(),
     timestamp: new Date().toISOString()
   });
 });
@@ -1110,6 +1317,7 @@ async function startServer() {
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`✅ Smart Menu AI server running on port ${PORT}`);
     console.log(`🔑 OpenAI API Key: ${apiKey ? "Configured" : "NOT CONFIGURED"}`);
+    console.log(`🧪 Alt Sara (Deepgram + DeepSeek + ElevenLabs): ${altEngineConfigured() ? "Configured" : "NOT CONFIGURED"}`);
     console.log(`🗓️ Reservations DB: ${db ? (reservationSchemaReady ? "Ready" : "Configured but not ready") : "NOT CONFIGURED"}`);
     console.log(`💬 WhatsApp: ${TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN ? "Credentials configured" : "NOT CONFIGURED"}`);
     console.log(`🏪 Restaurant WhatsApp: ${RESTAURANT_WHATSAPP_TO ? `Configured (${TWILIO_TRIAL_CONTENT_SID ? "Twilio Trial ContentSid" : "direct WhatsApp Body"})` : "NOT CONFIGURED"}`);

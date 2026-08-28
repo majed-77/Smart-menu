@@ -96,6 +96,12 @@ main{max-width:1280px;margin:auto;padding:22px 5% 60px}
 .languageGrid{display:grid;grid-template-columns:1fr;gap:10px;margin-top:20px}
 .languageChoice{border:1px solid #dccdb8;background:white;border-radius:16px;padding:14px;font-size:16px;font-weight:700;cursor:pointer}
 .languageChoice:hover{border-color:var(--gold)}
+.enginePicker{margin:14px 0 6px;padding:10px;border:1px solid var(--line);border-radius:14px;background:#fffaf2}
+.enginePickerTitle{font-size:12px;color:var(--muted);margin-bottom:8px}
+.engineButtons{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.engineChoice{border:1px solid #d8c7ae;background:#fff;border-radius:999px;padding:9px 13px;font-weight:800;cursor:pointer}
+.engineChoice.active{background:#21170f;color:#fff;border-color:#21170f}
+.engineChoice small{font-weight:600;opacity:.75}
 .modal{position:fixed;inset:0;background:#000a;display:none;align-items:center;justify-content:center;z-index:30;padding:18px}
 .modal.show{display:flex}
 .dialog{padding:24px;max-height:92vh;display:flex;flex-direction:column;text-align:center}
@@ -231,6 +237,13 @@ main{max-width:1280px;margin:auto;padding:22px 5% 60px}
     <div class="waiterLangStep" id="waiterLangStep">
       <h2 id="waiterLangTitle">بأي لغة ترغب في التحدث مع النادلة؟</h2>
       <p id="waiterLangSubtitle">اختر اللغة وسأرحب بك ثم يمكنك التحدث مباشرة.</p>
+      <div class="enginePicker">
+        <div class="enginePickerTitle" id="enginePickerTitle">محرك سارة للتجربة</div>
+        <div class="engineButtons">
+          <button class="engineChoice active" type="button" data-sara-engine="openai">OpenAI Realtime <small>الحالي</small></button>
+          <button class="engineChoice" type="button" data-sara-engine="alt">DeepSeek + ElevenLabs <small>تجريبي</small></button>
+        </div>
+      </div>
       <div class="languageGrid">
         <button class="languageChoice" data-waiter-lang="ar">🇸🇦 العربية</button>
         <button class="languageChoice" data-waiter-lang="fr">🇫🇷 Français</button>
@@ -409,6 +422,7 @@ function imageFallback(name){
 
 let siteLanguage='';
 let waiterLanguage='ar';
+let saraEngine='openai';
 let currentDish=null;
 let realtimePC=null;
 let realtimeDC=null;
@@ -425,6 +439,8 @@ let realtimeProcessedToolCalls=new Set();
 let conversationHistory=[];
 let recorder=null, stream=null, chunks=[], recording=false, currentAudio=null;
 let audioContext=null, analyser=null, vadFrame=null;
+let altStream=null, altAnalyser=null, altAudioContext=null, altVadFrame=null, altRecorder=null, altChunks=[];
+let altCapturing=false, altSpeechStartedAt=0, altSilenceAt=0, altBusy=false, altSpeaking=false, altStarted=false;
 let speechStarted=false, speechStartAt=0, silenceStartAt=0;
 const SILENCE_MS=1500, MIN_SPEECH_MS=300, SPEECH_THRESHOLD=0.035;
 
@@ -973,6 +989,186 @@ function handleRealtimeEvent(event){
     setRealtimeMicEnabled(true);
   }
 }
+
+function closeAltSara(){
+  altStarted=false; altBusy=false; altSpeaking=false; altCapturing=false;
+  if(altVadFrame){cancelAnimationFrame(altVadFrame);altVadFrame=null;}
+  try{if(altRecorder && altRecorder.state!=="inactive")altRecorder.stop();}catch(e){}
+  altRecorder=null; altChunks=[];
+  if(altStream){try{altStream.getTracks().forEach(t=>t.stop());}catch(e){} altStream=null;}
+  if(altAudioContext){try{altAudioContext.close();}catch(e){} altAudioContext=null;}
+  altAnalyser=null;
+  stopAISpeech();
+}
+
+async function altFetchJSON(url, options, timeout=45000){
+  const controller=new AbortController(); const timer=setTimeout(()=>controller.abort(),timeout);
+  try{
+    const r=await fetch(url,{...options,signal:controller.signal});
+    const data=await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(data.message||data.error||`HTTP ${r.status}`);
+    return data;
+  }finally{clearTimeout(timer)}
+}
+
+async function askAltSara(question,{greeting=false}={}){
+  return altFetchJSON('/api/sara-alt-chat',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({question,menu:compactMenu(),history:conversationHistory.slice(-20),language:waiterLanguage,greeting})
+  },60000);
+}
+
+async function handleAltBookingTool(toolCall){
+  let args={}; try{args=JSON.parse(toolCall?.arguments||'{}');}catch(e){}
+  status.textContent=saraToolMessage('saving');
+  const resolved=[];
+  for(const item of (Array.isArray(args.order_items)?args.order_items:[])){
+    const found=resolveSaraOrderItem(item?.item_name);
+    if(!found){
+      return waiterLanguage==='ar'?`ما لقيت الصنف «${item?.item_name||''}» بالمنيو بشكل واضح. وش الصنف اللي تقصده؟`:waiterLanguage==='fr'?`Je ne retrouve pas clairement « ${item?.item_name||''} » dans le menu. Quel article voulez-vous ?`:`I couldn't clearly match “${item?.item_name||''}” to the menu. Which item do you mean?`;
+    }
+    resolved.push({name:found.canonicalName,quantity:Math.max(1,Math.min(20,Number(item?.quantity)||1)),specialRequest:String(item?.special_request||'').trim(),unitPriceSar:found.unitPriceSar});
+  }
+  const payload={
+    name:String(args.name||'').trim(),phone:normalizeSaraPhone(args.phone),partySize:Number(args.party_size),date:String(args.date||''),time:String(args.time||''),notes:String(args.notes||'').trim(),language:waiterLanguage,source:'sara_voice',orderItems:resolved
+  };
+  const r=await fetch('/api/reservations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  const data=await r.json().catch(()=>({}));
+  if(!r.ok||!data.reservation) throw new Error(data.message||'Booking save failed');
+  const code=data.reservation.code;
+  return waiterLanguage==='ar'?`تم، اعتمدت الحجز${resolved.length?' والطلب':''} بنجاح. رقم حجزك ${code}.`:waiterLanguage==='fr'?`C'est confirmé. La réservation${resolved.length?' et la commande':''} est enregistrée sous le numéro ${code}.`:`Done. Your booking${resolved.length?' and order':''} is confirmed. Your booking number is ${code}.`;
+}
+
+function stopAltSpeechForBargeIn(){
+  if(!altSpeaking)return;
+  stopAISpeech();
+  altSpeaking=false;
+  status.textContent=waiterLanguage==='ar'?'سمعتك، كمّل…':waiterLanguage==='fr'?'Je vous écoute…':'I’m listening…';
+}
+
+async function speakAltSara(text,{waitForEnd=false}={}){
+  const clean=String(text||'').trim(); if(!clean)return;
+  stopAISpeech();
+  const r=await fetch('/api/sara-alt-tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:clean,language:waiterLanguage})});
+  if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(d.message||`TTS HTTP ${r.status}`);}
+  const blob=await r.blob();
+  const AC=window.AudioContext||window.webkitAudioContext;
+  if(AC){
+    if(!speechAudioContext)speechAudioContext=new AC();
+    if(speechAudioContext.state==='suspended')await speechAudioContext.resume();
+    const bytes=await blob.arrayBuffer();
+    const decoded=await speechAudioContext.decodeAudioData(bytes.slice(0));
+    await new Promise((resolve,reject)=>{
+      try{
+        speechSource=speechAudioContext.createBufferSource(); speechSource.buffer=decoded; speechSource.connect(speechAudioContext.destination);
+        altSpeaking=true; orb.classList.add('speaking');
+        speechSource.onended=()=>{orb.classList.remove('speaking');speechSource=null;altSpeaking=false;resolve();};
+        speechSource.start(0);
+        if(!waitForEnd) resolve();
+      }catch(e){reject(e)}
+    });
+    return;
+  }
+  const url=URL.createObjectURL(blob); const audio=new Audio(url); currentAudio=audio; audio.playsInline=true;
+  altSpeaking=true; orb.classList.add('speaking');
+  const ended=new Promise((resolve,reject)=>{audio.onended=()=>{altSpeaking=false;orb.classList.remove('speaking');URL.revokeObjectURL(url);if(currentAudio===audio)currentAudio=null;resolve();};audio.onerror=reject;});
+  await audio.play(); if(waitForEnd)await ended;
+}
+
+function startAltCapture(){
+  if(!altStream || altCapturing || altBusy)return;
+  const mime=bestMime(); altChunks=[];
+  try{altRecorder=new MediaRecorder(altStream,mime?{mimeType:mime}:undefined);}catch(e){return;}
+  altRecorder.ondataavailable=e=>{if(e.data?.size)altChunks.push(e.data)};
+  altRecorder.onstop=async()=>{
+    const rec=altRecorder; altRecorder=null; altCapturing=false;
+    const type=rec?.mimeType||mime||'audio/webm'; const blob=new Blob(altChunks,{type}); altChunks=[];
+    if(blob.size<700){altBusy=false;return;}
+    await processAltVoice(blob,type);
+  };
+  altRecorder.start(150); altCapturing=true; altSpeechStartedAt=performance.now(); altSilenceAt=0;
+  micBtn.classList.add('recording'); micBtn.textContent='⏹';
+}
+
+function stopAltCapture(){
+  if(!altCapturing)return;
+  micBtn.classList.remove('recording'); micBtn.textContent='🎤';
+  try{if(altRecorder&&altRecorder.state!=='inactive')altRecorder.stop();}catch(e){altCapturing=false;}
+}
+
+function runAltVAD(){
+  if(!altAnalyser)return;
+  const data=new Uint8Array(altAnalyser.fftSize);
+  const tick=()=>{
+    if(!altStarted||!altAnalyser)return;
+    altAnalyser.getByteTimeDomainData(data); let sum=0;
+    for(let i=0;i<data.length;i++){const x=(data[i]-128)/128;sum+=x*x;}
+    const rms=Math.sqrt(sum/data.length), now=performance.now();
+    if(!altBusy && !altCapturing && rms>0.055){
+      stopAltSpeechForBargeIn(); startAltCapture();
+    }
+    if(altCapturing){
+      if(rms>0.04){altSilenceAt=0;}
+      else if(now-altSpeechStartedAt>260){
+        if(!altSilenceAt)altSilenceAt=now;
+        if(now-altSilenceAt>850)stopAltCapture();
+      }
+    }
+    altVadFrame=requestAnimationFrame(tick);
+  };
+  altVadFrame=requestAnimationFrame(tick);
+}
+
+async function processAltVoice(blob,mime){
+  altBusy=true;
+  try{
+    status.textContent=TEXT[waiterLanguage].transcribing;
+    const ext=mime.includes('mp4')?'m4a':mime.includes('ogg')?'ogg':'webm';
+    const form=new FormData(); form.append('audio',blob,'voice.'+ext); form.append('language',waiterLanguage);
+    const r=await fetch('/api/sara-alt-transcribe',{method:'POST',body:form}); const d=await r.json().catch(()=>({}));
+    if(!r.ok||!d.text)throw new Error(d.message||'Transcription failed');
+    const q=String(d.text).trim(); if(!q)return;
+    addBubble('user',q); conversationHistory.push({role:'user',content:q});
+    status.textContent=isExplicitBookingConfirmation(q)&&waiterLanguage==='ar'?'تمام، أعتمد الحجز…':TEXT[waiterLanguage].thinking;
+    const data=await askAltSara(q);
+    let answer='';
+    if(data.toolCall?.name==='confirm_booking_order') answer=await handleAltBookingTool(data.toolCall); else answer=String(data.answer||'').trim();
+    if(!answer)throw new Error('No answer');
+    addBubble('assistant',answer); conversationHistory.push({role:'assistant',content:answer}); status.textContent=TEXT[waiterLanguage].ready;
+    await speakAltSara(answer,{waitForEnd:false});
+    altBusy=false;
+  }catch(e){
+    console.error('Alt Sara voice error',e); altBusy=false; status.textContent=e.message||TEXT[waiterLanguage].serverError; showDiagnostic(status.textContent,false);
+  }
+}
+
+async function submitAltQuestion(q){
+  q=String(q||'').trim();if(!q)return;
+  stopAltSpeechForBargeIn(); addBubble('user',q);conversationHistory.push({role:'user',content:q});input.value='';altBusy=true;status.textContent=TEXT[waiterLanguage].thinking;
+  try{
+    const data=await askAltSara(q); let answer='';
+    if(data.toolCall?.name==='confirm_booking_order')answer=await handleAltBookingTool(data.toolCall);else answer=String(data.answer||'').trim();
+    if(!answer)throw new Error('No answer'); addBubble('assistant',answer);conversationHistory.push({role:'assistant',content:answer});status.textContent=TEXT[waiterLanguage].ready;await speakAltSara(answer,{waitForEnd:false});altBusy=false;
+  }catch(e){altBusy=false;status.textContent=e.message||TEXT[waiterLanguage].serverError;showDiagnostic(status.textContent,false);}
+}
+
+async function startAltSara(){
+  if(altStarted)return;
+  try{
+    const cfg=await altFetchJSON('/api/sara-alt-status',{cache:'no-store'});
+    if(!cfg.configured)throw new Error(waiterLanguage==='ar'?'المحرك التجريبي يحتاج مفاتيح Deepgram وDeepSeek وElevenLabs في Render.':'Experimental engine keys are not configured.');
+    const supported=navigator.mediaDevices.getSupportedConstraints?.()||{};
+    const constraints={echoCancellation:true,noiseSuppression:true,autoGainControl:false,channelCount:1};if(supported.voiceIsolation)constraints.voiceIsolation=true;
+    altStream=await navigator.mediaDevices.getUserMedia({audio:constraints});
+    const AC=window.AudioContext||window.webkitAudioContext; altAudioContext=new AC(); const src=altAudioContext.createMediaStreamSource(altStream); altAnalyser=altAudioContext.createAnalyser();altAnalyser.fftSize=1024;altAnalyser.smoothingTimeConstant=.2;src.connect(altAnalyser);
+    altStarted=true; altBusy=true;
+    showDiagnostic(waiterLanguage==='ar'?'🧪 المحرك التجريبي شغال: Deepgram + DeepSeek + ElevenLabs':waiterLanguage==='fr'?'🧪 Moteur expérimental actif':'🧪 Experimental engine active',true);
+    const data=await askAltSara('',{greeting:true}); const answer=String(data.answer||'').trim();
+    if(answer){addBubble('assistant',answer);conversationHistory.push({role:'assistant',content:answer});status.textContent=TEXT[waiterLanguage].ready;await speakAltSara(answer,{waitForEnd:true});}
+    altBusy=false; runAltVAD(); status.textContent=TEXT[waiterLanguage].ready;
+  }catch(e){console.error('Alt Sara start failed',e);closeAltSara();status.textContent=e.message;showDiagnostic(e.message,false);}
+}
+
 async function startRealtime(){
   if(realtimeConnected || realtimeStarting) return;
   realtimeStarting=true;
@@ -1082,6 +1278,10 @@ function openWaiter(){
  waiterLangStep.classList.remove('hidden'); chatStep.classList.add('hidden'); modal.classList.add('show');
 }
 cancelWaiter.onclick=closeWaiter;
+document.querySelectorAll('[data-sara-engine]').forEach(b=>b.onclick=()=>{
+ saraEngine=b.dataset.saraEngine||'openai';
+ document.querySelectorAll('[data-sara-engine]').forEach(x=>x.classList.toggle('active',x===b));
+});
 document.querySelectorAll('[data-waiter-lang]').forEach(b=>b.onclick=async()=>{
  waiterLanguage=b.dataset.waiterLang;
  waiterLangStep.classList.add('hidden');
@@ -1102,7 +1302,8 @@ document.querySelectorAll('[data-waiter-lang]').forEach(b=>b.onclick=async()=>{
    waiterLanguage==='fr'?'Activation du micro…':
    'Turning on the microphone…';
 
- await startRealtime();
+ await unlockSpeechAudio();
+ if(saraEngine==='alt') await startAltSara(); else await startRealtime();
 });
 
 function addBubble(role,text){
@@ -1347,7 +1548,7 @@ input.addEventListener('keydown',async e=>{
  if(e.key==='Enter'){
    stopAISpeech();
    await unlockSpeechAudio();
-   submitQuestion(input.value);
+   if(saraEngine==='alt') submitAltQuestion(input.value); else submitQuestion(input.value);
  }
 });
 
@@ -1429,6 +1630,12 @@ async function sendVoice(){
  }
 }
 micBtn.onclick=()=>{
+ if(saraEngine==='alt'){
+   if(!altStream)return;
+   const track=altStream.getAudioTracks()[0];if(!track)return;track.enabled=!track.enabled;micBtn.textContent=track.enabled?'🎤':'🔇';
+   status.textContent=track.enabled?TEXT[waiterLanguage].ready:(waiterLanguage==='ar'?'المايك مكتوم':waiterLanguage==='fr'?'Micro coupé':'Microphone muted');
+   return;
+ }
  if(!realtimeMicStream) return;
  const track=realtimeMicStream.getAudioTracks()[0];
  if(!track) return;
@@ -1482,6 +1689,7 @@ function setBookingMinDate(){
 })();
 
 function closeWaiter(){
+ closeAltSara();
  closeRealtime();
  stopVAD();
  if(recording) stopRecording();
