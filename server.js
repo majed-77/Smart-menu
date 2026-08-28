@@ -1052,7 +1052,7 @@ app.post("/api/tts", async (req, res) => {
         ? "Parle naturellement en français, avec une voix chaleureuse et professionnelle de serveuse de restaurant."
         : language === "en"
         ? "Speak naturally in English, with a warm professional restaurant waitress tone."
-        : "تكلمي طبيعي وبشكل محادثة مباشرة، باللهجة السعودية البيضاء اليومية مع ميل نجدي خفيف. نبرة ودودة وواثقة، بدون فصحى رسمية، وبدون تمطيط أو أسلوب قراءة آلي.";
+        : "ثبتي نفس شخصية الصوت في كل رد: امرأة سعودية شابة، دافئة وواثقة. تكلمي باللهجة السعودية البيضاء اليومية مع ميل نجدي خفيف وبإيقاع محادثة طبيعي ثابت. لا تنتقلي للفصحى ولا تغيّري طبقة الصوت أو الشخصية بين الجمل. اجعلي الرد قصيرًا ومباشرًا، بدون تمطيط أو أسلوب قراءة آلي.";
 
     const speech = await openai.audio.speech.create({
       model: "gpt-4o-mini-tts",
@@ -1223,7 +1223,7 @@ app.post("/api/sara-alt-chat", async (req, res) => {
     const q = String(question || "").trim();
     if (!q && !greeting) return res.status(400).json({ ok:false, code:"EMPTY_MESSAGE", message:"لا يوجد كلام لإرساله إلى سارة." });
 
-    const cleanHistory = Array.isArray(history) ? history.slice(-10).map(m => ({
+    const cleanHistory = Array.isArray(history) ? history.slice(-6).map(m => ({
       role: m?.role === "assistant" ? "assistant" : "user",
       content: String(m?.content || m?.text || "").trim()
     })).filter(m => m.content) : [];
@@ -1244,8 +1244,8 @@ app.post("/api/sara-alt-chat", async (req, res) => {
         tools:[confirmBookingOrderTool],
         tool_choice:"auto",
         thinking:{ type:"disabled" },
-        max_tokens:220,
-        temperature:0.35
+        max_tokens:160,
+        temperature:0.25
       })
     });
     const data = await response.json().catch(() => ({}));

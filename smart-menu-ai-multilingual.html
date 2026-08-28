@@ -1020,7 +1020,7 @@ async function altFetchJSON(url, options, timeout=45000){
 async function askAltSara(question,{greeting=false}={}){
   return altFetchJSON('/api/sara-alt-chat',{
     method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question,menu:compactMenu(),history:conversationHistory.slice(-10),language:waiterLanguage,greeting})
+    body:JSON.stringify({question,menu:compactMenu(),history:conversationHistory.slice(saraEngine==='hybrid3'?-6:-10),language:waiterLanguage,greeting})
   },60000);
 }
 
@@ -1082,7 +1082,7 @@ async function speakAltSara(text,{waitForEnd=false}={}){
 }
 
 function startAltCapture(){
-  if(!altStream || altCapturing || altBusy)return;
+  if(!altStream || altCapturing || (altBusy && !(saraEngine==='hybrid3' && altSpeaking)))return;
   const mime=bestMime(); altChunks=[];
   try{altRecorder=new MediaRecorder(altStream,mime?{mimeType:mime}:undefined);}catch(e){return;}
   altRecorder.ondataavailable=e=>{if(e.data?.size)altChunks.push(e.data)};
@@ -1110,14 +1110,24 @@ function runAltVAD(){
     altAnalyser.getByteTimeDomainData(data); let sum=0;
     for(let i=0;i<data.length;i++){const x=(data[i]-128)/128;sum+=x*x;}
     const rms=Math.sqrt(sum/data.length), now=performance.now();
-    if(!altBusy && !altCapturing && rms>0.055){
-      stopAltSpeechForBargeIn(); startAltCapture();
+    // Experimental 3 is tuned for faster, Realtime-like turn taking.
+    // While Sara is speaking, the microphone remains live so the customer can
+    // interrupt her. Echo cancellation/voice isolation help avoid self-triggering.
+    const isHybrid3=saraEngine==='hybrid3';
+    const startThreshold=isHybrid3?0.040:0.055;
+    const keepThreshold=isHybrid3?0.032:0.040;
+    const minSpeechMs=isHybrid3?160:220;
+    const endSilenceMs=isHybrid3?420:600;
+    const canStart=!altBusy || (isHybrid3 && altSpeaking);
+    if(canStart && !altCapturing && rms>startThreshold){
+      stopAltSpeechForBargeIn();
+      startAltCapture();
     }
     if(altCapturing){
-      if(rms>0.04){altSilenceAt=0;}
-      else if(now-altSpeechStartedAt>220){
+      if(rms>keepThreshold){altSilenceAt=0;}
+      else if(now-altSpeechStartedAt>minSpeechMs){
         if(!altSilenceAt)altSilenceAt=now;
-        if(now-altSilenceAt>600)stopAltCapture();
+        if(now-altSilenceAt>endSilenceMs)stopAltCapture();
       }
     }
     altVadFrame=requestAnimationFrame(tick);
