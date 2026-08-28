@@ -210,7 +210,7 @@ function restaurantOrderCopy(reservation) {
   ].join("\n");
 }
 
-async function sendTwilioWhatsApp({ to, body }) {
+async function sendTwilioWhatsApp({ to, body, forceFrom = false }) {
   if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) {
     throw new Error("Twilio WhatsApp credentials are not configured.");
   }
@@ -223,7 +223,9 @@ async function sendTwilioWhatsApp({ to, body }) {
 
   const params = new URLSearchParams();
   params.set("To", `whatsapp:${normalizedTo}`);
-  if (TWILIO_MESSAGING_SERVICE_SID) {
+  // Restaurant order copies must use the actual WhatsApp Sandbox sender directly.
+  // Using a Messaging Service in Trial/Sandbox can trigger ContentSid/template requirements.
+  if (!forceFrom && TWILIO_MESSAGING_SERVICE_SID) {
     params.set("MessagingServiceSid", TWILIO_MESSAGING_SERVICE_SID);
   } else {
     params.set("From", twilioWhatsAppFrom());
@@ -250,7 +252,8 @@ async function sendRestaurantWhatsApp(reservation) {
   }
   return sendTwilioWhatsApp({
     to: RESTAURANT_WHATSAPP_TO,
-    body: restaurantOrderCopy(reservation)
+    body: restaurantOrderCopy(reservation),
+    forceFrom: true
   });
 }
 
@@ -1074,7 +1077,7 @@ async function startServer() {
     console.log(`🔑 OpenAI API Key: ${apiKey ? "Configured" : "NOT CONFIGURED"}`);
     console.log(`🗓️ Reservations DB: ${db ? (reservationSchemaReady ? "Ready" : "Configured but not ready") : "NOT CONFIGURED"}`);
     console.log(`💬 WhatsApp: ${TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN ? "Credentials configured" : "NOT CONFIGURED"}`);
-    console.log(`🏪 Restaurant WhatsApp: ${RESTAURANT_WHATSAPP_TO ? "Configured" : "NOT CONFIGURED"}`);
+    console.log(`🏪 Restaurant WhatsApp: ${RESTAURANT_WHATSAPP_TO ? "Configured (direct WhatsApp From)" : "NOT CONFIGURED"}`);
 
     // Built-in safety net. For production also configure a Render Cron Job to POST /api/reminders/run every 5 minutes.
     setInterval(() => processDueReservationReminders().catch(err => console.error("Reminder worker error:", err)), 60 * 1000).unref();
