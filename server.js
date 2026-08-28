@@ -14,7 +14,6 @@ const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
 const TWILIO_WHATSAPP_FROM = process.env.TWILIO_WHATSAPP_FROM || "";
 const TWILIO_MESSAGING_SERVICE_SID = process.env.TWILIO_MESSAGING_SERVICE_SID || "";
 const TWILIO_CONTENT_SID = process.env.TWILIO_CONTENT_SID || "";
-const TWILIO_TRIAL_CONTENT_SID = process.env.TWILIO_TRIAL_CONTENT_SID || "HXfe5ab5f00277942d4d4200328b4d403c";
 const RESTAURANT_WHATSAPP_TO = process.env.RESTAURANT_WHATSAPP_TO || "";
 const CRON_SECRET = process.env.CRON_SECRET || "";
 const RESTAURANT_TIMEZONE = process.env.RESTAURANT_TIMEZONE || "Asia/Riyadh";
@@ -251,40 +250,6 @@ async function sendRestaurantWhatsApp(reservation) {
   if (!RESTAURANT_WHATSAPP_TO) {
     throw new Error("RESTAURANT_WHATSAPP_TO is not configured.");
   }
-  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_WHATSAPP_FROM) {
-    throw new Error("Twilio WhatsApp credentials are not configured.");
-  }
-
-  // Twilio's current Console Trial only allows outbound WhatsApp messages
-  // using a Twilio-provided ContentSid. It rejects a free-form Body with
-  // "ContentSid Required" even when the recipient has joined Try out WhatsApp.
-  // The template below is the working Twilio-provided trial template captured
-  // from this project's Try out WhatsApp flow. Override it in Render with
-  // TWILIO_TRIAL_CONTENT_SID if Twilio rotates the trial template.
-  if (TWILIO_TRIAL_CONTENT_SID) {
-    const normalizedTo = normalizeWhatsAppPhone(String(RESTAURANT_WHATSAPP_TO).replace(/^whatsapp:/i, ""));
-    if (!normalizedTo) throw new Error("Invalid restaurant WhatsApp destination number.");
-
-    const params = new URLSearchParams();
-    params.set("To", `whatsapp:${normalizedTo}`);
-    params.set("From", twilioWhatsAppFrom());
-    params.set("ContentSid", TWILIO_TRIAL_CONTENT_SID);
-
-    const endpoint = `https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(TWILIO_ACCOUNT_SID)}/Messages.json`;
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        Authorization: "Basic " + Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString("base64"),
-        "Content-Type": "application/x-www-form-urlencoded"
-      },
-      body: params
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload?.message || `Twilio HTTP ${response.status}`);
-    return payload.sid || "sent";
-  }
-
-  // Upgraded Twilio accounts can send the full restaurant order body here.
   return sendTwilioWhatsApp({
     to: RESTAURANT_WHATSAPP_TO,
     body: restaurantOrderCopy(reservation),
@@ -1112,7 +1077,7 @@ async function startServer() {
     console.log(`🔑 OpenAI API Key: ${apiKey ? "Configured" : "NOT CONFIGURED"}`);
     console.log(`🗓️ Reservations DB: ${db ? (reservationSchemaReady ? "Ready" : "Configured but not ready") : "NOT CONFIGURED"}`);
     console.log(`💬 WhatsApp: ${TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN ? "Credentials configured" : "NOT CONFIGURED"}`);
-    console.log(`🏪 Restaurant WhatsApp: ${RESTAURANT_WHATSAPP_TO ? `Configured (${TWILIO_TRIAL_CONTENT_SID ? "Twilio Trial ContentSid" : "direct WhatsApp Body"})` : "NOT CONFIGURED"}`);
+    console.log(`🏪 Restaurant WhatsApp: ${RESTAURANT_WHATSAPP_TO ? "Configured (direct WhatsApp From)" : "NOT CONFIGURED"}`);
 
     // Built-in safety net. For production also configure a Render Cron Job to POST /api/reminders/run every 5 minutes.
     setInterval(() => processDueReservationReminders().catch(err => console.error("Reminder worker error:", err)), 60 * 1000).unref();
