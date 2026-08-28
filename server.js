@@ -1019,6 +1019,24 @@ app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
 // ======================================================
 // TEXT TO SPEECH
 // ======================================================
+// Keep the visible chat text untouched, but give Arabic TTS a pronunciation-
+// optimized copy. This avoids common ambiguous readings in booking phrases.
+function prepareArabicSaraTTS(text) {
+  let out = String(text || "");
+  const replacements = [
+    [/أثبت الحجز/g, "أَثْبِت الحَجْز"],
+    [/اثبت الحجز/g, "أَثْبِت الحَجْز"],
+    [/أعتمد الحجز/g, "أَعْتَمِد الحَجْز"],
+    [/اعتمد الحجز/g, "اِعْتَمِد الحَجْز"],
+    [/اعتمدت الحجز/g, "اِعْتَمَدْت الحَجْز"],
+    [/تم اعتماد الحجز/g, "تَمَّ اعْتِمَاد الحَجْز"],
+    [/رقم الحجز/g, "رَقْم الحَجْز"],
+    [/حجزك/g, "حَجْزَك"],
+    [/الحجز/g, "الحَجْز"]
+  ];
+  for (const [pattern, replacement] of replacements) out = out.replace(pattern, replacement);
+  return out;
+}
 app.post("/api/tts", async (req, res) => {
   try {
     const {
@@ -1052,12 +1070,14 @@ app.post("/api/tts", async (req, res) => {
         ? "Parle naturellement en français, avec une voix chaleureuse et professionnelle de serveuse de restaurant."
         : language === "en"
         ? "Speak naturally in English, with a warm professional restaurant waitress tone."
-        : "ثبتي نفس شخصية الصوت في كل رد: امرأة سعودية شابة، دافئة وواثقة. تكلمي باللهجة السعودية البيضاء اليومية مع ميل نجدي خفيف وبإيقاع محادثة طبيعي ثابت. لا تنتقلي للفصحى ولا تغيّري طبقة الصوت أو الشخصية بين الجمل. اجعلي الرد قصيرًا ومباشرًا، بدون تمطيط أو أسلوب قراءة آلي.";
+        : "ثبتي نفس شخصية الصوت في كل رد: امرأة سعودية شابة، دافئة وواثقة. تكلمي باللهجة السعودية البيضاء اليومية مع ميل نجدي خفيف وبإيقاع محادثة طبيعي ثابت. انطقي الحروف العربية بوضوح، خصوصًا الهمزة والعين والحاء والجيم، والتزمي بالتشكيل الموجود في النص لأنه مخصص لضبط النطق. لا تنتقلي للفصحى الرسمية ولا تغيّري طبقة الصوت أو الشخصية بين الجمل. اجعلي الرد قصيرًا ومباشرًا، بدون تمطيط أو أسلوب قراءة آلي.";
+
+    const ttsText = language === "ar" ? prepareArabicSaraTTS(cleanText) : cleanText;
 
     const speech = await openai.audio.speech.create({
       model: "gpt-4o-mini-tts",
       voice: "coral",
-      input: cleanText,
+      input: ttsText,
       instructions: voiceInstructions,
       speed: 1.0,
       response_format: "mp3"

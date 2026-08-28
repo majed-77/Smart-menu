@@ -1117,7 +1117,7 @@ function runAltVAD(){
     const startThreshold=isHybrid3?0.040:0.055;
     const keepThreshold=isHybrid3?0.032:0.040;
     const minSpeechMs=isHybrid3?160:220;
-    const endSilenceMs=isHybrid3?420:600;
+    const endSilenceMs=isHybrid3?1000:600;
     const canStart=!altBusy || (isHybrid3 && altSpeaking);
     if(canStart && !altCapturing && rms>startThreshold){
       stopAltSpeechForBargeIn();
@@ -1626,9 +1626,11 @@ async function speakAI(text){
         speechSource.buffer=decoded;
         speechSource.connect(speechAudioContext.destination);
         orb.classList.add('speaking');
+        if(saraEngine==='hybrid3') altSpeaking=true;
         speechSource.onended=()=>{
           orb.classList.remove('speaking');
           speechSource=null;
+          if(saraEngine==='hybrid3') altSpeaking=false;
         };
         speechSource.start(0);
         return;
@@ -1645,14 +1647,17 @@ async function speakAI(text){
     audio.playsInline=true;
     audio.src=url;
     orb.classList.add('speaking');
+    if(saraEngine==='hybrid3') altSpeaking=true;
 
     audio.onended=()=>{
       orb.classList.remove('speaking');
       URL.revokeObjectURL(url);
       if(currentAudio===audio) currentAudio=null;
+      if(saraEngine==='hybrid3') altSpeaking=false;
     };
     audio.onerror=()=>{
       orb.classList.remove('speaking');
+      if(saraEngine==='hybrid3') altSpeaking=false;
       URL.revokeObjectURL(url);
     };
 
