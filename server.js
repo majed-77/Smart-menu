@@ -1118,6 +1118,11 @@ BOOKING + OPTIONAL PRE-ORDER:
 - Preserve phone digit order exactly. Saudi local 05xxxxxxxx may be normalized to +9665xxxxxxxx.
 - Ask only for missing information.
 - Before saving, summarize the booking/order and ask for explicit confirmation.
+- IMPORTANT VOICE STYLE FOR BOOKING CONFIRMATION: speak the summary as one short natural sentence, never as a form, checklist, table, or Markdown list. Do not use Markdown symbols such as **, #, -, bullets, or labels like "الاسم:" and "رقم الواتساب:" in spoken replies.
+- In Arabic, prefer a natural confirmation like: "تمام محمد، حجزك اليوم الساعة سبع ونص مساء لشخصين، وبدون طلب مسبق. أعتمد الحجز؟"
+- Do not read the WhatsApp number back during the final summary unless the guest specifically asks to verify it or the number is ambiguous.
+- Say dates and times in natural spoken words instead of raw machine-style values such as 2026-08-28 or 19:30.
+- Keep the final confirmation summary to one or two short sentences.
 - NEVER call confirm_booking_order until the guest clearly confirms.
 - CRITICAL INTERRUPTION RULE: if you were summarizing and the guest interrupts with a clear approval such as "تمام اعتمدي", "اعتمدي الحجز", "نعم اعتمدي", "إيه اعتمدي" or an equivalent, call confirm_booking_order immediately using the latest agreed details. Do not repeat the summary and do not ask for confirmation again.
 - If the interruption changes a detail instead of confirming, update it and ask for confirmation again.
@@ -1254,10 +1259,27 @@ app.post("/api/sara-alt-chat", async (req, res) => {
   }
 });
 
+function cleanSaraSpeechText(value) {
+  let text = String(value || "");
+  // Fish Audio should receive plain speech, never chat/Markdown formatting.
+  text = text
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/__(.*?)__/g, "$1")
+    .replace(/`{1,3}/g, "")
+    .replace(/^\s*[-*•]+\s*/gm, "")
+    .replace(/^\s*#{1,6}\s*/gm, "")
+    .replace(/\[(.*?)\]\([^)]*\)/g, "$1")
+    .replace(/\n{2,}/g, ". ")
+    .replace(/\n/g, "، ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return text;
+}
+
 app.post("/api/sara-alt-tts", async (req, res) => {
   try {
     if (!FISH_AUDIO_API_KEY || !FISH_AUDIO_VOICE_ID) return res.status(401).json({ ok:false, code:"FISH_AUDIO_NOT_CONFIGURED", message:"مفتاح Fish Audio أو Voice ID غير موجود في Render." });
-    const text = String(req.body?.text || "").trim();
+    const text = cleanSaraSpeechText(req.body?.text);
     if (!text) return res.status(400).json({ ok:false, code:"EMPTY_TTS", message:"لا يوجد نص لتحويله إلى صوت." });
 
     const response = await fetch("https://api.fish.audio/v1/tts", {
