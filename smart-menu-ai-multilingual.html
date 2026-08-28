@@ -682,6 +682,8 @@ ${lang==='ar'?'للعميل العربي: لا تشرحي أن الأسعار م
 - إذا نقصت معلومة اسألي عنها فقط، ولا تطلبي كل المعلومات مرة وحدة إذا كان بعضها معروف.
 - قبل الحفظ لازم تلخصين الحجز والطلب كاملًا بوضوح، ثم تسألين سؤال تأكيد صريح مثل: «أعتمد الحجز والطلب؟».
 - ممنوع تستدعين أداة confirm_booking_order قبل ما يؤكد العميل بوضوح بكلمة مثل نعم، إيه، تمام اعتمد، أو ما يعادلها.
+- مهم جدًا: إذا قاطعك العميل وأنتِ تقرئين ملخص الحجز أو الطلب وقال بوضوح «تمام اعتمدي»، «اعتمدي الحجز»، «نعم اعتمدي»، «إيه اعتمدي» أو أي تأكيد واضح مشابه، اعتبري كلامه تأكيدًا نهائيًا فورًا. لا تعيدي الملخص، ولا تكملي قراءة التفاصيل، ولا تسألي «أعتمد؟» مرة ثانية؛ استدعي confirm_booking_order مباشرة باستخدام آخر تفاصيل متفق عليها.
+- إذا قاطعك العميل بتعديل بدل التأكيد، مثل تغيير الوقت أو العدد أو حذف صنف، طبقي التعديل ثم أعيدي فقط الجزء المتغير أو ملخصًا مختصرًا واسألي التأكيد مرة ثانية.
 - إذا عدّل العميل أي شيء بعد الملخص، حدّثي الملخص واسألي التأكيد مرة ثانية.
 - بعد نجاح الحفظ اذكري رقم الحجز باختصار، وقولي إن الحجز والطلب تم تسجيلهما. لا تدّعي أن رسالة واتساب أُرسلت الآن إلا إذا النظام أكد ذلك.
 
@@ -769,6 +771,29 @@ function normalizeSaraPhone(value){
   return s;
 }
 
+function isExplicitBookingConfirmation(text){
+  const t=String(text||'')
+    .replace(/[ًٌٍَُِّْـ]/g,'')
+    .replace(/[إأآ]/g,'ا')
+    .replace(/ى/g,'ي')
+    .toLowerCase()
+    .trim();
+  if(!t) return false;
+  const hasApprove=/(اعتمد|اعتمدي|اكدي|اكد|ثبت|ثبتي|نفذ|نفذي|سجل|سجلي)/.test(t);
+  const hasYes=/(^|\s)(نعم|ايه|اي|تمام|اوكي|موافق|خلاص|صح)(\s|$)/.test(t);
+  const bookingWord=/(الحجز|الطلب)/.test(t);
+  return hasApprove || (hasYes && bookingWord);
+}
+function cancelRealtimeAssistantForBargeIn(){
+  if(!realtimeDC || realtimeDC.readyState!=='open') return;
+  try{realtimeDC.send(JSON.stringify({type:'response.cancel'}));}catch(e){}
+  // Ask the server to drop any queued audio if supported. Older clients may
+  // ignore this event, so response.cancel remains the primary mechanism.
+  try{realtimeDC.send(JSON.stringify({type:'output_audio_buffer.clear'}));}catch(e){}
+  realtimeAssistantSpeaking=false;
+  orb.classList.remove('speaking');
+}
+
 function saraToolMessage(kind,data={}){
   const lang=waiterLanguage||'ar';
   if(kind==='saving') return lang==='ar'?'لحظة، أعتمد الحجز والطلب…':lang==='fr'?'Un instant, je confirme votre réservation…':'One moment, I’m confirming your booking…';
@@ -845,14 +870,13 @@ function handleRealtimeEvent(event){
   }
 
   if(e.type==='input_audio_buffer.speech_started'){
-    if(realtimeAssistantSpeaking){
-      // Sara is speaking: ignore accidental VAD triggers from speakers/background.
-      return;
-    }
+    // Keep listening while Sara is talking so the guest can naturally barge in.
+    // We do NOT cancel on VAD alone; cancellation waits for a real transcript,
+    // which avoids café noise cutting Sara off.
     status.textContent=
-      waiterLanguage==='ar'?'أسمعك…':
-      waiterLanguage==='fr'?"Je vous écoute…":
-      "I'm listening…";
+      waiterLanguage==='ar'?(realtimeAssistantSpeaking?'سمعتك، لحظة…':'أسمعك…'):
+      waiterLanguage==='fr'?(realtimeAssistantSpeaking?'Je vous ai entendu…':"Je vous écoute…"):
+      (realtimeAssistantSpeaking?'I heard you…':"I'm listening…");
   }
 
   if(e.type==='input_audio_buffer.speech_stopped'){
@@ -877,7 +901,9 @@ function handleRealtimeEvent(event){
 
   if(e.type==='response.audio.delta' || e.type==='response.output_audio.delta'){
     realtimeAssistantSpeaking=true;
-    setRealtimeMicEnabled(false);
+    // Allow true user speech to be transcribed while Sara is talking. Server VAD
+    // stays conservative, and we only cancel after a meaningful transcript.
+    setRealtimeMicEnabled(true);
     orb.classList.add('speaking');
   }
 
@@ -916,9 +942,20 @@ function handleRealtimeEvent(event){
     // an AI turn from them.
     const meaningful = text.replace(/[\s\p{P}\p{S}]/gu,'').length >= 2;
     if(text && meaningful){
+      const interruptedSara=realtimeAssistantSpeaking;
+      const explicitBookingConfirm=isExplicitBookingConfirmation(text);
       addBubble('user',text);
       conversationHistory.push({role:'user',content:text});
-      status.textContent=TEXT[waiterLanguage].thinking;
+
+      if(interruptedSara){
+        // Only now, after actual words were transcribed, stop Sara. This gives
+        // natural barge-in without letting background noise truncate responses.
+        cancelRealtimeAssistantForBargeIn();
+      }
+
+      status.textContent=explicitBookingConfirm && waiterLanguage==='ar'
+        ?'تمام، أعتمد الحجز…'
+        :TEXT[waiterLanguage].thinking;
       createRealtimeResponse();
     }else if(!realtimeAssistantSpeaking){
       setRealtimeMicEnabled(true);
@@ -1456,4 +1493,3 @@ endBtn.onclick=closeWaiter;
 </script>
 </body>
 </html>
-
