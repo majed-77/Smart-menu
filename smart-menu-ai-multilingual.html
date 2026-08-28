@@ -1019,7 +1019,7 @@ async function altFetchJSON(url, options, timeout=45000){
 async function askAltSara(question,{greeting=false}={}){
   return altFetchJSON('/api/sara-alt-chat',{
     method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question,menu:compactMenu(),history:conversationHistory.slice(-20),language:waiterLanguage,greeting})
+    body:JSON.stringify({question,menu:compactMenu(),history:conversationHistory.slice(-10),language:waiterLanguage,greeting})
   },60000);
 }
 
@@ -1091,7 +1091,7 @@ function startAltCapture(){
     if(blob.size<700){altBusy=false;return;}
     await processAltVoice(blob,type);
   };
-  altRecorder.start(150); altCapturing=true; altSpeechStartedAt=performance.now(); altSilenceAt=0;
+  altRecorder.start(100); altCapturing=true; altSpeechStartedAt=performance.now(); altSilenceAt=0;
   micBtn.classList.add('recording'); micBtn.textContent='⏹';
 }
 
@@ -1114,9 +1114,9 @@ function runAltVAD(){
     }
     if(altCapturing){
       if(rms>0.04){altSilenceAt=0;}
-      else if(now-altSpeechStartedAt>260){
+      else if(now-altSpeechStartedAt>220){
         if(!altSilenceAt)altSilenceAt=now;
-        if(now-altSilenceAt>850)stopAltCapture();
+        if(now-altSilenceAt>600)stopAltCapture();
       }
     }
     altVadFrame=requestAnimationFrame(tick);

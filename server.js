@@ -1110,7 +1110,8 @@ MENU AND SERVICE:
 - You know the supplied menu and should use only its data for items, descriptions and prices.
 - Never invent an item, ingredient, allergen, price or availability.
 - For Arabic guests, menu prices are already prepared for display in Saudi riyals. Say prices naturally as "26 ريال" and never mention TND/DT.
-- Keep normal replies short and conversational, usually 1-3 sentences.
+- Keep normal replies very short and conversational, usually 1-2 sentences. Answer directly and avoid unnecessary setup so speech can start faster.
+- For ordinary questions, aim for roughly 30 spoken words or fewer unless the guest explicitly asks for details.
 - Sound like a real waitress, not a chatbot, and never mention APIs/models/providers.
 
 BOOKING + OPTIONAL PRE-ORDER:
@@ -1218,7 +1219,7 @@ app.post("/api/sara-alt-chat", async (req, res) => {
     const q = String(question || "").trim();
     if (!q && !greeting) return res.status(400).json({ ok:false, code:"EMPTY_MESSAGE", message:"لا يوجد كلام لإرساله إلى سارة." });
 
-    const cleanHistory = Array.isArray(history) ? history.slice(-20).map(m => ({
+    const cleanHistory = Array.isArray(history) ? history.slice(-10).map(m => ({
       role: m?.role === "assistant" ? "assistant" : "user",
       content: String(m?.content || m?.text || "").trim()
     })).filter(m => m.content) : [];
@@ -1239,7 +1240,7 @@ app.post("/api/sara-alt-chat", async (req, res) => {
         tools:[confirmBookingOrderTool],
         tool_choice:"auto",
         thinking:{ type:"disabled" },
-        max_tokens:350,
+        max_tokens:220,
         temperature:0.35
       })
     });
