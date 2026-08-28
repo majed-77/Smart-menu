@@ -243,6 +243,7 @@ main{max-width:1280px;margin:auto;padding:22px 5% 60px}
           <button class="engineChoice active" type="button" data-sara-engine="openai">OpenAI Realtime</button>
           <button class="engineChoice" type="button" data-sara-engine="alt">تجريبي 1</button>
           <button class="engineChoice" type="button" data-sara-engine="agent">تجريبي 2</button>
+          <button class="engineChoice" type="button" data-sara-engine="hybrid3">تجريبي 3</button>
         </div>
       </div>
       <div class="languageGrid">
@@ -1130,7 +1131,8 @@ async function processAltVoice(blob,mime){
     status.textContent=TEXT[waiterLanguage].transcribing;
     const ext=mime.includes('mp4')?'m4a':mime.includes('ogg')?'ogg':'webm';
     const form=new FormData(); form.append('audio',blob,'voice.'+ext); form.append('language',waiterLanguage);
-    const r=await fetch('/api/sara-alt-transcribe',{method:'POST',body:form}); const d=await r.json().catch(()=>({}));
+    const sttUrl=saraEngine==='hybrid3'?'/api/transcribe':'/api/sara-alt-transcribe';
+    const r=await fetch(sttUrl,{method:'POST',body:form}); const d=await r.json().catch(()=>({}));
     if(!r.ok||!d.text)throw new Error(d.message||'Transcription failed');
     const q=String(d.text).trim(); if(!q)return;
     addBubble('user',q); conversationHistory.push({role:'user',content:q});
@@ -1140,7 +1142,7 @@ async function processAltVoice(blob,mime){
     if(data.toolCall?.name==='confirm_booking_order') answer=await handleAltBookingTool(data.toolCall); else answer=String(data.answer||'').trim();
     if(!answer)throw new Error('No answer');
     addBubble('assistant',answer); conversationHistory.push({role:'assistant',content:answer}); status.textContent=TEXT[waiterLanguage].ready;
-    await speakAltSara(answer,{waitForEnd:false});
+    if(saraEngine==='hybrid3') await speakAI(answer); else await speakAltSara(answer,{waitForEnd:false});
     altBusy=false;
   }catch(e){
     console.error('Alt Sara voice error',e); altBusy=false; status.textContent=e.message||TEXT[waiterLanguage].serverError; showDiagnostic(status.textContent,false);
@@ -1153,7 +1155,7 @@ async function submitAltQuestion(q){
   try{
     const data=await askAltSara(q); let answer='';
     if(data.toolCall?.name==='confirm_booking_order')answer=await handleAltBookingTool(data.toolCall);else answer=String(data.answer||'').trim();
-    if(!answer)throw new Error('No answer'); addBubble('assistant',answer);conversationHistory.push({role:'assistant',content:answer});status.textContent=TEXT[waiterLanguage].ready;await speakAltSara(answer,{waitForEnd:false});altBusy=false;
+    if(!answer)throw new Error('No answer'); addBubble('assistant',answer);conversationHistory.push({role:'assistant',content:answer});status.textContent=TEXT[waiterLanguage].ready;if(saraEngine==='hybrid3')await speakAI(answer);else await speakAltSara(answer,{waitForEnd:false});altBusy=false;
   }catch(e){altBusy=false;status.textContent=e.message||TEXT[waiterLanguage].serverError;showDiagnostic(status.textContent,false);}
 }
 
@@ -1278,6 +1280,33 @@ async function closeAgent2(){
   orb.classList.remove('speaking');
   micBtn.textContent='🎤';
   if(agent2Wrap){agent2Wrap.innerHTML='';agent2Wrap.style.display='none';}
+}
+
+async function startHybrid3(){
+  if(altStarted)return;
+  try{
+    const supported=navigator.mediaDevices.getSupportedConstraints?.()||{};
+    const constraints={echoCancellation:true,noiseSuppression:true,autoGainControl:false,channelCount:1};
+    if(supported.voiceIsolation)constraints.voiceIsolation=true;
+    altStream=await navigator.mediaDevices.getUserMedia({audio:constraints});
+    const AC=window.AudioContext||window.webkitAudioContext;
+    altAudioContext=new AC();
+    const src=altAudioContext.createMediaStreamSource(altStream);
+    altAnalyser=altAudioContext.createAnalyser();
+    altAnalyser.fftSize=1024; altAnalyser.smoothingTimeConstant=.2; src.connect(altAnalyser);
+    altStarted=true; altBusy=true;
+    showDiagnostic(waiterLanguage==='ar'?'🧪 تجريبي 3 جاهز':waiterLanguage==='fr'?'🧪 Expérimental 3 prêt':'🧪 Experimental 3 ready',true);
+    const data=await askAltSara('',{greeting:true});
+    const answer=String(data.answer||'').trim();
+    if(answer){
+      addBubble('assistant',answer); conversationHistory.push({role:'assistant',content:answer});
+      status.textContent=TEXT[waiterLanguage].ready;
+      await speakAI(answer);
+    }
+    altBusy=false; runAltVAD(); status.textContent=TEXT[waiterLanguage].ready;
+  }catch(e){
+    console.error('Hybrid 3 start failed',e); closeAltSara(); status.textContent=e.message; showDiagnostic(e.message,false);
+  }
 }
 
 async function startRealtime(){
@@ -1416,7 +1445,7 @@ document.querySelectorAll('[data-waiter-lang]').forEach(b=>b.onclick=async()=>{
    'Turning on the microphone…';
 
  await unlockSpeechAudio();
- if(saraEngine==='alt') await startAltSara(); else if(saraEngine==='agent') await startAgent2(); else await startRealtime();
+ if(saraEngine==='alt') await startAltSara(); else if(saraEngine==='agent') await startAgent2(); else if(saraEngine==='hybrid3') await startHybrid3(); else await startRealtime();
 });
 
 function addBubble(role,text){
@@ -1661,7 +1690,7 @@ input.addEventListener('keydown',async e=>{
  if(e.key==='Enter'){
    stopAISpeech();
    await unlockSpeechAudio();
-   if(saraEngine==='alt') submitAltQuestion(input.value); else if(saraEngine==='agent'){ const q=String(input.value||'').trim(); if(q&&agent2Conversation){ input.value=''; try{agent2Conversation.sendUserMessage(q);}catch(e){showDiagnostic(e.message||String(e),false);} } } else submitQuestion(input.value);
+   if(saraEngine==='alt'||saraEngine==='hybrid3') submitAltQuestion(input.value); else if(saraEngine==='agent'){ const q=String(input.value||'').trim(); if(q&&agent2Conversation){ input.value=''; try{agent2Conversation.sendUserMessage(q);}catch(e){showDiagnostic(e.message||String(e),false);} } } else submitQuestion(input.value);
  }
 });
 
@@ -1751,7 +1780,7 @@ micBtn.onclick=()=>{
    status.textContent=agent2MicMuted?(waiterLanguage==='ar'?'المايك مكتوم':waiterLanguage==='fr'?'Micro coupé':'Microphone muted'):TEXT[waiterLanguage].ready;
    return;
  }
- if(saraEngine==='alt'){
+ if(saraEngine==='alt'||saraEngine==='hybrid3'){
    if(!altStream)return;
    const track=altStream.getAudioTracks()[0];if(!track)return;track.enabled=!track.enabled;micBtn.textContent=track.enabled?'🎤':'🔇';
    status.textContent=track.enabled?TEXT[waiterLanguage].ready:(waiterLanguage==='ar'?'المايك مكتوم':waiterLanguage==='fr'?'Micro coupé':'Microphone muted');
