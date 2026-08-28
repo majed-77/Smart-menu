@@ -1024,8 +1024,31 @@ app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
 // ======================================================
 // Keep the visible chat text untouched, but give Arabic TTS a pronunciation-
 // optimized copy. This avoids common ambiguous readings in booking phrases.
+function arabicPhoneDigitsForSpeech(value) {
+  const digitMap = {
+    "0": "صفر", "1": "واحد", "2": "اثنين", "3": "ثلاثة", "4": "أربعة",
+    "5": "خمسة", "6": "ستة", "7": "سبعة", "8": "ثمانية", "9": "تسعة",
+    "٠": "صفر", "١": "واحد", "٢": "اثنين", "٣": "ثلاثة", "٤": "أربعة",
+    "٥": "خمسة", "٦": "ستة", "٧": "سبعة", "٨": "ثمانية", "٩": "تسعة",
+    "۰": "صفر", "۱": "واحد", "۲": "اثنين", "۳": "ثلاثة", "۴": "أربعة",
+    "۵": "خمسة", "۶": "ستة", "۷": "سبعة", "۸": "ثمانية", "۹": "تسعة"
+  };
+  const raw = String(value || "");
+  const hasPlus = /^\s*(?:\+|00)/.test(raw);
+  const digits = [...raw].filter(ch => digitMap[ch]).map(ch => digitMap[ch]);
+  if (!digits.length) return raw;
+  return (hasPlus ? "زائد، " : "") + digits.join("، ");
+}
+
 function prepareArabicSaraTTS(text) {
   let out = String(text || "");
+
+  // Phone numbers must ALWAYS be spoken digit-by-digit and in the exact same
+  // order. DeepSeek and the visible chat keep the original number untouched;
+  // only the hidden TTS copy is expanded for pronunciation.
+  const phonePattern = /(?:\+|00)?[0-9٠-٩۰-۹](?:[0-9٠-٩۰-۹\s().-]*[0-9٠-٩۰-۹]){6,}/g;
+  out = out.replace(phonePattern, match => arabicPhoneDigitsForSpeech(match));
+
   const replacements = [
     [/أثبت الحجز/g, "أَثْبِت الحَجْز"],
     [/اثبت الحجز/g, "أَثْبِت الحَجْز"],
