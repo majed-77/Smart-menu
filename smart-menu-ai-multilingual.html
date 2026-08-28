@@ -1156,13 +1156,13 @@ async function startAltSara(){
   if(altStarted)return;
   try{
     const cfg=await altFetchJSON('/api/sara-alt-status',{cache:'no-store'});
-    if(!cfg.configured)throw new Error(waiterLanguage==='ar'?'المحرك التجريبي يحتاج مفاتيح Deepgram وDeepSeek وElevenLabs في Render.':'Experimental engine keys are not configured.');
+    if(!cfg.configured)throw new Error(waiterLanguage==='ar'?'المحرك التجريبي يحتاج مفاتيح ElevenLabs وDeepSeek وFish Audio في Render.':'Experimental engine keys are not configured.');
     const supported=navigator.mediaDevices.getSupportedConstraints?.()||{};
     const constraints={echoCancellation:true,noiseSuppression:true,autoGainControl:false,channelCount:1};if(supported.voiceIsolation)constraints.voiceIsolation=true;
     altStream=await navigator.mediaDevices.getUserMedia({audio:constraints});
     const AC=window.AudioContext||window.webkitAudioContext; altAudioContext=new AC(); const src=altAudioContext.createMediaStreamSource(altStream); altAnalyser=altAudioContext.createAnalyser();altAnalyser.fftSize=1024;altAnalyser.smoothingTimeConstant=.2;src.connect(altAnalyser);
     altStarted=true; altBusy=true;
-    showDiagnostic(waiterLanguage==='ar'?'🧪 المحرك التجريبي شغال: Deepgram + DeepSeek + ElevenLabs':waiterLanguage==='fr'?'🧪 Moteur expérimental actif':'🧪 Experimental engine active',true);
+    showDiagnostic(waiterLanguage==='ar'?'🧪 المحرك التجريبي شغال: ElevenLabs STT + DeepSeek + Fish Audio':waiterLanguage==='fr'?'🧪 Moteur expérimental actif':'🧪 Experimental engine active',true);
     const data=await askAltSara('',{greeting:true}); const answer=String(data.answer||'').trim();
     if(answer){addBubble('assistant',answer);conversationHistory.push({role:'assistant',content:answer});status.textContent=TEXT[waiterLanguage].ready;await speakAltSara(answer,{waitForEnd:true});}
     altBusy=false; runAltVAD(); status.textContent=TEXT[waiterLanguage].ready;

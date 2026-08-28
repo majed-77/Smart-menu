@@ -8,12 +8,13 @@ const { DateTime } = require("luxon");
 const app = express();
 const PORT = process.env.PORT || 3000;
 const apiKey = process.env.OPENAI_API_KEY || "";
-const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY || "";
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || "";
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY || "";
-const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || "";
 const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || "deepseek-v4-flash";
-const ELEVENLABS_MODEL = process.env.ELEVENLABS_MODEL || "eleven_flash_v2_5";
+const ELEVENLABS_STT_MODEL = process.env.ELEVENLABS_STT_MODEL || "scribe_v2";
+const FISH_AUDIO_API_KEY = process.env.FISH_AUDIO_API_KEY || "";
+const FISH_AUDIO_VOICE_ID = process.env.FISH_AUDIO_VOICE_ID || "384051d27069462aa9b7a021ce541c8f";
+const FISH_AUDIO_MODEL = process.env.FISH_AUDIO_MODEL || "s2.1-pro-free";
 const DATABASE_URL = process.env.DATABASE_URL || "";
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID || "";
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
@@ -1080,11 +1081,11 @@ app.post("/api/tts", async (req, res) => {
 
 // ======================================================
 // EXPERIMENTAL SARA ENGINE
-// Deepgram STT -> DeepSeek V4 Flash -> ElevenLabs TTS
+// ElevenLabs Scribe STT -> DeepSeek V4 Flash -> Fish Audio TTS
 // Keeps the existing OpenAI Realtime engine untouched as a fallback.
 // ======================================================
 function altEngineConfigured() {
-  return Boolean(DEEPGRAM_API_KEY && DEEPSEEK_API_KEY && ELEVENLABS_API_KEY && ELEVENLABS_VOICE_ID);
+  return Boolean(ELEVENLABS_API_KEY && DEEPSEEK_API_KEY && FISH_AUDIO_API_KEY && FISH_AUDIO_VOICE_ID);
 }
 
 function altLanguageName(language) {
@@ -1165,37 +1166,43 @@ app.get("/api/sara-alt-status", (req, res) => {
   return res.json({
     ok: true,
     configured: altEngineConfigured(),
-    deepgram: Boolean(DEEPGRAM_API_KEY),
+    elevenlabsStt: Boolean(ELEVENLABS_API_KEY),
     deepseek: Boolean(DEEPSEEK_API_KEY),
-    elevenlabs: Boolean(ELEVENLABS_API_KEY && ELEVENLABS_VOICE_ID),
+    fishAudio: Boolean(FISH_AUDIO_API_KEY && FISH_AUDIO_VOICE_ID),
     deepseekModel: DEEPSEEK_MODEL,
-    elevenlabsModel: ELEVENLABS_MODEL
+    elevenlabsSttModel: ELEVENLABS_STT_MODEL,
+    fishAudioModel: FISH_AUDIO_MODEL,
+    fishAudioVoiceId: FISH_AUDIO_VOICE_ID
   });
 });
 
 app.post("/api/sara-alt-transcribe", upload.single("audio"), async (req, res) => {
   try {
-    if (!DEEPGRAM_API_KEY) return res.status(401).json({ ok:false, code:"DEEPGRAM_NOT_CONFIGURED", message:"مفتاح Deepgram غير موجود في Render." });
+    if (!ELEVENLABS_API_KEY) return res.status(401).json({ ok:false, code:"ELEVENLABS_STT_NOT_CONFIGURED", message:"مفتاح ElevenLabs غير موجود في Render." });
     if (!req.file) return res.status(400).json({ ok:false, code:"NO_AUDIO", message:"لم يتم استلام ملف صوتي." });
+
     const language = ["ar","fr","en"].includes(req.body?.language) ? req.body.language : "ar";
-    const dgLanguage = language === "ar" ? "ar-SA" : language === "fr" ? "fr" : "en-US";
-    const qs = new URLSearchParams({ model:"nova-3", language:dgLanguage, smart_format:"true", punctuate:"true" });
-    const response = await fetch(`https://api.deepgram.com/v1/listen?${qs.toString()}`, {
+    const form = new FormData();
+    const audioBlob = new Blob([req.file.buffer], { type: req.file.mimetype || "audio/webm" });
+    form.append("file", audioBlob, req.file.originalname || "voice.webm");
+    form.append("model_id", ELEVENLABS_STT_MODEL);
+    form.append("language_code", language);
+    form.append("tag_audio_events", "false");
+    form.append("num_speakers", "1");
+
+    const response = await fetch("https://api.elevenlabs.io/v1/speech-to-text", {
       method:"POST",
-      headers:{
-        Authorization:`Token ${DEEPGRAM_API_KEY}`,
-        "Content-Type": req.file.mimetype || "audio/webm"
-      },
-      body:req.file.buffer
+      headers:{ "xi-api-key": ELEVENLABS_API_KEY },
+      body:form
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data?.err_msg || data?.message || `Deepgram HTTP ${response.status}`);
-    const text = String(data?.results?.channels?.[0]?.alternatives?.[0]?.transcript || "").trim();
+    if (!response.ok) throw new Error(data?.detail?.message || data?.detail || data?.message || `ElevenLabs STT HTTP ${response.status}`);
+    const text = String(data?.text || "").trim();
     if (!text) return res.status(422).json({ ok:false, code:"NO_SPEECH_DETECTED", message: language === "ar" ? "ما سمعت كلام واضح." : "No clear speech was detected." });
-    return res.json({ ok:true, text });
+    return res.json({ ok:true, text, languageCode:data?.language_code || language });
   } catch (error) {
-    console.error("Deepgram transcription error:", error);
-    return res.status(502).json({ ok:false, code:"DEEPGRAM_ERROR", message:error?.message || "تعذر تحويل الصوت إلى نص." });
+    console.error("ElevenLabs transcription error:", error);
+    return res.status(502).json({ ok:false, code:"ELEVENLABS_STT_ERROR", message:error?.message || "تعذر تحويل الصوت إلى نص." });
   }
 });
 
@@ -1249,86 +1256,39 @@ app.post("/api/sara-alt-chat", async (req, res) => {
 
 app.post("/api/sara-alt-tts", async (req, res) => {
   try {
-    if (!ELEVENLABS_API_KEY || !ELEVENLABS_VOICE_ID) return res.status(401).json({ ok:false, code:"ELEVENLABS_NOT_CONFIGURED", message:"مفتاح أو Voice ID الخاص بـ ElevenLabs غير موجود في Render." });
+    if (!FISH_AUDIO_API_KEY || !FISH_AUDIO_VOICE_ID) return res.status(401).json({ ok:false, code:"FISH_AUDIO_NOT_CONFIGURED", message:"مفتاح Fish Audio أو Voice ID غير موجود في Render." });
     const text = String(req.body?.text || "").trim();
-    if (!text) return res.status(400).json({ ok:false, code:"EMPTY_TEXT", message:"لا يوجد نص لتحويله إلى صوت." });
-    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(ELEVENLABS_VOICE_ID)}/stream?output_format=mp3_44100_128`, {
+    if (!text) return res.status(400).json({ ok:false, code:"EMPTY_TTS", message:"لا يوجد نص لتحويله إلى صوت." });
+
+    const response = await fetch("https://api.fish.audio/v1/tts", {
       method:"POST",
-      headers:{ "xi-api-key":ELEVENLABS_API_KEY, "Content-Type":"application/json", Accept:"audio/mpeg" },
+      headers:{
+        Authorization:`Bearer ${FISH_AUDIO_API_KEY}`,
+        "Content-Type":"application/json",
+        Accept:"audio/mpeg",
+        model:FISH_AUDIO_MODEL
+      },
       body:JSON.stringify({
-        text:text.slice(0, 2200),
-        model_id:ELEVENLABS_MODEL,
-        language_code: req.body?.language === "ar" ? "ar" : req.body?.language === "fr" ? "fr" : "en",
-        voice_settings:{ stability:0.45, similarity_boost:0.8, style:0.25, use_speaker_boost:true }
+        text,
+        reference_id:FISH_AUDIO_VOICE_ID,
+        format:"mp3"
       })
     });
+
     if (!response.ok) {
-      const detail = await response.text().catch(() => "");
-      throw new Error(detail.slice(0,300) || `ElevenLabs HTTP ${response.status}`);
+      const raw = await response.text().catch(() => "");
+      let message = raw;
+      try { const d = JSON.parse(raw); message = d?.detail?.message || d?.detail || d?.message || raw; } catch {}
+      throw new Error(message || `Fish Audio HTTP ${response.status}`);
     }
+
     const buffer = Buffer.from(await response.arrayBuffer());
-    res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("Content-Type", response.headers.get("content-type") || "audio/mpeg");
     res.setHeader("Content-Length", buffer.length);
     res.setHeader("Cache-Control", "no-store");
     return res.send(buffer);
   } catch (error) {
-    console.error("ElevenLabs TTS error:", error);
-    return res.status(502).json({ ok:false, code:"ELEVENLABS_ERROR", message:error?.message || "تعذر تشغيل صوت ElevenLabs." });
+    console.error("Fish Audio TTS error:", error);
+    return res.status(502).json({ ok:false, code:"FISH_AUDIO_ERROR", message:error?.message || "تعذر تشغيل صوت سارة عبر Fish Audio." });
   }
-});
-
-app.get("/health", (req, res) => {
-  res.json({
-    ok: true,
-    service: "Smart Menu AI",
-    apiKeyConfigured: Boolean(apiKey),
-    reservationsConfigured: Boolean(db),
-    whatsappConfigured: Boolean(TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && (TWILIO_WHATSAPP_FROM || TWILIO_MESSAGING_SERVICE_SID)),
-    whatsappTemplateConfigured: Boolean(TWILIO_CONTENT_SID),
-    restaurantWhatsAppConfigured: Boolean(RESTAURANT_WHATSAPP_TO),
-    altSaraConfigured: altEngineConfigured(),
-    timestamp: new Date().toISOString()
-  });
-});
-
-app.use("/api", (req, res) => {
-  res.status(404).json({
-    ok: false,
-    code: "NOT_FOUND",
-    message: "API endpoint not found."
-  });
-});
-
-app.use((error, req, res, next) => {
-  console.error("Server error:", error);
-
-  res.status(500).json({
-    ok: false,
-    code: "SERVER_ERROR",
-    message: error?.message || "حدث خطأ في السيرفر."
-  });
-});
-
-async function startServer() {
-  if (db) {
-    reservationSchemaReady = await ensureReservationDatabaseReady();
-  }
-
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`✅ Smart Menu AI server running on port ${PORT}`);
-    console.log(`🔑 OpenAI API Key: ${apiKey ? "Configured" : "NOT CONFIGURED"}`);
-    console.log(`🧪 Alt Sara (Deepgram + DeepSeek + ElevenLabs): ${altEngineConfigured() ? "Configured" : "NOT CONFIGURED"}`);
-    console.log(`🗓️ Reservations DB: ${db ? (reservationSchemaReady ? "Ready" : "Configured but not ready") : "NOT CONFIGURED"}`);
-    console.log(`💬 WhatsApp: ${TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN ? "Credentials configured" : "NOT CONFIGURED"}`);
-    console.log(`🏪 Restaurant WhatsApp: ${RESTAURANT_WHATSAPP_TO ? `Configured (${TWILIO_TRIAL_CONTENT_SID ? "Twilio Trial ContentSid" : "direct WhatsApp Body"})` : "NOT CONFIGURED"}`);
-
-    // Built-in safety net. For production also configure a Render Cron Job to POST /api/reminders/run every 5 minutes.
-    setInterval(() => processDueReservationReminders().catch(err => console.error("Reminder worker error:", err)), 60 * 1000).unref();
-    setTimeout(() => processDueReservationReminders().catch(err => console.error("Initial reminder check error:", err)), 10 * 1000).unref();
-  });
-}
-
-startServer().catch((error) => {
-  console.error("Fatal startup error:", error);
-  process.exit(1);
 });
