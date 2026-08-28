@@ -126,7 +126,11 @@ async function nextReservationNumber(client = db) {
 }
 
 function normalizeWhatsAppPhone(value) {
-  let phone = String(value || "").trim()
+  const latinDigits = String(value || "")
+    .replace(/[٠-٩]/g, d => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)))
+    .replace(/[۰-۹]/g, d => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)));
+
+  let phone = latinDigits.trim()
     .replace(/[\s().-]/g, "")
     .replace(/[^+\d]/g, "");
 
@@ -357,6 +361,25 @@ async function processDueReservationReminders() {
   return { checked: rows.length, sent, failed };
 }
 
+let reservationSchemaReady = false;
+let reservationSchemaError = "";
+
+async function ensureReservationDatabaseReady() {
+  if (!db) return false;
+  if (reservationSchemaReady) return true;
+  try {
+    await initReservationDatabase();
+    reservationSchemaReady = true;
+    reservationSchemaError = "";
+    return true;
+  } catch (error) {
+    reservationSchemaReady = false;
+    reservationSchemaError = String(error?.message || error).slice(0, 500);
+    console.error("Reservation DB readiness failed:", error);
+    return false;
+  }
+}
+
 app.post("/api/reservations", async (req, res) => {
   try {
     if (!db) {
@@ -364,6 +387,14 @@ app.post("/api/reservations", async (req, res) => {
         ok: false,
         code: "DATABASE_NOT_CONFIGURED",
         message: "نظام الحجز يحتاج DATABASE_URL في Render."
+      });
+    }
+    if (!(await ensureReservationDatabaseReady())) {
+      return res.status(503).json({
+        ok: false,
+        code: "DATABASE_NOT_READY",
+        message: "قاعدة الحجوزات غير جاهزة الآن. حاول مرة ثانية بعد ثوانٍ.",
+        detail: reservationSchemaError
       });
     }
 
@@ -476,8 +507,10 @@ app.post("/api/reservations", async (req, res) => {
 app.get("/api/reservations-status", async (req, res) => {
   if (!db) return res.status(503).json({ ok: false, database: false, message: "DATABASE_URL غير مربوط." });
   try {
+    const ready = await ensureReservationDatabaseReady();
+    if (!ready) return res.status(503).json({ ok: false, database: true, schema: false, message: reservationSchemaError || "قاعدة الحجوزات غير جاهزة." });
     const result = await db.query("SELECT COUNT(*)::int AS count FROM reservations");
-    return res.json({ ok: true, database: true, reservations: result.rows[0].count });
+    return res.json({ ok: true, database: true, schema: true, reservations: result.rows[0].count });
   } catch (error) {
     console.error("Reservations status error:", error);
     return res.status(500).json({ ok: false, database: false, message: "تعذر الاتصال بقاعدة الحجوزات." });
@@ -1031,14 +1064,25 @@ app.use((error, req, res, next) => {
   });
 });
 
-app.listen(PORT, "0.0.0.0", async () => {
-  console.log(`✅ Smart Menu AI server running on port ${PORT}`);
-  console.log(`🔑 OpenAI API Key: ${apiKey ? "Configured" : "NOT CONFIGURED"}`);
-  console.log(`🗓️ Reservations DB: ${db ? "Configured" : "NOT CONFIGURED"}`);
-  console.log(`💬 WhatsApp: ${TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN ? "Credentials configured" : "NOT CONFIGURED"}`);
-  console.log(`🏪 Restaurant WhatsApp: ${RESTAURANT_WHATSAPP_TO ? "Configured" : "NOT CONFIGURED"}`);
-  try { await initReservationDatabase(); } catch (error) { console.error("Reservation DB init failed:", error); }
-  // Built-in safety net. For production also configure a Render Cron Job to POST /api/reminders/run every 5 minutes.
-  setInterval(() => processDueReservationReminders().catch(err => console.error("Reminder worker error:", err)), 60 * 1000).unref();
-  setTimeout(() => processDueReservationReminders().catch(err => console.error("Initial reminder check error:", err)), 10 * 1000).unref();
+async function startServer() {
+  if (db) {
+    reservationSchemaReady = await ensureReservationDatabaseReady();
+  }
+
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`✅ Smart Menu AI server running on port ${PORT}`);
+    console.log(`🔑 OpenAI API Key: ${apiKey ? "Configured" : "NOT CONFIGURED"}`);
+    console.log(`🗓️ Reservations DB: ${db ? (reservationSchemaReady ? "Ready" : "Configured but not ready") : "NOT CONFIGURED"}`);
+    console.log(`💬 WhatsApp: ${TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN ? "Credentials configured" : "NOT CONFIGURED"}`);
+    console.log(`🏪 Restaurant WhatsApp: ${RESTAURANT_WHATSAPP_TO ? "Configured" : "NOT CONFIGURED"}`);
+
+    // Built-in safety net. For production also configure a Render Cron Job to POST /api/reminders/run every 5 minutes.
+    setInterval(() => processDueReservationReminders().catch(err => console.error("Reminder worker error:", err)), 60 * 1000).unref();
+    setTimeout(() => processDueReservationReminders().catch(err => console.error("Initial reminder check error:", err)), 10 * 1000).unref();
+  });
+}
+
+startServer().catch((error) => {
+  console.error("Fatal startup error:", error);
+  process.exit(1);
 });
