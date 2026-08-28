@@ -16,7 +16,7 @@ const TWILIO_MESSAGING_SERVICE_SID = process.env.TWILIO_MESSAGING_SERVICE_SID ||
 const TWILIO_CONTENT_SID = process.env.TWILIO_CONTENT_SID || "";
 const RESTAURANT_WHATSAPP_TO = process.env.RESTAURANT_WHATSAPP_TO || "";
 const CRON_SECRET = process.env.CRON_SECRET || "";
-const RESTAURANT_TIMEZONE = process.env.RESTAURANT_TIMEZONE || "Africa/Tunis";
+const RESTAURANT_TIMEZONE = process.env.RESTAURANT_TIMEZONE || "Asia/Riyadh";
 
 const db = DATABASE_URL
   ? new Pool({
