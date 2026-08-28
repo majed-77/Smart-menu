@@ -1024,31 +1024,8 @@ app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
 // ======================================================
 // Keep the visible chat text untouched, but give Arabic TTS a pronunciation-
 // optimized copy. This avoids common ambiguous readings in booking phrases.
-function arabicPhoneDigitsForSpeech(value) {
-  const digitMap = {
-    "0": "صفر", "1": "واحد", "2": "اثنين", "3": "ثلاثة", "4": "أربعة",
-    "5": "خمسة", "6": "ستة", "7": "سبعة", "8": "ثمانية", "9": "تسعة",
-    "٠": "صفر", "١": "واحد", "٢": "اثنين", "٣": "ثلاثة", "٤": "أربعة",
-    "٥": "خمسة", "٦": "ستة", "٧": "سبعة", "٨": "ثمانية", "٩": "تسعة",
-    "۰": "صفر", "۱": "واحد", "۲": "اثنين", "۳": "ثلاثة", "۴": "أربعة",
-    "۵": "خمسة", "۶": "ستة", "۷": "سبعة", "۸": "ثمانية", "۹": "تسعة"
-  };
-  const raw = String(value || "");
-  const hasPlus = /^\s*(?:\+|00)/.test(raw);
-  const digits = [...raw].filter(ch => digitMap[ch]).map(ch => digitMap[ch]);
-  if (!digits.length) return raw;
-  return (hasPlus ? "زائد، " : "") + digits.join("، ");
-}
-
 function prepareArabicSaraTTS(text) {
   let out = String(text || "");
-
-  // Phone numbers must ALWAYS be spoken digit-by-digit and in the exact same
-  // order. DeepSeek and the visible chat keep the original number untouched;
-  // only the hidden TTS copy is expanded for pronunciation.
-  const phonePattern = /(?:\+|00)?[0-9٠-٩۰-۹](?:[0-9٠-٩۰-۹\s().-]*[0-9٠-٩۰-۹]){6,}/g;
-  out = out.replace(phonePattern, match => arabicPhoneDigitsForSpeech(match));
-
   const replacements = [
     [/أثبت الحجز/g, "أَثْبِت الحَجْز"],
     [/اثبت الحجز/g, "أَثْبِت الحَجْز"],
@@ -1265,7 +1242,7 @@ app.post("/api/sara-alt-transcribe", upload.single("audio"), async (req, res) =>
 app.post("/api/sara-alt-chat", async (req, res) => {
   try {
     if (!DEEPSEEK_API_KEY) return res.status(401).json({ ok:false, code:"DEEPSEEK_NOT_CONFIGURED", message:"مفتاح DeepSeek غير موجود في Render." });
-    const { question = "", history = [], menu = [], language = "ar", greeting = false } = req.body || {};
+    const { question = "", history = [], menu = [], language = "ar", greeting = false, bookingState = null } = req.body || {};
     const q = String(question || "").trim();
     if (!q && !greeting) return res.status(400).json({ ok:false, code:"EMPTY_MESSAGE", message:"لا يوجد كلام لإرساله إلى سارة." });
 
@@ -1274,7 +1251,7 @@ app.post("/api/sara-alt-chat", async (req, res) => {
       content: String(m?.content || m?.text || "").trim()
     })).filter(m => m.content) : [];
     const messages = [
-      { role:"system", content:altSaraInstructions({ language, menu }) },
+      { role:"system", content:altSaraInstructions({ language, menu }) + (bookingState && typeof bookingState === "object" ? `\n\nKNOWN BOOKING STATE FROM THE WEBSITE (authoritative; preserve it unless the guest changes it):\n${JSON.stringify(bookingState)}\nWhen the guest confirms, fill any tool arguments from this state instead of leaving fields blank.` : "") },
       ...cleanHistory,
       { role:"user", content: greeting
         ? (language === "ar" ? "ابدئي الآن بالترحيب فقط: هلا والله، حياك في Café Victor Hugo، معك سارة، كيف أقدر أخدمك؟" : language === "fr" ? "Accueille brièvement le client et demande comment tu peux l'aider." : "Give a very brief welcome and ask how you can help.")
