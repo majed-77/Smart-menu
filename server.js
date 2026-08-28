@@ -1044,19 +1044,22 @@ app.post("/api/tts", async (req, res) => {
       });
     }
 
+    // Experimental 3: match the OpenAI Realtime voice choice as closely as
+    // the separate TTS endpoint allows. Realtime itself uses `coral`; use the
+    // same voice here and keep the default playback rate (1.0).
     const voiceInstructions =
       language === "fr"
         ? "Parle naturellement en français, avec une voix chaleureuse et professionnelle de serveuse de restaurant."
         : language === "en"
         ? "Speak naturally in English, with a warm professional restaurant waitress tone."
-        : "تكلمي كموظفة سعودية حقيقية في مقهى راقٍ، باللهجة السعودية البيضاء اليومية مع ميل نجدي خفيف. الصوت أنثوي صافي وواضح وقريب وطبيعي، غير مكتوم وغير إذاعي وغير آلي. لا تتصنعي اللهجة ولا تبالغي في الأداء. اجعلي الإيقاع حيويًا وطبيعيًا، والوقفات قصيرة، والنبرة ودودة وواثقة. انطقي الكلمات السعودية كما يقولها أهل السعودية في الحديث اليومي، مثل: هلا والله، وش ودك، أبشري، تمام، من عيوني. ابتعدي عن الفصحى الرسمية وعن اللهجات المصرية والشامية والتونسية. لا تمدي الحروف ولا تتكلمي ببطء. الهدف أن يبدو الصوت كمحادثة مباشرة مع موظفة سعودية، وليس قراءة نص بواسطة ذكاء اصطناعي.";
+        : "تكلمي طبيعي وبشكل محادثة مباشرة، باللهجة السعودية البيضاء اليومية مع ميل نجدي خفيف. نبرة ودودة وواثقة، بدون فصحى رسمية، وبدون تمطيط أو أسلوب قراءة آلي.";
 
     const speech = await openai.audio.speech.create({
       model: "gpt-4o-mini-tts",
-      voice: "shimmer",
+      voice: "coral",
       input: cleanText,
       instructions: voiceInstructions,
-      speed: 1.05,
+      speed: 1.0,
       response_format: "mp3"
     });
 
