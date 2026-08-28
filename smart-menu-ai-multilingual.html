@@ -1024,10 +1024,25 @@ let altTtsStartedAt=0;
 let altTtsEndedAt=0;
 function normalizeArabicDigitsExp3(v){return String(v||'').replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[۰-۹]/g,d=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(d));}
 function exp3TodayISO(){try{return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Riyadh',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}catch(e){return new Date().toISOString().slice(0,10)}}
+function exp3PhoneDigitsFromSpeech(raw){
+  raw=normalizeArabicDigitsExp3(String(raw||'')).replace(/[،,.;:!?؟]/g,' ').replace(/\s+/g,' ').trim();
+  const numeric=(raw.match(/(?:\+?966\s*5|05)\s*(?:[\s-]*\d){8}|(?:\+?216\s*)?(?:\d[\s-]*){8}/)||[])[0];
+  if(numeric){const n=numeric.replace(/[\s-]/g,''); if(n.replace(/\D/g,'').length>=8)return n;}
+  const map={صفر:'0',زيرو:'0',واحد:'1',وحده:'1',واحدة:'1',اثنين:'2',إثنين:'2',اثنان:'2',ثنين:'2',ثنتين:'2',ثلاثة:'3',ثلاثه:'3',اربعة:'4',أربعة:'4',اربعه:'4',خمسة:'5',خمسه:'5',ستة:'6',سته:'6',سبعة:'7',سبعه:'7',ثمانية:'8',ثمانيه:'8',تسعة:'9',تسعه:'9'};
+  const toks=raw.split(/\s+/); let best='',cur='';
+  for(const tok0 of toks){
+    const tok=tok0.replace(/^و(?=[ء-ي])/,'');
+    if(/^\d$/.test(tok))cur+=tok;
+    else if(map[tok]!=null)cur+=map[tok];
+    else {if(cur.length>best.length)best=cur;cur='';}
+  }
+  if(cur.length>best.length)best=cur;
+  return best.length>=8&&best.length<=15?best:'';
+}
 function exp3UpdateBookingState(text,role='user'){
   let raw=normalizeArabicDigitsExp3(String(text||'')).replace(/\s+/g,' ').trim(); if(!raw)return;
-  const phone=(raw.match(/(?:\+?966\s*5|05)\s*(?:[\s-]*\d){8}|(?:\+?216\s*)?(?:\d[\s-]*){8}/)||[])[0];
-  if(phone){const n=phone.replace(/[\s-]/g,''); if(n.length>=8)altBookingState.phone=n;}
+  const phone=exp3PhoneDigitsFromSpeech(raw);
+  if(phone)altBookingState.phone=phone;
   let m=raw.match(/(?:اسم(?:\s+الحجز)?|باسم)\s+([\u0600-\u06FF]{2,})(?=\s+(?:رقم|والرقم|واتساب|رقم الواتساب|لـ|لشخص|اليوم|بكره|غدا|غدًا|الساعة)|$)/i);
   if(m)altBookingState.name=m[1];
   if(role==='user'&&!altBookingState.name){
@@ -1197,6 +1212,31 @@ async function exp3ConfirmBookingDirectly(){
   const args=exp3BookingArgsFromState();
   return handleAltBookingTool({name:'confirm_booking_order',arguments:JSON.stringify(args)});
 }
+
+function exp3IsRepeatPhoneRequest(text){
+  const t=String(text||'').replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا').toLowerCase();
+  return /(اعد|اعيد|عيد|كرر|قولي|قول).*?(رقم|واتساب)|(?:رقم|واتساب).*?(مره ثانيه|مرة ثانية|من جديد|اعد|اعيد|كرر)/.test(t);
+}
+function exp3IsPhoneCorrection(text){
+  const t=String(text||'').replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا').toLowerCase();
+  return /(الرقم|واتساب).*(غلط|خطا|مو صح|غير صحيح|الصحيح|عدل|صحح|غير)|(?:غلط|خطا).*(الرقم|واتساب)/.test(t);
+}
+function exp3PhoneDisplay(phone){return String(phone||'').replace(/\s+/g,'');}
+function exp3PhoneWords(phone){
+  const m={'0':'صفر','1':'واحد','2':'اثنين','3':'ثلاثة','4':'أربعة','5':'خمسة','6':'ستة','7':'سبعة','8':'ثمانية','9':'تسعة','+':'زائد'};
+  return String(phone||'').split('').filter(ch=>m[ch]).map(ch=>m[ch]).join('، ');
+}
+function exp3BookingMissingFields(){
+  const a=exp3BookingArgsFromState(), miss=[];
+  if(!a.name)miss.push('الاسم'); if(!a.phone)miss.push('رقم الواتساب'); if(!a.party_size)miss.push('عدد الأشخاص'); if(!a.date)miss.push('التاريخ'); if(!a.time)miss.push('الوقت');
+  return miss;
+}
+function exp3PhoneReplyAfterCorrection(){
+  const p=exp3PhoneDisplay(altBookingState.phone); if(!p)return '';
+  const miss=exp3BookingMissingFields();
+  if(!miss.length)return `تمام، عدلت رقم الواتساب إلى ${p}. باقي بيانات حجزك محفوظة. أعتمد الحجز؟`;
+  return `تمام، عدلت رقم الواتساب إلى ${p}. باقي بياناتك محفوظة، وباقي عندي ${miss[0]} فقط.`;
+}
 async function processAltVoice(blob,mime){
   altBusy=true;
   try{
@@ -1208,11 +1248,16 @@ async function processAltVoice(blob,mime){
     if(!r.ok||!d.text)throw new Error(d.message||'Transcription failed');
     let q=String(d.text).trim(); if(!q)return;
     q=normalizeAltBookingApprovalTranscript(q);
+    const wasPhoneCorrection=saraEngine==='hybrid3' && exp3IsPhoneCorrection(q);
     if(saraEngine==='hybrid3')exp3UpdateBookingState(q,'user');
     addBubble('user',q); conversationHistory.push({role:'user',content:q});
     status.textContent=isExplicitBookingConfirmation(q)&&waiterLanguage==='ar'?'تمام، أعتمد الحجز…':TEXT[waiterLanguage].thinking;
     let answer='';
-    if(saraEngine==='hybrid3' && altAwaitingBookingApproval() && isExplicitBookingConfirmation(q) && exp3CanConfirmBookingNow()){
+    if(saraEngine==='hybrid3' && exp3IsRepeatPhoneRequest(q) && altBookingState.phone){
+      answer=`رقم الواتساب المسجل عندي ${exp3PhoneDisplay(altBookingState.phone)}.`;
+    }else if(saraEngine==='hybrid3' && wasPhoneCorrection && altBookingState.phone){
+      answer=exp3PhoneReplyAfterCorrection();
+    }else if(saraEngine==='hybrid3' && altAwaitingBookingApproval() && isExplicitBookingConfirmation(q) && exp3CanConfirmBookingNow()){
       answer=await exp3ConfirmBookingDirectly();
     }else{
       const data=await askAltSara(q);
@@ -1231,11 +1276,21 @@ async function processAltVoice(blob,mime){
 async function submitAltQuestion(q){
   q=String(q||'').trim();if(!q)return;
   q=normalizeAltBookingApprovalTranscript(q);
+  const wasPhoneCorrection=saraEngine==='hybrid3' && exp3IsPhoneCorrection(q);
   if(saraEngine==='hybrid3')exp3UpdateBookingState(q,'user');
   stopAltSpeechForBargeIn(); addBubble('user',q);conversationHistory.push({role:'user',content:q});input.value='';altBusy=true;status.textContent=TEXT[waiterLanguage].thinking;
   try{
-    const data=await askAltSara(q); let answer='';
-    if(data.toolCall?.name==='confirm_booking_order')answer=await handleAltBookingTool(data.toolCall);else answer=String(data.answer||'').trim();
+    let answer='';
+    if(saraEngine==='hybrid3' && exp3IsRepeatPhoneRequest(q) && altBookingState.phone){
+      answer=`رقم الواتساب المسجل عندي ${exp3PhoneDisplay(altBookingState.phone)}.`;
+    }else if(saraEngine==='hybrid3' && wasPhoneCorrection && altBookingState.phone){
+      answer=exp3PhoneReplyAfterCorrection();
+    }else if(saraEngine==='hybrid3' && altAwaitingBookingApproval() && isExplicitBookingConfirmation(q) && exp3CanConfirmBookingNow()){
+      answer=await exp3ConfirmBookingDirectly();
+    }else{
+      const data=await askAltSara(q);
+      if(data.toolCall?.name==='confirm_booking_order')answer=await handleAltBookingTool(data.toolCall);else answer=String(data.answer||'').trim();
+    }
     if(!answer)throw new Error('No answer'); if(saraEngine==='hybrid3')exp3UpdateBookingState(answer,'assistant'); addBubble('assistant',answer);conversationHistory.push({role:'assistant',content:answer});status.textContent=TEXT[waiterLanguage].ready;if(saraEngine==='hybrid3')await speakAI(answer);else await speakAltSara(answer,{waitForEnd:false});altBusy=false;
   }catch(e){altBusy=false;status.textContent=e.message||TEXT[waiterLanguage].serverError;showDiagnostic(status.textContent,false);}
 }

@@ -1038,6 +1038,11 @@ function prepareArabicSaraTTS(text) {
     [/الحجز/g, "الحَجْز"]
   ];
   for (const [pattern, replacement] of replacements) out = out.replace(pattern, replacement);
+  const digitWords = {"0":"صِفْر","1":"واحِد","2":"اِثْنَيْن","3":"ثَلاثَة","4":"أَرْبَعَة","5":"خَمْسَة","6":"سِتَّة","7":"سَبْعَة","8":"ثَمانِيَة","9":"تِسْعَة"};
+  out = out.replace(/(?:\+?\d[\d\s-]{7,}\d)/g, (num) => {
+    const chars = num.replace(/[^0-9+]/g, "").split("");
+    return chars.map(ch => ch === "+" ? "زائِد" : digitWords[ch]).filter(Boolean).join("، ");
+  });
   return out;
 }
 app.post("/api/tts", async (req, res) => {
@@ -1251,7 +1256,7 @@ app.post("/api/sara-alt-chat", async (req, res) => {
       content: String(m?.content || m?.text || "").trim()
     })).filter(m => m.content) : [];
     const messages = [
-      { role:"system", content:altSaraInstructions({ language, menu }) + (bookingState && typeof bookingState === "object" ? `\n\nKNOWN BOOKING STATE FROM THE WEBSITE (authoritative; preserve it unless the guest changes it):\n${JSON.stringify(bookingState)}\nWhen the guest confirms, fill any tool arguments from this state instead of leaving fields blank.` : "") },
+      { role:"system", content:altSaraInstructions({ language, menu }) + (bookingState && typeof bookingState === "object" ? `\n\nKNOWN BOOKING STATE FROM THE WEBSITE (authoritative):\n${JSON.stringify(bookingState)}\nSTRICT BOOKING MEMORY RULES:\n- Never ask again for any field that already has a non-empty value in this state.\n- If the guest corrects only the WhatsApp number, replace only the phone and preserve name, party size, date, time, notes, and order.\n- If the guest asks you to repeat the WhatsApp number, repeat the stored phone exactly digit by digit; do not invent or regroup digits.\n- A correction does not restart the booking flow. Continue from the remaining missing field, or ask for final confirmation if nothing is missing.\n- When the guest confirms, fill tool arguments from this state instead of leaving fields blank.` : "") },
       ...cleanHistory,
       { role:"user", content: greeting
         ? (language === "ar" ? "ابدئي الآن بالترحيب فقط: هلا والله، حياك في Café Victor Hugo، معك سارة، كيف أقدر أخدمك؟" : language === "fr" ? "Accueille brièvement le client et demande comment tu peux l'aider." : "Give a very brief welcome and ask how you can help.")
