@@ -1292,3 +1292,60 @@ app.post("/api/sara-alt-tts", async (req, res) => {
     return res.status(502).json({ ok:false, code:"FISH_AUDIO_ERROR", message:error?.message || "تعذر تشغيل صوت سارة عبر Fish Audio." });
   }
 });
+
+// ======================================================
+// HEALTH + FALLBACKS + SERVER STARTUP
+// ======================================================
+app.get("/health", (req, res) => {
+  res.json({
+    ok: true,
+    service: "Smart Menu AI",
+    apiKeyConfigured: Boolean(apiKey),
+    altSaraConfigured: altEngineConfigured(),
+    databaseConfigured: Boolean(db),
+    restaurantWhatsAppConfigured: Boolean(TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && TWILIO_WHATSAPP_FROM && RESTAURANT_WHATSAPP_TO),
+    timestamp: new Date().toISOString()
+  });
+});
+
+app.use("/api", (req, res) => {
+  res.status(404).json({
+    ok: false,
+    code: "NOT_FOUND",
+    message: "API endpoint not found."
+  });
+});
+
+app.use((error, req, res, next) => {
+  console.error("Server error:", error);
+  res.status(500).json({
+    ok: false,
+    code: "SERVER_ERROR",
+    message: error?.message || "حدث خطأ في السيرفر."
+  });
+});
+
+async function startServer() {
+  if (db) {
+    const ready = await ensureReservationDatabaseReady();
+    if (!ready) {
+      console.error("❌ Reservations DB schema is not ready:", reservationSchemaError || "unknown error");
+      process.exit(1);
+      return;
+    }
+  }
+
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`✅ Smart Menu AI server running on port ${PORT}`);
+    console.log(`🔑 OpenAI API Key: ${apiKey ? "Configured" : "NOT CONFIGURED"}`);
+    console.log(`🐟 Alt Sara (ElevenLabs STT + DeepSeek + Fish Audio): ${altEngineConfigured() ? "Configured" : "NOT CONFIGURED"}`);
+    console.log(`🗃️ Reservations DB: ${db ? "Ready" : "NOT CONFIGURED"}`);
+    console.log(`📱 WhatsApp: ${TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && TWILIO_WHATSAPP_FROM ? "Credentials configured" : "NOT CONFIGURED"}`);
+    console.log(`🇸🇦 Restaurant WhatsApp: ${RESTAURANT_WHATSAPP_TO ? "Configured" : "NOT CONFIGURED"}`);
+  });
+}
+
+startServer().catch((error) => {
+  console.error("Fatal startup error:", error);
+  process.exit(1);
+});
