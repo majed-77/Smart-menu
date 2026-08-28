@@ -266,7 +266,7 @@ main{max-width:1280px;margin:auto;padding:22px 5% 60px}
       <button id="testAudioBtn" type="button" style="margin:8px auto 0;border:1px solid #d8c7ae;background:#fff;border-radius:999px;padding:7px 12px;cursor:pointer">🔊 اختبار الصوت</button>
       <div id="diagBox" style="display:none;margin-top:8px;padding:10px;border:1px solid #d8c7ae;border-radius:12px;font-size:12px;line-height:1.7;text-align:start"></div>
       <div class="permissionHelp" id="permissionHelp"></div>
-      <div id="agent2Wrap" style="display:none;margin-top:10px;min-height:420px"></div>
+      <div id="agent2Wrap" style="display:none"></div>
       <button class="end" id="end">إنهاء</button>
     </div>
   </div>
@@ -443,7 +443,7 @@ let recorder=null, stream=null, chunks=[], recording=false, currentAudio=null;
 let audioContext=null, analyser=null, vadFrame=null;
 let altStream=null, altAnalyser=null, altAudioContext=null, altVadFrame=null, altRecorder=null, altChunks=[];
 let altCapturing=false, altSpeechStartedAt=0, altSilenceAt=0, altBusy=false, altSpeaking=false, altStarted=false;
-let agent2Loaded=false, agent2Element=null;
+let agent2Loaded=false, agent2Element=null, agent2Conversation=null, agent2MicMuted=false, agent2LastMessages=new Set();
 const ELEVEN_AGENT_ID='agent_8501m14m18cae8ysg6cghjveg0mn';
 let speechStarted=false, speechStartAt=0, silenceStartAt=0;
 const SILENCE_MS=1500, MIN_SPEECH_MS=300, SPEECH_THRESHOLD=0.035;
@@ -1185,56 +1185,99 @@ function setStandardChatVisible(visible){
   if(agent2Wrap) agent2Wrap.style.display=visible?'none':'block';
 }
 
-function loadAgent2Script(){
-  return new Promise((resolve,reject)=>{
-    if(customElements.get('elevenlabs-convai')) return resolve();
-    const existing=document.querySelector('script[data-agent2-widget]');
-    if(existing){
-      existing.addEventListener('load',resolve,{once:true});
-      existing.addEventListener('error',()=>reject(new Error('تعذر تحميل تجريبي 2.')),{once:true});
-      setTimeout(()=>customElements.get('elevenlabs-convai')&&resolve(),300);
-      return;
-    }
-    const sc=document.createElement('script');
-    sc.src='https://unpkg.com/@elevenlabs/convai-widget-embed';
-    sc.async=true; sc.type='text/javascript'; sc.dataset.agent2Widget='1';
-    sc.onload=resolve; sc.onerror=()=>reject(new Error('تعذر تحميل تجريبي 2.'));
-    document.body.appendChild(sc);
-  });
+async function loadAgent2SDK(){
+  if(window.__ELEVENLABS_CONVERSATION__) return window.__ELEVENLABS_CONVERSATION__;
+  const mod=await import('https://cdn.jsdelivr.net/npm/@elevenlabs/client/+esm');
+  if(!mod?.Conversation) throw new Error('تعذر تحميل نظام المحادثة.');
+  window.__ELEVENLABS_CONVERSATION__=mod.Conversation;
+  return mod.Conversation;
+}
+
+function agent2EventText(event){
+  if(!event) return '';
+  if(typeof event==='string') return event.trim();
+  return String(event.message||event.text||event.transcript||event.content||event?.data?.message||event?.data?.text||'').trim();
+}
+function agent2EventRole(event){
+  const source=String(event?.source||event?.role||event?.type||event?.data?.source||event?.data?.role||'').toLowerCase();
+  if(source.includes('user')) return 'user';
+  if(source.includes('ai')||source.includes('agent')||source.includes('assistant')) return 'assistant';
+  return '';
+}
+function addAgent2Message(event){
+  const text=agent2EventText(event), role=agent2EventRole(event);
+  if(!text||!role) return;
+  const key=role+'|'+text;
+  if(agent2LastMessages.has(key)) return;
+  agent2LastMessages.add(key);
+  if(agent2LastMessages.size>50){const first=agent2LastMessages.values().next().value;agent2LastMessages.delete(first);}
+  addBubble(role,text);
+  conversationHistory.push({role,content:text});
+}
+function setAgent2Mode(modeLike){
+  const mode=String(modeLike?.mode||modeLike||'').toLowerCase();
+  const speaking=mode.includes('speaking');
+  orb.classList.toggle('speaking',speaking);
+  status.textContent=speaking
+    ?(waiterLanguage==='ar'?'سارة تتكلم…':waiterLanguage==='fr'?'Sara parle…':'Sara is speaking…')
+    :(waiterLanguage==='ar'?'أنا معك، تكلم على طول 🎤':waiterLanguage==='fr'?'Je vous écoute 🎤':'I’m listening 🎤');
 }
 
 async function startAgent2(){
+  if(agent2Conversation) return;
   try{
-    closeAltSara(); closeRealtime();
-    setStandardChatVisible(false);
-    title.textContent=TEXT[waiterLanguage].waiterGeneral;
-    if(!agent2Wrap) throw new Error('واجهة تجريبي 2 غير متاحة.');
-    agent2Wrap.innerHTML='';
-    const el=document.createElement('elevenlabs-convai');
-    el.setAttribute('agent-id',ELEVEN_AGENT_ID);
-    el.setAttribute('variant','expanded');
-    el.setAttribute('dismissible','false');
-    el.setAttribute('override-language',waiterLanguage);
-    el.style.display='block';
-    el.style.width='100%';
-    el.style.minHeight='400px';
-    agent2Wrap.appendChild(el);
-    agent2Element=el;
-    await loadAgent2Script();
-    agent2Loaded=true;
+    if(agent2Wrap) agent2Wrap.style.display='none';
+    status.textContent=waiterLanguage==='ar'?'جاري تشغيل سارة…':waiterLanguage==='fr'?'Connexion à Sara…':'Starting Sara…';
+    permissionHelp.classList.remove('show');
+
+    // Request microphone permission from our own UI, then let the SDK create
+    // its WebRTC session. The provider's default widget is not rendered.
+    const testStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:false}});
+    testStream.getTracks().forEach(t=>t.stop());
+
+    const Conversation=await loadAgent2SDK();
+    agent2LastMessages=new Set();
+    agent2MicMuted=false;
+    agent2Conversation=await Conversation.startSession({
+      agentId:ELEVEN_AGENT_ID,
+      onConnect:()=>{
+        agent2Loaded=true;
+        micBtn.textContent='🎤';
+        status.textContent=waiterLanguage==='ar'?'أنا معك، تكلم على طول 🎤':waiterLanguage==='fr'?'Je vous écoute 🎤':'I’m listening 🎤';
+        showDiagnostic(waiterLanguage==='ar'?'✅ سارة جاهزة':waiterLanguage==='fr'?'✅ Sara est prête':'✅ Sara is ready',true);
+      },
+      onDisconnect:()=>{
+        orb.classList.remove('speaking');
+        if(modal.classList.contains('show')) status.textContent=waiterLanguage==='ar'?'انتهت المحادثة.':waiterLanguage==='fr'?'Conversation terminée.':'Conversation ended.';
+      },
+      onMessage:(event)=>addAgent2Message(event),
+      onModeChange:(mode)=>setAgent2Mode(mode),
+      onStatusChange:(state)=>{
+        const st=String(state?.status||state||'').toLowerCase();
+        if(st.includes('connecting')) status.textContent=waiterLanguage==='ar'?'جاري الاتصال بسارة…':waiterLanguage==='fr'?'Connexion à Sara…':'Connecting to Sara…';
+      },
+      onError:(error)=>{
+        console.error('Experimental 2 error',error);
+        const msg=String(error?.message||error||'تعذر تشغيل المحادثة.');
+        status.textContent=msg; showDiagnostic(msg,false);
+      }
+    });
   }catch(e){
     console.error('Experimental 2 start failed',e);
-    setStandardChatVisible(true);
-    status.textContent=e.message||'تعذر تشغيل تجريبي 2.';
-    showDiagnostic(status.textContent,false);
+    agent2Conversation=null;
+    const msg=waiterLanguage==='ar'?`تعذر تشغيل سارة: ${e.message||e}`:waiterLanguage==='fr'?`Impossible de démarrer Sara : ${e.message||e}`:`Could not start Sara: ${e.message||e}`;
+    status.textContent=msg; showDiagnostic(msg,false);
+    permissionHelp.textContent=TEXT[waiterLanguage].permission; permissionHelp.classList.add('show');
   }
 }
 
-function closeAgent2(){
-  try{if(agent2Element)agent2Element.remove();}catch(e){}
-  agent2Element=null;
+async function closeAgent2(){
+  const c=agent2Conversation;
+  agent2Conversation=null; agent2Loaded=false; agent2MicMuted=false; agent2LastMessages=new Set();
+  try{if(c)await c.endSession();}catch(e){}
+  orb.classList.remove('speaking');
+  micBtn.textContent='🎤';
   if(agent2Wrap){agent2Wrap.innerHTML='';agent2Wrap.style.display='none';}
-  setStandardChatVisible(true);
 }
 
 async function startRealtime(){
@@ -1618,7 +1661,7 @@ input.addEventListener('keydown',async e=>{
  if(e.key==='Enter'){
    stopAISpeech();
    await unlockSpeechAudio();
-   if(saraEngine==='alt') submitAltQuestion(input.value); else if(saraEngine!=='agent') submitQuestion(input.value);
+   if(saraEngine==='alt') submitAltQuestion(input.value); else if(saraEngine==='agent'){ const q=String(input.value||'').trim(); if(q&&agent2Conversation){ input.value=''; try{agent2Conversation.sendUserMessage(q);}catch(e){showDiagnostic(e.message||String(e),false);} } } else submitQuestion(input.value);
  }
 });
 
@@ -1700,7 +1743,14 @@ async function sendVoice(){
  }
 }
 micBtn.onclick=()=>{
- if(saraEngine==='agent') return;
+ if(saraEngine==='agent'){
+   if(!agent2Conversation)return;
+   agent2MicMuted=!agent2MicMuted;
+   try{agent2Conversation.setMicMuted(agent2MicMuted);}catch(e){}
+   micBtn.textContent=agent2MicMuted?'🔇':'🎤';
+   status.textContent=agent2MicMuted?(waiterLanguage==='ar'?'المايك مكتوم':waiterLanguage==='fr'?'Micro coupé':'Microphone muted'):TEXT[waiterLanguage].ready;
+   return;
+ }
  if(saraEngine==='alt'){
    if(!altStream)return;
    const track=altStream.getAudioTracks()[0];if(!track)return;track.enabled=!track.enabled;micBtn.textContent=track.enabled?'🎤':'🔇';
