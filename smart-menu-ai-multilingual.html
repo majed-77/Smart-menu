@@ -1222,12 +1222,30 @@ function normalizeAltBookingApprovalTranscript(text){
   const raw=String(text||'').trim();
   if(!altAwaitingBookingApproval()) return raw;
   const t=raw.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[.!؟?،,;:]/g,'').replace(/\s+/g,' ').trim();
-  // Short Arabic approvals are sometimes misheard by STT as tiny words in
-  // Portuguese/Spanish/Turkish/Hungarian. Only normalize them while Sara is
-  // explicitly waiting for booking approval.
+
+  // Respect clear rejections first. This prevents a short foreign STT guess
+  // such as "no" from ever being treated as approval.
+  if(/^(لا|مو|كلا|no|nope|nah|non)$/.test(t)) return raw;
+
+  // Known short approval variants / common STT guesses.
   if(/^(evet|chatgpt|yes|yeah|yep|yup|ok|okay|si|eh|nem|nem termeszet|oui|ta|da|ja|sim|mhm|uh huh|تمام|نعم|ايه|إيه|اي|اعتمد|اعتمدي)$/.test(t)) return 'اعتمد';
+
   const approvalHits=(t.match(/اعتمد(?:ي)?|اثبت|أثبت|اكد|أكد|نعم|ايه|إيه|تمام|موافق|evet|yes|si|oui|ta|da|ja|sim/g)||[]).length;
   if(approvalHits>=2 && t.length<140) return 'اعتمد';
+
+  // Experimental 3 Arabic mode: one-word confirmations such as "إيه" are
+  // occasionally returned by STT as a tiny phrase in an unrelated language
+  // (for example "Hey, Temet." or even another script). While Sara is
+  // explicitly waiting for booking approval, never show that gibberish to the
+  // guest. A very short non-Arabic result is treated as the intended approval.
+  // Longer utterances still pass through so corrections remain possible.
+  if(waiterLanguage==='ar'){
+    const hasArabic=/[\u0600-\u06FF]/.test(raw);
+    const compact=raw.replace(/[\s.!؟?،,;:]+/g,'');
+    const words=raw.trim().split(/\s+/).filter(Boolean).length;
+    if(!hasArabic && compact.length>0 && compact.length<=28 && words<=4) return 'اعتمد';
+  }
+
   return raw;
 }
 function exp3CanConfirmBookingNow(){
