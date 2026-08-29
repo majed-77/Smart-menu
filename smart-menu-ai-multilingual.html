@@ -444,6 +444,7 @@ let recorder=null, stream=null, chunks=[], recording=false, currentAudio=null;
 let audioContext=null, analyser=null, vadFrame=null;
 let altStream=null, altAnalyser=null, altAudioContext=null, altVadFrame=null, altRecorder=null, altChunks=[];
 let altCapturing=false, altSpeechStartedAt=0, altSilenceAt=0, altBusy=false, altSpeaking=false, altStarted=false;
+let altNoiseFloor=0.012, altNoiseReadyAt=0, altNoiseLastUpdate=0, altVoiceCandidateAt=0;
 let agent2Loaded=false, agent2Element=null, agent2Conversation=null, agent2MicMuted=false, agent2LastMessages=new Set();
 const ELEVEN_AGENT_ID='agent_8501m14m18cae8ysg6cghjveg0mn';
 let speechStarted=false, speechStartAt=0, silenceStartAt=0;
@@ -1178,28 +1179,45 @@ function runAltVAD(){
     altAnalyser.getByteTimeDomainData(data); let sum=0;
     for(let i=0;i<data.length;i++){const x=(data[i]-128)/128;sum+=x*x;}
     const rms=Math.sqrt(sum/data.length), now=performance.now();
-    // Experimental 3 is tuned for faster, Realtime-like turn taking.
-    // While Sara is speaking, the microphone remains live so the customer can
-    // interrupt her. Echo cancellation/voice isolation help avoid self-triggering.
     const isHybrid3=saraEngine==='hybrid3';
-    const startThreshold=isHybrid3?0.040:0.055;
-    const keepThreshold=isHybrid3?0.032:0.040;
-    const minSpeechMs=isHybrid3?160:220;
-    const endSilenceMs=isHybrid3?1000:600;
+
+    // Restaurant Noise mode for Experimental 3: continuously learn the room's
+    // background level while nobody is speaking, then place VAD thresholds above it.
+    if(isHybrid3 && !altCapturing && !altSpeaking){
+      if(!altNoiseLastUpdate)altNoiseLastUpdate=now;
+      const cap=Math.max(0.018,altNoiseFloor*2.4);
+      if(rms<cap || now<altNoiseReadyAt){
+        const alpha=now<altNoiseReadyAt?0.10:0.025;
+        altNoiseFloor=Math.max(0.006,Math.min(0.080,altNoiseFloor*(1-alpha)+rms*alpha));
+        altNoiseLastUpdate=now;
+      }
+    }
+
+    const startThreshold=isHybrid3?Math.max(0.038,altNoiseFloor*2.15+0.008):0.055;
+    const keepThreshold=isHybrid3?Math.max(0.028,altNoiseFloor*1.55+0.006):0.040;
+    const minSpeechMs=isHybrid3?190:220;
+    const endSilenceMs=isHybrid3?1050:600;
     const canStart=!altBusy || (isHybrid3 && altSpeaking);
+
     if(canStart && !altCapturing){
       if(isHybrid3 && altSpeaking){
-        // Prefer fast, natural barge-in for Experimental 3. Browser echo cancellation
-        // stays enabled, while a short sustained voice burst stops Sara quickly.
-        const bargeThreshold=0.058;
-        const bargeHoldMs=120;
-        const ttsGraceMs=180;
+        // Barge-in must rise clearly above the learned room noise and stay there
+        // briefly, so plates/music/background chatter are less likely to stop Sara.
+        const bargeThreshold=Math.max(0.060,altNoiseFloor*2.75+0.012);
+        const bargeHoldMs=145;
+        const ttsGraceMs=220;
         if(now-altTtsStartedAt>ttsGraceMs && rms>bargeThreshold){
           if(!altBargeCandidateAt)altBargeCandidateAt=now;
           if(now-altBargeCandidateAt>=bargeHoldMs){stopAltSpeechForBargeIn();startAltCapture({duringSara:true});altBargeCandidateAt=0;}
         }else altBargeCandidateAt=0;
-      }else if(rms>startThreshold){startAltCapture();}
+      }else if(now>=altNoiseReadyAt && rms>startThreshold){
+        if(!altVoiceCandidateAt)altVoiceCandidateAt=now;
+        if(now-altVoiceCandidateAt>=75){startAltCapture();altVoiceCandidateAt=0;}
+      }else{
+        altVoiceCandidateAt=0;
+      }
     }
+
     if(altCapturing){
       if(rms>keepThreshold){altSilenceAt=0;}
       else if(now-altSpeechStartedAt>minSpeechMs){
@@ -1496,7 +1514,10 @@ async function startHybrid3(){
     altAudioContext=new AC();
     const src=altAudioContext.createMediaStreamSource(altStream);
     altAnalyser=altAudioContext.createAnalyser();
-    altAnalyser.fftSize=1024; altAnalyser.smoothingTimeConstant=.2; src.connect(altAnalyser);
+    altAnalyser.fftSize=2048; altAnalyser.smoothingTimeConstant=.35; src.connect(altAnalyser);
+    // Calibrate against the restaurant's current background noise before VAD starts.
+    altNoiseFloor=0.012; altNoiseLastUpdate=0; altVoiceCandidateAt=0; altBargeCandidateAt=0;
+    altNoiseReadyAt=performance.now()+850;
     altStarted=true; altBusy=true;
     showDiagnostic(waiterLanguage==='ar'?'🧪 تجريبي 3 جاهز':waiterLanguage==='fr'?'🧪 Expérimental 3 prêt':'🧪 Experimental 3 ready',true);
     const data=await askAltSara('',{greeting:true});
