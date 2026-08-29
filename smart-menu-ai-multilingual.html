@@ -243,7 +243,9 @@ main{max-width:1280px;margin:auto;padding:22px 5% 60px}
           <button class="engineChoice active" type="button" data-sara-engine="openai">OpenAI Realtime</button>
           <button class="engineChoice" type="button" data-sara-engine="alt">تجريبي 1</button>
           <button class="engineChoice" type="button" data-sara-engine="agent">تجريبي 2</button>
-          <button class="engineChoice" type="button" data-sara-engine="hybrid3">تجريبي 3</button>
+          <button class="engineChoice" type="button" data-sara-engine="hybrid3">DeepSeek</button>
+          <button class="engineChoice" type="button" data-sara-engine="claude">Claude</button>
+          <button class="engineChoice" type="button" data-sara-engine="gemini">Gemini</button>
         </div>
       </div>
       <div class="languageGrid">
@@ -426,6 +428,10 @@ function imageFallback(name){
 let siteLanguage='';
 let waiterLanguage='ar';
 let saraEngine='openai';
+const SARA_BRAIN_ENGINES=new Set(['hybrid3','claude','gemini']);
+function isBrainSaraEngine(engine=saraEngine){return SARA_BRAIN_ENGINES.has(engine);}
+function saraBrainProvider(){return saraEngine==='claude'?'claude':saraEngine==='gemini'?'gemini':'deepseek';}
+function saraBrainLabel(){return saraEngine==='claude'?'Claude':saraEngine==='gemini'?'Gemini':'DeepSeek';}
 let currentDish=null;
 let realtimePC=null;
 let realtimeDC=null;
@@ -1085,13 +1091,13 @@ function exp3MergeToolArgs(args){const st=exp3BookingArgsFromState();return {...
 async function askAltSara(question,{greeting=false}={}){
   return altFetchJSON('/api/sara-alt-chat',{
     method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question,menu:compactMenu(),history:conversationHistory.slice(saraEngine==='hybrid3'?-8:-10),language:waiterLanguage,greeting,bookingState:saraEngine==='hybrid3'?altBookingState:null})
+    body:JSON.stringify({question,menu:compactMenu(),history:conversationHistory.slice(isBrainSaraEngine()?-8:-10),language:waiterLanguage,greeting,bookingState:isBrainSaraEngine()?altBookingState:null,provider:isBrainSaraEngine()?saraBrainProvider():'deepseek'})
   },60000);
 }
 
 async function handleAltBookingTool(toolCall){
   let args={}; try{args=JSON.parse(toolCall?.arguments||'{}');}catch(e){}
-  if(saraEngine==='hybrid3') args=exp3MergeToolArgs(args);
+  if(isBrainSaraEngine()) args=exp3MergeToolArgs(args);
   status.textContent=saraToolMessage('saving');
   const resolved=[];
   for(const item of (Array.isArray(args.order_items)?args.order_items:[])){
@@ -1150,7 +1156,7 @@ async function speakAltSara(text,{waitForEnd=false}={}){
 }
 
 function startAltCapture({duringSara=false}={}){
-  if(!altStream || altCapturing || (altBusy && !(saraEngine==='hybrid3' && (altSpeaking||duringSara))))return;
+  if(!altStream || altCapturing || (altBusy && !(isBrainSaraEngine() && (altSpeaking||duringSara))))return;
   altCaptureStartedDuringSara=Boolean(duringSara);
   const mime=bestMime(); altChunks=[];
   try{altRecorder=new MediaRecorder(altStream,mime?{mimeType:mime}:undefined);}catch(e){return;}
@@ -1179,7 +1185,7 @@ function runAltVAD(){
     altAnalyser.getByteTimeDomainData(data); let sum=0;
     for(let i=0;i<data.length;i++){const x=(data[i]-128)/128;sum+=x*x;}
     const rms=Math.sqrt(sum/data.length), now=performance.now();
-    const isHybrid3=saraEngine==='hybrid3';
+    const isHybrid3=isBrainSaraEngine();
 
     // Experimental 3: keep capture simple and let the phone/browser perform
     // echo cancellation + noise suppression. VAD only decides turn boundaries;
@@ -1295,7 +1301,7 @@ function exp3NormalizeForEcho(text){
   return String(text||'').toLowerCase().replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا').replace(/[^\u0600-\u06FF0-9a-z ]/gi,' ').replace(/\s+/g,' ').trim();
 }
 function exp3LooksLikeSaraEcho(transcript){
-  if(saraEngine!=='hybrid3' || !altCaptureStartedDuringSara || !altLastSpokenText)return false;
+  if(!isBrainSaraEngine() || !altCaptureStartedDuringSara || !altLastSpokenText)return false;
   const q=exp3NormalizeForEcho(transcript), a=exp3NormalizeForEcho(altLastSpokenText);
   // Never suppress short real barge-ins such as "لا", "إيه", "اعتمد".
   if(q.length<12 || q.split(' ').length<3)return false;
@@ -1312,8 +1318,8 @@ async function processAltVoice(blob,mime){
   try{
     status.textContent=TEXT[waiterLanguage].transcribing;
     const ext=mime.includes('mp4')?'m4a':mime.includes('ogg')?'ogg':'webm';
-    const form=new FormData(); form.append('audio',blob,'voice.'+ext); form.append('language',waiterLanguage); if(saraEngine==='hybrid3')form.append('mode','hybrid3');
-    const sttUrl=saraEngine==='hybrid3'?'/api/transcribe':'/api/sara-alt-transcribe';
+    const form=new FormData(); form.append('audio',blob,'voice.'+ext); form.append('language',waiterLanguage); if(isBrainSaraEngine())form.append('mode','hybrid3');
+    const sttUrl=isBrainSaraEngine()?'/api/transcribe':'/api/sara-alt-transcribe';
     const r=await fetch(sttUrl,{method:'POST',body:form}); const d=await r.json().catch(()=>({}));
     if(!r.ok||!d.text)throw new Error(d.message||'Transcription failed');
     let q=String(d.text).trim(); if(!q)return;
@@ -1325,25 +1331,25 @@ async function processAltVoice(blob,mime){
       return;
     }
     altCaptureStartedDuringSara=false;
-    const wasPhoneCorrection=saraEngine==='hybrid3' && exp3IsPhoneCorrection(q);
-    if(saraEngine==='hybrid3')exp3UpdateBookingState(q,'user');
+    const wasPhoneCorrection=isBrainSaraEngine() && exp3IsPhoneCorrection(q);
+    if(isBrainSaraEngine())exp3UpdateBookingState(q,'user');
     addBubble('user',q); conversationHistory.push({role:'user',content:q});
     status.textContent=isExplicitBookingConfirmation(q)&&waiterLanguage==='ar'?'تمام، أعتمد الحجز…':TEXT[waiterLanguage].thinking;
     let answer='';
-    if(saraEngine==='hybrid3' && exp3IsRepeatPhoneRequest(q) && altBookingState.phone){
+    if(isBrainSaraEngine() && exp3IsRepeatPhoneRequest(q) && altBookingState.phone){
       answer=`رقم الواتساب المسجل عندي ${exp3PhoneDisplay(altBookingState.phone)}.`;
-    }else if(saraEngine==='hybrid3' && wasPhoneCorrection && altBookingState.phone){
+    }else if(isBrainSaraEngine() && wasPhoneCorrection && altBookingState.phone){
       answer=exp3PhoneReplyAfterCorrection();
-    }else if(saraEngine==='hybrid3' && altAwaitingBookingApproval() && isExplicitBookingConfirmation(q) && exp3CanConfirmBookingNow()){
+    }else if(isBrainSaraEngine() && altAwaitingBookingApproval() && isExplicitBookingConfirmation(q) && exp3CanConfirmBookingNow()){
       answer=await exp3ConfirmBookingDirectly();
     }else{
       const data=await askAltSara(q);
       if(data.toolCall?.name==='confirm_booking_order') answer=await handleAltBookingTool(data.toolCall); else answer=String(data.answer||'').trim();
     }
     if(!answer)throw new Error('No answer');
-    if(saraEngine==='hybrid3')exp3UpdateBookingState(answer,'assistant');
+    if(isBrainSaraEngine())exp3UpdateBookingState(answer,'assistant');
     addBubble('assistant',answer); conversationHistory.push({role:'assistant',content:answer}); status.textContent=TEXT[waiterLanguage].ready;
-    if(saraEngine==='hybrid3') await speakAI(answer); else await speakAltSara(answer,{waitForEnd:false});
+    if(isBrainSaraEngine()) await speakAI(answer); else await speakAltSara(answer,{waitForEnd:false});
     altBusy=false;
   }catch(e){
     console.error('Alt Sara voice error',e); altBusy=false; status.textContent=e.message||TEXT[waiterLanguage].serverError; showDiagnostic(status.textContent,false);
@@ -1353,22 +1359,22 @@ async function processAltVoice(blob,mime){
 async function submitAltQuestion(q){
   q=String(q||'').trim();if(!q)return;
   q=normalizeAltBookingApprovalTranscript(q);
-  const wasPhoneCorrection=saraEngine==='hybrid3' && exp3IsPhoneCorrection(q);
-  if(saraEngine==='hybrid3')exp3UpdateBookingState(q,'user');
+  const wasPhoneCorrection=isBrainSaraEngine() && exp3IsPhoneCorrection(q);
+  if(isBrainSaraEngine())exp3UpdateBookingState(q,'user');
   stopAltSpeechForBargeIn(); addBubble('user',q);conversationHistory.push({role:'user',content:q});input.value='';altBusy=true;status.textContent=TEXT[waiterLanguage].thinking;
   try{
     let answer='';
-    if(saraEngine==='hybrid3' && exp3IsRepeatPhoneRequest(q) && altBookingState.phone){
+    if(isBrainSaraEngine() && exp3IsRepeatPhoneRequest(q) && altBookingState.phone){
       answer=`رقم الواتساب المسجل عندي ${exp3PhoneDisplay(altBookingState.phone)}.`;
-    }else if(saraEngine==='hybrid3' && wasPhoneCorrection && altBookingState.phone){
+    }else if(isBrainSaraEngine() && wasPhoneCorrection && altBookingState.phone){
       answer=exp3PhoneReplyAfterCorrection();
-    }else if(saraEngine==='hybrid3' && altAwaitingBookingApproval() && isExplicitBookingConfirmation(q) && exp3CanConfirmBookingNow()){
+    }else if(isBrainSaraEngine() && altAwaitingBookingApproval() && isExplicitBookingConfirmation(q) && exp3CanConfirmBookingNow()){
       answer=await exp3ConfirmBookingDirectly();
     }else{
       const data=await askAltSara(q);
       if(data.toolCall?.name==='confirm_booking_order')answer=await handleAltBookingTool(data.toolCall);else answer=String(data.answer||'').trim();
     }
-    if(!answer)throw new Error('No answer'); if(saraEngine==='hybrid3')exp3UpdateBookingState(answer,'assistant'); addBubble('assistant',answer);conversationHistory.push({role:'assistant',content:answer});status.textContent=TEXT[waiterLanguage].ready;if(saraEngine==='hybrid3')await speakAI(answer);else await speakAltSara(answer,{waitForEnd:false});altBusy=false;
+    if(!answer)throw new Error('No answer'); if(isBrainSaraEngine())exp3UpdateBookingState(answer,'assistant'); addBubble('assistant',answer);conversationHistory.push({role:'assistant',content:answer});status.textContent=TEXT[waiterLanguage].ready;if(isBrainSaraEngine())await speakAI(answer);else await speakAltSara(answer,{waitForEnd:false});altBusy=false;
   }catch(e){altBusy=false;status.textContent=e.message||TEXT[waiterLanguage].serverError;showDiagnostic(status.textContent,false);}
 }
 
@@ -1511,7 +1517,7 @@ async function startHybrid3(){
     altNoiseFloor=0.012; altNoiseLastUpdate=0; altVoiceCandidateAt=0; altBargeCandidateAt=0;
     altNoiseReadyAt=0;
     altStarted=true; altBusy=true;
-    showDiagnostic(waiterLanguage==='ar'?'🧪 تجريبي 3 جاهز':waiterLanguage==='fr'?'🧪 Expérimental 3 prêt':'🧪 Experimental 3 ready',true);
+    showDiagnostic((waiterLanguage==='ar'?'🧠 ':'🧠 ')+saraBrainLabel()+(waiterLanguage==='ar'?' جاهز':waiterLanguage==='fr'?' prêt':' ready'),true);
     const data=await askAltSara('',{greeting:true});
     const answer=String(data.answer||'').trim();
     if(answer){
@@ -1661,7 +1667,7 @@ document.querySelectorAll('[data-waiter-lang]').forEach(b=>b.onclick=async()=>{
    'Turning on the microphone…';
 
  await unlockSpeechAudio();
- if(saraEngine==='alt') await startAltSara(); else if(saraEngine==='agent') await startAgent2(); else if(saraEngine==='hybrid3') await startHybrid3(); else await startRealtime();
+ if(saraEngine==='alt') await startAltSara(); else if(saraEngine==='agent') await startAgent2(); else if(isBrainSaraEngine()) await startHybrid3(); else await startRealtime();
 });
 
 function addBubble(role,text){
@@ -1795,7 +1801,7 @@ async function speakAI(text){
   try{
     const clean=String(text||'').trim();
     if(!clean) return;
-    if(saraEngine==='hybrid3') altLastSpokenText=clean;
+    if(isBrainSaraEngine()) altLastSpokenText=clean;
 
     if(currentAudio){
       try{currentAudio.pause();}catch(e){}
@@ -1833,11 +1839,11 @@ async function speakAI(text){
         speechSource.buffer=decoded;
         speechSource.connect(speechAudioContext.destination);
         orb.classList.add('speaking');
-        if(saraEngine==='hybrid3'){altSpeaking=true;altTtsStartedAt=performance.now();altBargeCandidateAt=0;}
+        if(isBrainSaraEngine()){altSpeaking=true;altTtsStartedAt=performance.now();altBargeCandidateAt=0;}
         speechSource.onended=()=>{
           orb.classList.remove('speaking');
           speechSource=null;
-          if(saraEngine==='hybrid3'){altSpeaking=false;altTtsEndedAt=performance.now();altBargeCandidateAt=0;}
+          if(isBrainSaraEngine()){altSpeaking=false;altTtsEndedAt=performance.now();altBargeCandidateAt=0;}
         };
         speechSource.start(0);
         return;
@@ -1854,17 +1860,17 @@ async function speakAI(text){
     audio.playsInline=true;
     audio.src=url;
     orb.classList.add('speaking');
-    if(saraEngine==='hybrid3'){altSpeaking=true;altTtsStartedAt=performance.now();altBargeCandidateAt=0;}
+    if(isBrainSaraEngine()){altSpeaking=true;altTtsStartedAt=performance.now();altBargeCandidateAt=0;}
 
     audio.onended=()=>{
       orb.classList.remove('speaking');
       URL.revokeObjectURL(url);
       if(currentAudio===audio) currentAudio=null;
-      if(saraEngine==='hybrid3'){altSpeaking=false;altTtsEndedAt=performance.now();altBargeCandidateAt=0;}
+      if(isBrainSaraEngine()){altSpeaking=false;altTtsEndedAt=performance.now();altBargeCandidateAt=0;}
     };
     audio.onerror=()=>{
       orb.classList.remove('speaking');
-      if(saraEngine==='hybrid3'){altSpeaking=false;altTtsEndedAt=performance.now();altBargeCandidateAt=0;}
+      if(isBrainSaraEngine()){altSpeaking=false;altTtsEndedAt=performance.now();altBargeCandidateAt=0;}
       URL.revokeObjectURL(url);
     };
 
@@ -1912,7 +1918,7 @@ input.addEventListener('keydown',async e=>{
  if(e.key==='Enter'){
    stopAISpeech();
    await unlockSpeechAudio();
-   if(saraEngine==='alt'||saraEngine==='hybrid3') submitAltQuestion(input.value); else if(saraEngine==='agent'){ const q=String(input.value||'').trim(); if(q&&agent2Conversation){ input.value=''; try{agent2Conversation.sendUserMessage(q);}catch(e){showDiagnostic(e.message||String(e),false);} } } else submitQuestion(input.value);
+   if(saraEngine==='alt'||isBrainSaraEngine()) submitAltQuestion(input.value); else if(saraEngine==='agent'){ const q=String(input.value||'').trim(); if(q&&agent2Conversation){ input.value=''; try{agent2Conversation.sendUserMessage(q);}catch(e){showDiagnostic(e.message||String(e),false);} } } else submitQuestion(input.value);
  }
 });
 
@@ -2002,7 +2008,7 @@ micBtn.onclick=()=>{
    status.textContent=agent2MicMuted?(waiterLanguage==='ar'?'المايك مكتوم':waiterLanguage==='fr'?'Micro coupé':'Microphone muted'):TEXT[waiterLanguage].ready;
    return;
  }
- if(saraEngine==='alt'||saraEngine==='hybrid3'){
+ if(saraEngine==='alt'||isBrainSaraEngine()){
    if(!altStream)return;
    const track=altStream.getAudioTracks()[0];if(!track)return;track.enabled=!track.enabled;micBtn.textContent=track.enabled?'🎤':'🔇';
    status.textContent=track.enabled?TEXT[waiterLanguage].ready:(waiterLanguage==='ar'?'المايك مكتوم':waiterLanguage==='fr'?'Micro coupé':'Microphone muted');

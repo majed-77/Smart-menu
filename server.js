@@ -9,8 +9,12 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const apiKey = process.env.OPENAI_API_KEY || "";
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || "";
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY || "";
 const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || "deepseek-v4-flash";
+const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || "claude-haiku-4-5-20251001";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 const ELEVENLABS_STT_MODEL = process.env.ELEVENLABS_STT_MODEL || "scribe_v2";
 const FISH_AUDIO_API_KEY = process.env.FISH_AUDIO_API_KEY || "";
 const FISH_AUDIO_VOICE_ID = process.env.FISH_AUDIO_VOICE_ID || "384051d27069462aa9b7a021ce541c8f";
@@ -1245,51 +1249,120 @@ app.post("/api/sara-alt-transcribe", upload.single("audio"), async (req, res) =>
   }
 });
 
+function brainProviderConfig(provider) {
+  const p = String(provider || "deepseek").toLowerCase();
+  if (p === "claude") return { provider:p, key:ANTHROPIC_API_KEY, model:ANTHROPIC_MODEL, label:"Claude" };
+  if (p === "gemini") return { provider:p, key:GEMINI_API_KEY, model:GEMINI_MODEL, label:"Gemini" };
+  return { provider:"deepseek", key:DEEPSEEK_API_KEY, model:DEEPSEEK_MODEL, label:"DeepSeek" };
+}
+
+function brainToolResult(call) {
+  if (!call) return null;
+  return { id:call.id || `brain_${Date.now()}`, name:"confirm_booking_order", arguments:typeof call.arguments === "string" ? call.arguments : JSON.stringify(call.arguments || {}) };
+}
+
+async function callOpenAICompatibleBrain({ endpoint, apiKey, model, messages, extraBody = {}, strictTools = true }) {
+  const response = await fetch(endpoint, {
+    method:"POST",
+    headers:{ Authorization:`Bearer ${apiKey}`, "Content-Type":"application/json" },
+    body:JSON.stringify({ model, messages, tools:[strictTools ? confirmBookingOrderTool : {...confirmBookingOrderTool,function:{...confirmBookingOrderTool.function,strict:undefined}}], tool_choice:"auto", max_tokens:160, temperature:0.25, ...extraBody })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data?.error?.message || data?.message || `AI HTTP ${response.status}`);
+  const message = data?.choices?.[0]?.message || {};
+  const call = Array.isArray(message.tool_calls) ? message.tool_calls.find(x => x?.function?.name === "confirm_booking_order") : null;
+  if (call) return { toolCall:brainToolResult({ id:call.id, arguments:call.function?.arguments }) };
+  return { answer:String(message.content || "").trim() };
+}
+
+async function callClaudeBrain({ apiKey, model, system, history, userText }) {
+  const tools = [{
+    name:confirmBookingOrderTool.function.name,
+    description:confirmBookingOrderTool.function.description,
+    input_schema:confirmBookingOrderTool.function.parameters
+  }];
+  const messages = [...history, { role:"user", content:userText }];
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method:"POST",
+    headers:{ "x-api-key":apiKey, "anthropic-version":"2023-06-01", "content-type":"application/json" },
+    body:JSON.stringify({ model, system, messages, tools, tool_choice:{type:"auto"}, max_tokens:160, temperature:0.25 })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data?.error?.message || data?.message || `Claude HTTP ${response.status}`);
+  const blocks = Array.isArray(data?.content) ? data.content : [];
+  const tool = blocks.find(x => x?.type === "tool_use" && x?.name === "confirm_booking_order");
+  if (tool) return { toolCall:brainToolResult({ id:tool.id, arguments:tool.input }) };
+  return { answer:blocks.filter(x => x?.type === "text").map(x => x.text).join(" ").trim() };
+}
+
+function geminiSafeSchema(value) {
+  if (Array.isArray(value)) return value.map(geminiSafeSchema);
+  if (!value || typeof value !== "object") return value;
+  const out = {};
+  for (const [k,v] of Object.entries(value)) {
+    if (k === "additionalProperties") continue;
+    out[k] = geminiSafeSchema(v);
+  }
+  return out;
+}
+
+async function callGeminiBrain({ apiKey, model, system, history, userText }) {
+  const declaration = {
+    name:confirmBookingOrderTool.function.name,
+    description:confirmBookingOrderTool.function.description,
+    parameters:geminiSafeSchema(confirmBookingOrderTool.function.parameters)
+  };
+  const contents = history.map(m => ({ role:m.role === "assistant" ? "model" : "user", parts:[{text:m.content}] }));
+  contents.push({ role:"user", parts:[{text:userText}] });
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const response = await fetch(endpoint, {
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body:JSON.stringify({ systemInstruction:{parts:[{text:system}]}, contents, tools:[{functionDeclarations:[declaration]}], generationConfig:{temperature:0.25,maxOutputTokens:160} })
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data?.error?.message || data?.message || `Gemini HTTP ${response.status}`);
+  const parts = data?.candidates?.[0]?.content?.parts || [];
+  const fc = parts.find(x => x?.functionCall?.name === "confirm_booking_order")?.functionCall;
+  if (fc) return { toolCall:brainToolResult({ arguments:fc.args }) };
+  return { answer:parts.map(x => x?.text || "").join(" ").trim() };
+}
+
 app.post("/api/sara-alt-chat", async (req, res) => {
   try {
-    if (!DEEPSEEK_API_KEY) return res.status(401).json({ ok:false, code:"DEEPSEEK_NOT_CONFIGURED", message:"مفتاح DeepSeek غير موجود في Render." });
-    const { question = "", history = [], menu = [], language = "ar", greeting = false, bookingState = null } = req.body || {};
+    const { question = "", history = [], menu = [], language = "ar", greeting = false, bookingState = null, provider = "deepseek" } = req.body || {};
+    const cfg = brainProviderConfig(provider);
+    if (!cfg.key) return res.status(401).json({ ok:false, code:`${cfg.provider.toUpperCase()}_NOT_CONFIGURED`, message:`مفتاح ${cfg.label} غير موجود في Render.` });
     const q = String(question || "").trim();
     if (!q && !greeting) return res.status(400).json({ ok:false, code:"EMPTY_MESSAGE", message:"لا يوجد كلام لإرساله إلى سارة." });
 
-    const cleanHistory = Array.isArray(history) ? history.slice(-6).map(m => ({
+    const cleanHistory = Array.isArray(history) ? history.slice(-8).map(m => ({
       role: m?.role === "assistant" ? "assistant" : "user",
       content: String(m?.content || m?.text || "").trim()
     })).filter(m => m.content) : [];
-    const messages = [
-      { role:"system", content:altSaraInstructions({ language, menu }) + (bookingState && typeof bookingState === "object" ? `\n\nKNOWN BOOKING STATE FROM THE WEBSITE (authoritative):\n${JSON.stringify(bookingState)}\nSTRICT BOOKING MEMORY RULES:\n- Never ask again for any field that already has a non-empty value in this state.\n- If the guest corrects only the WhatsApp number, replace only the phone and preserve name, party size, date, time, notes, and order.\n- If the guest asks you to repeat the WhatsApp number, repeat the stored phone exactly digit by digit; do not invent or regroup digits.\n- A correction does not restart the booking flow. Continue from the remaining missing field, or ask for final confirmation if nothing is missing.\n- When the guest confirms, fill tool arguments from this state instead of leaving fields blank.` : "") },
-      ...cleanHistory,
-      { role:"user", content: greeting
-        ? (language === "ar" ? "ابدئي الآن بالترحيب فقط: هلا والله، حياك في Café Victor Hugo، معك سارة، كيف أقدر أخدمك؟" : language === "fr" ? "Accueille brièvement le client et demande comment tu peux l'aider." : "Give a very brief welcome and ask how you can help.")
-        : q }
-    ];
+    const system = altSaraInstructions({ language, menu }) + (bookingState && typeof bookingState === "object" ? `\n\nKNOWN BOOKING STATE FROM THE WEBSITE (authoritative):\n${JSON.stringify(bookingState)}\nSTRICT BOOKING MEMORY RULES:\n- Never ask again for any field that already has a non-empty value in this state.\n- If the guest corrects only the WhatsApp number, replace only the phone and preserve name, party size, date, time, notes, and order.\n- If the guest asks you to repeat the WhatsApp number, repeat the stored phone exactly digit by digit; do not invent or regroup digits.\n- A correction does not restart the booking flow. Continue from the remaining missing field, or ask for final confirmation if nothing is missing.\n- When the guest confirms, fill tool arguments from this state instead of leaving fields blank.` : "");
+    const userText = greeting
+      ? (language === "ar" ? "ابدئي الآن بالترحيب فقط: هلا والله، حياك في Café Victor Hugo، معك سارة، كيف أقدر أخدمك؟" : language === "fr" ? "Accueille brièvement le client et demande comment tu peux l'aider." : "Give a very brief welcome and ask how you can help.")
+      : q;
 
-    const response = await fetch("https://api.deepseek.com/chat/completions", {
-      method:"POST",
-      headers:{ Authorization:`Bearer ${DEEPSEEK_API_KEY}`, "Content-Type":"application/json" },
-      body:JSON.stringify({
-        model:DEEPSEEK_MODEL,
-        messages,
-        tools:[confirmBookingOrderTool],
-        tool_choice:"auto",
-        thinking:{ type:"disabled" },
-        max_tokens:120,
-        temperature:0.25
-      })
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data?.error?.message || data?.message || `DeepSeek HTTP ${response.status}`);
-    const message = data?.choices?.[0]?.message || {};
-    const call = Array.isArray(message.tool_calls) ? message.tool_calls.find(x => x?.function?.name === "confirm_booking_order") : null;
-    if (call) {
-      return res.json({ ok:true, toolCall:{ id:call.id || `alt_${Date.now()}`, name:"confirm_booking_order", arguments:String(call.function?.arguments || "{}") } });
+    let result;
+    if (cfg.provider === "claude") {
+      result = await callClaudeBrain({ apiKey:cfg.key, model:cfg.model, system, history:cleanHistory, userText });
+    } else if (cfg.provider === "gemini") {
+      result = await callGeminiBrain({ apiKey:cfg.key, model:cfg.model, system, history:cleanHistory, userText });
+
+    } else {
+      const messages = [{role:"system",content:system}, ...cleanHistory, {role:"user",content:userText}];
+      result = await callOpenAICompatibleBrain({ endpoint:"https://api.deepseek.com/chat/completions", apiKey:cfg.key, model:cfg.model, messages, extraBody:{thinking:{type:"disabled"}} });
     }
-    const answer = String(message.content || "").trim();
-    if (!answer) return res.status(502).json({ ok:false, code:"EMPTY_AI_RESPONSE", message:"لم تصل إجابة من سارة." });
-    return res.json({ ok:true, answer });
+
+    if (result?.toolCall) return res.json({ ok:true, toolCall:result.toolCall });
+    const answer = String(result?.answer || "").trim();
+    if (!answer) return res.status(502).json({ ok:false, code:"EMPTY_AI_RESPONSE", message:`لم تصل إجابة من ${cfg.label}.` });
+    return res.json({ ok:true, answer, provider:cfg.provider });
   } catch (error) {
-    console.error("DeepSeek Sara error:", error);
-    return res.status(502).json({ ok:false, code:"DEEPSEEK_ERROR", message:error?.message || "تعذر تشغيل سارة عبر DeepSeek." });
+    console.error("Sara brain error:", error);
+    return res.status(502).json({ ok:false, code:"SARA_BRAIN_ERROR", message:error?.message || "تعذر تشغيل عقل سارة." });
   }
 });
 
