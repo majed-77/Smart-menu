@@ -976,12 +976,13 @@ app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
       { type: mime }
     );
 
-    // Keep STT neutral. Do not seed it with booking/approval words: short
-    // utterances such as "اعتمد" can otherwise be expanded into the prompt
-    // vocabulary instead of being transcribed literally.
+    // Experimental 3 favors transcription accuracy for very short Arabic
+    // confirmations ("إيه", "نعم", "اعتمد"). Do not seed vocabulary prompts,
+    // because prompts previously caused hallucinated approval phrases.
+    const isHybrid3 = req.body.mode === "hybrid3";
     const options = {
       file: audioFile,
-      model: "gpt-4o-mini-transcribe"
+      model: isHybrid3 ? "gpt-4o-transcribe" : "gpt-4o-mini-transcribe"
     };
 
     if (["ar", "fr", "en"].includes(language)) {
@@ -1084,7 +1085,7 @@ app.post("/api/tts", async (req, res) => {
 
     const speech = await openai.audio.speech.create({
       model: "gpt-4o-mini-tts",
-      voice: "marin",
+      voice: "coral",
       input: ttsText,
       instructions: voiceInstructions,
       speed: 1.0,

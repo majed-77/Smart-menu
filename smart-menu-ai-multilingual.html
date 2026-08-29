@@ -997,7 +997,7 @@ function handleRealtimeEvent(event){
 }
 
 function closeAltSara(){
-  altStarted=false; altBusy=false; altSpeaking=false; altCapturing=false; altBookingState={name:'',phone:'',partySize:null,date:'',time:'',notes:'',orderItems:[]}; altBargeCandidateAt=0;
+  altStarted=false; altBusy=false; altSpeaking=false; altCapturing=false; altBookingState={name:'',phone:'',partySize:null,date:'',time:'',notes:'',orderItems:[]}; altBargeCandidateAt=0; altCaptureStartedDuringSara=false; altLastSpokenText=''; altSpeechStoppedAt=0;
   if(altVadFrame){cancelAnimationFrame(altVadFrame);altVadFrame=null;}
   try{if(altRecorder && altRecorder.state!=="inactive")altRecorder.stop();}catch(e){}
   altRecorder=null; altChunks=[];
@@ -1022,12 +1022,23 @@ let altBookingState={name:'',phone:'',partySize:null,date:'',time:'',notes:'',or
 let altBargeCandidateAt=0;
 let altTtsStartedAt=0;
 let altTtsEndedAt=0;
+let altLastSpokenText='';
+let altCaptureStartedDuringSara=false;
+let altSpeechStoppedAt=0;
 function normalizeArabicDigitsExp3(v){return String(v||'').replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[۰-۹]/g,d=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(d));}
-function exp3TodayISO(){try{return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Riyadh',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());}catch(e){return new Date().toISOString().slice(0,10)}}
+function exp3TodayISO(){try{const parts=new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Riyadh',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());const get=t=>parts.find(p=>p.type===t)?.value||'';return `${get('year')}-${get('month')}-${get('day')}`;}catch(e){return new Date(Date.now()+3*3600000).toISOString().slice(0,10)}}
 function exp3PhoneDigitsFromSpeech(raw){
   raw=normalizeArabicDigitsExp3(String(raw||'')).replace(/[،,.;:!?؟]/g,' ').replace(/\s+/g,' ').trim();
-  const numeric=(raw.match(/(?:\+?966\s*5|05)\s*(?:[\s-]*\d){8}|(?:\+?216\s*)?(?:\d[\s-]*){8}/)||[])[0];
-  if(numeric){const n=numeric.replace(/[\s-]/g,''); if(n.replace(/\D/g,'').length>=8)return n;}
+  // Preserve the exact phone digits the guest said. Do not force a Saudi/Tunisian
+  // length here: some restaurant records intentionally use non-standard lengths.
+  // We only require 8-15 digits so times/dates cannot be mistaken for a phone.
+  const candidates=raw.match(/\+?[0-9](?:[0-9\s().-]*[0-9])?/g)||[];
+  for(const candidate of candidates){
+    const digits=candidate.replace(/\D/g,'');
+    if(digits.length>=8 && digits.length<=15){
+      return (candidate.trim().startsWith('+')?'+':'')+digits;
+    }
+  }
   const map={صفر:'0',زيرو:'0',واحد:'1',وحده:'1',واحدة:'1',اثنين:'2',إثنين:'2',اثنان:'2',ثنين:'2',ثنتين:'2',ثلاثة:'3',ثلاثه:'3',اربعة:'4',أربعة:'4',اربعه:'4',خمسة:'5',خمسه:'5',ستة:'6',سته:'6',سبعة:'7',سبعه:'7',ثمانية:'8',ثمانيه:'8',تسعة:'9',تسعه:'9'};
   const toks=raw.split(/\s+/); let best='',cur='';
   for(const tok0 of toks){
@@ -1055,9 +1066,12 @@ function exp3UpdateBookingState(text,role='user'){
     m=raw.match(/^([\u0600-\u06FF]{2,})$/); if(m&&!/(اعتمد|تمام|نعم|ايه|حجز|واتساب)/.test(m[1]))altBookingState.name=m[1];
   }
   m=raw.match(/(?:ل|لـ)?(\d{1,2})\s*(?:اشخاص|أشخاص|شخص)/); if(m)altBookingState.partySize=Math.max(1,Math.min(30,Number(m[1])));
-  const words={'شخص':1,'شخصين':2,'اثنين':2,'اثنين':2,'ثلاثة':3,'ثلاثه':3,'اربعة':4,'أربعة':4,'خمسة':5,'خمسه':5,'ستة':6,'سته':6,'سبعة':7,'سبعه':7,'ثمانية':8,'ثمانيه':8,'تسعة':9,'تسعه':9,'عشرة':10,'عشره':10};
-  for(const [w,n] of Object.entries(words)){if(new RegExp(`(?:ل|لـ)?${w}\\s*(?:اشخاص|أشخاص|شخص)?`).test(raw)){if(/شخص/.test(raw)||w==='شخصين')altBookingState.partySize=n;}}
-  if(/\bاليوم\b/.test(raw))altBookingState.date=exp3TodayISO();
+  if(/(?:ل|لـ)?شخصين/.test(raw)) altBookingState.partySize=2;
+  const partyWords={'واحد':1,'واحدة':1,'اثنين':2,'إثنين':2,'ثنين':2,'ثنتين':2,'ثلاثة':3,'ثلاثه':3,'اربعة':4,'أربعة':4,'اربعه':4,'خمسة':5,'خمسه':5,'ستة':6,'سته':6,'سبعة':7,'سبعه':7,'ثمانية':8,'ثمانيه':8,'تسعة':9,'تسعه':9,'عشرة':10,'عشره':10};
+  for(const [w,n] of Object.entries(partyWords)){
+    if(new RegExp(`(?:ل|لـ)?${w}\\s+(?:اشخاص|أشخاص|اشخاصًا|أشخاصًا)`).test(raw)){altBookingState.partySize=n;break;}
+  }
+  if(/(?:^|\s|[،,.!?؟])اليوم(?=$|\s|[،,.!?؟])/.test(raw))altBookingState.date=exp3TodayISO();
   const iso=(raw.match(/\b20\d{2}-\d{2}-\d{2}\b/)||[])[0]; if(iso)altBookingState.date=iso;
   m=raw.match(/الساعة\s*(\d{1,2})(?::(\d{2}))?\s*(صباح(?:ا|ًا)?|مساء(?:ً|ا|ًا)?|ظهر(?:ا|ًا)?)?/);
   if(m){let h=Number(m[1]),min=Number(m[2]||0),ap=m[3]||'';if(/مساء/.test(ap)&&h<12)h+=12;if(/صباح/.test(ap)&&h===12)h=0;altBookingState.time=String(h).padStart(2,'0')+':'+String(min).padStart(2,'0');}
@@ -1100,11 +1114,13 @@ function stopAltSpeechForBargeIn(){
   if(!altSpeaking)return;
   stopAISpeech();
   altSpeaking=false;
+  altSpeechStoppedAt=performance.now();
   status.textContent=waiterLanguage==='ar'?'سمعتك، كمّل…':waiterLanguage==='fr'?'Je vous écoute…':'I’m listening…';
 }
 
 async function speakAltSara(text,{waitForEnd=false}={}){
   const clean=String(text||'').trim(); if(!clean)return;
+  altLastSpokenText=clean;
   stopAISpeech();
   const r=await fetch('/api/sara-alt-tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:clean,language:waiterLanguage})});
   if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(d.message||`TTS HTTP ${r.status}`);}
@@ -1132,8 +1148,9 @@ async function speakAltSara(text,{waitForEnd=false}={}){
   await audio.play(); if(waitForEnd)await ended;
 }
 
-function startAltCapture(){
-  if(!altStream || altCapturing || (altBusy && !(saraEngine==='hybrid3' && altSpeaking)))return;
+function startAltCapture({duringSara=false}={}){
+  if(!altStream || altCapturing || (altBusy && !(saraEngine==='hybrid3' && (altSpeaking||duringSara))))return;
+  altCaptureStartedDuringSara=Boolean(duringSara);
   const mime=bestMime(); altChunks=[];
   try{altRecorder=new MediaRecorder(altStream,mime?{mimeType:mime}:undefined);}catch(e){return;}
   altRecorder.ondataavailable=e=>{if(e.data?.size)altChunks.push(e.data)};
@@ -1172,14 +1189,14 @@ function runAltVAD(){
     const canStart=!altBusy || (isHybrid3 && altSpeaking);
     if(canStart && !altCapturing){
       if(isHybrid3 && altSpeaking){
-        // Speaker echo on phones can look like speech. Require a clearly louder,
-        // sustained mic signal before treating it as a real customer interruption.
-        const bargeThreshold=0.085;
-        const bargeHoldMs=180;
-        const ttsGraceMs=220;
+        // Prefer fast, natural barge-in for Experimental 3. Browser echo cancellation
+        // stays enabled, while a short sustained voice burst stops Sara quickly.
+        const bargeThreshold=0.058;
+        const bargeHoldMs=120;
+        const ttsGraceMs=180;
         if(now-altTtsStartedAt>ttsGraceMs && rms>bargeThreshold){
           if(!altBargeCandidateAt)altBargeCandidateAt=now;
-          if(now-altBargeCandidateAt>=bargeHoldMs){stopAltSpeechForBargeIn();startAltCapture();altBargeCandidateAt=0;}
+          if(now-altBargeCandidateAt>=bargeHoldMs){stopAltSpeechForBargeIn();startAltCapture({duringSara:true});altBargeCandidateAt=0;}
         }else altBargeCandidateAt=0;
       }else if(rms>startThreshold){startAltCapture();}
     }
@@ -1204,9 +1221,12 @@ function altAwaitingBookingApproval(){
 function normalizeAltBookingApprovalTranscript(text){
   const raw=String(text||'').trim();
   if(!altAwaitingBookingApproval()) return raw;
-  const t=raw.toLowerCase().replace(/[.!؟?،,]/g,'').trim();
-  if(/^(evet|chatgpt|yes|yeah|yep|ok|okay|si|sí|eh|nem|nem természet|nem termeszet|oui|تمام|نعم|ايه|إيه|اي|اعتمد|اعتمدي)$/.test(t)) return 'اعتمد';
-  const approvalHits=(t.match(/اعتمد(?:ي)?|اثبت|أثبت|اكد|أكد|نعم|ايه|إيه|تمام|موافق|evet|yes|sí|si|oui/g)||[]).length;
+  const t=raw.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[.!؟?،,;:]/g,'').replace(/\s+/g,' ').trim();
+  // Short Arabic approvals are sometimes misheard by STT as tiny words in
+  // Portuguese/Spanish/Turkish/Hungarian. Only normalize them while Sara is
+  // explicitly waiting for booking approval.
+  if(/^(evet|chatgpt|yes|yeah|yep|yup|ok|okay|si|eh|nem|nem termeszet|oui|ta|da|ja|sim|mhm|uh huh|تمام|نعم|ايه|إيه|اي|اعتمد|اعتمدي)$/.test(t)) return 'اعتمد';
+  const approvalHits=(t.match(/اعتمد(?:ي)?|اثبت|أثبت|اكد|أكد|نعم|ايه|إيه|تمام|موافق|evet|yes|si|oui|ta|da|ja|sim/g)||[]).length;
   if(approvalHits>=2 && t.length<140) return 'اعتمد';
   return raw;
 }
@@ -1243,17 +1263,40 @@ function exp3PhoneReplyAfterCorrection(){
   if(!miss.length)return `تمام، عدلت رقم الواتساب إلى ${p}. باقي بيانات حجزك محفوظة. أعتمد الحجز؟`;
   return `تمام، عدلت رقم الواتساب إلى ${p}. باقي بياناتك محفوظة، وباقي عندي ${miss[0]} فقط.`;
 }
+function exp3NormalizeForEcho(text){
+  return String(text||'').toLowerCase().replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا').replace(/[^\u0600-\u06FF0-9a-z ]/gi,' ').replace(/\s+/g,' ').trim();
+}
+function exp3LooksLikeSaraEcho(transcript){
+  if(saraEngine!=='hybrid3' || !altCaptureStartedDuringSara || !altLastSpokenText)return false;
+  const q=exp3NormalizeForEcho(transcript), a=exp3NormalizeForEcho(altLastSpokenText);
+  // Never suppress short real barge-ins such as "لا", "إيه", "اعتمد".
+  if(q.length<12 || q.split(' ').length<3)return false;
+  if(a.includes(q) && q.length>=16)return true;
+  const qs=new Set(q.split(' ').filter(w=>w.length>1));
+  const as=new Set(a.split(' ').filter(w=>w.length>1));
+  if(!qs.size||!as.size)return false;
+  let common=0; for(const w of qs)if(as.has(w))common++;
+  const coverage=common/qs.size;
+  return coverage>=0.72 && common>=3;
+}
 async function processAltVoice(blob,mime){
   altBusy=true;
   try{
     status.textContent=TEXT[waiterLanguage].transcribing;
     const ext=mime.includes('mp4')?'m4a':mime.includes('ogg')?'ogg':'webm';
-    const form=new FormData(); form.append('audio',blob,'voice.'+ext); form.append('language',waiterLanguage);
+    const form=new FormData(); form.append('audio',blob,'voice.'+ext); form.append('language',waiterLanguage); if(saraEngine==='hybrid3')form.append('mode','hybrid3');
     const sttUrl=saraEngine==='hybrid3'?'/api/transcribe':'/api/sara-alt-transcribe';
     const r=await fetch(sttUrl,{method:'POST',body:form}); const d=await r.json().catch(()=>({}));
     if(!r.ok||!d.text)throw new Error(d.message||'Transcription failed');
     let q=String(d.text).trim(); if(!q)return;
     q=normalizeAltBookingApprovalTranscript(q);
+    if(exp3LooksLikeSaraEcho(q)){
+      console.info('Experimental 3: ignored probable Sara echo',q);
+      altCaptureStartedDuringSara=false;
+      altBusy=false; status.textContent=TEXT[waiterLanguage].ready;
+      return;
+    }
+    altCaptureStartedDuringSara=false;
     const wasPhoneCorrection=saraEngine==='hybrid3' && exp3IsPhoneCorrection(q);
     if(saraEngine==='hybrid3')exp3UpdateBookingState(q,'user');
     addBubble('user',q); conversationHistory.push({role:'user',content:q});
@@ -1721,6 +1764,7 @@ async function speakAI(text){
   try{
     const clean=String(text||'').trim();
     if(!clean) return;
+    if(saraEngine==='hybrid3') altLastSpokenText=clean;
 
     if(currentAudio){
       try{currentAudio.pause();}catch(e){}
@@ -1758,11 +1802,11 @@ async function speakAI(text){
         speechSource.buffer=decoded;
         speechSource.connect(speechAudioContext.destination);
         orb.classList.add('speaking');
-        if(saraEngine==='hybrid3') altSpeaking=true;
+        if(saraEngine==='hybrid3'){altSpeaking=true;altTtsStartedAt=performance.now();altBargeCandidateAt=0;}
         speechSource.onended=()=>{
           orb.classList.remove('speaking');
           speechSource=null;
-          if(saraEngine==='hybrid3') altSpeaking=false;
+          if(saraEngine==='hybrid3'){altSpeaking=false;altTtsEndedAt=performance.now();altBargeCandidateAt=0;}
         };
         speechSource.start(0);
         return;
@@ -1779,17 +1823,17 @@ async function speakAI(text){
     audio.playsInline=true;
     audio.src=url;
     orb.classList.add('speaking');
-    if(saraEngine==='hybrid3') altSpeaking=true;
+    if(saraEngine==='hybrid3'){altSpeaking=true;altTtsStartedAt=performance.now();altBargeCandidateAt=0;}
 
     audio.onended=()=>{
       orb.classList.remove('speaking');
       URL.revokeObjectURL(url);
       if(currentAudio===audio) currentAudio=null;
-      if(saraEngine==='hybrid3') altSpeaking=false;
+      if(saraEngine==='hybrid3'){altSpeaking=false;altTtsEndedAt=performance.now();altBargeCandidateAt=0;}
     };
     audio.onerror=()=>{
       orb.classList.remove('speaking');
-      if(saraEngine==='hybrid3') altSpeaking=false;
+      if(saraEngine==='hybrid3'){altSpeaking=false;altTtsEndedAt=performance.now();altBargeCandidateAt=0;}
       URL.revokeObjectURL(url);
     };
 
