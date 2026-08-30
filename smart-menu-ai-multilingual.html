@@ -1137,13 +1137,35 @@ function exp3UpdateBookingState(text,role='user'){
   }
   if(/(?:^|\s|[،,.!?؟])اليوم(?=$|\s|[،,.!?؟])/.test(raw))altBookingState.date=exp3TodayISO();
   const iso=(raw.match(/\b20\d{2}-\d{2}-\d{2}\b/)||[])[0]; if(iso)altBookingState.date=iso;
-  m=raw.match(/الساعة\s*(\d{1,2})(?::(\d{2}))?\s*(صباح(?:ا|ًا)?|مساء(?:ً|ا|ًا)?|ظهر(?:ا|ًا)?)?/);
-  if(m){let h=Number(m[1]),min=Number(m[2]||0),ap=m[3]||'';if(/مساء/.test(ap)&&h<12)h+=12;if(/صباح/.test(ap)&&h===12)h=0;altBookingState.time=String(h).padStart(2,'0')+':'+String(min).padStart(2,'0');}
+  m=raw.match(/الساعة\s*(\d{1,2})(?::(\d{2}))?\s*(?:و?نص(?:ف)?|و?نصف)?\s*(صباح(?:ا|ًا)?|مساء(?:ً|ا|ًا)?|ظهر(?:ا|ًا)?|بالليل|ليل(?:ا|ًا)?|المغرب)?/);
+  if(m){
+    let h=Number(m[1]),min=Number(m[2]||0),ap=m[3]||'';
+    if(!m[2]&&/(?:و?نص(?:ف)?|و?نصف)/.test(m[0]))min=30;
+    const isPm=/(?:مساء|بالليل|ليل|المغرب)/.test(ap)||/(?:مساء|بالليل|ليل|المغرب)/.test(raw);
+    const isAm=/صباح/.test(ap)||/صباح/.test(raw);
+    if(isPm&&h<12)h+=12;
+    if(isAm&&h===12)h=0;
+    altBookingState.time=String(h).padStart(2,'0')+':'+String(min).padStart(2,'0');
+  }
   const hourWords={'واحدة':1,'وحدة':1,'اثنتين':2,'ثنتين':2,'ثلاثة':3,'ثلاثه':3,'أربعة':4,'اربعة':4,'خمسة':5,'خمسه':5,'ستة':6,'سته':6,'سبعة':7,'سبعه':7,'ثمانية':8,'ثمانيه':8,'تسعة':9,'تسعه':9,'عشرة':10,'عشره':10,'احدعش':11,'إحدى عشرة':11};
-  for(const [w,h0] of Object.entries(hourWords)){if(new RegExp(`الساعة\\s+${w}`).test(raw)){let h=h0;if(/مساء/.test(raw)&&h<12)h+=12;altBookingState.time=String(h).padStart(2,'0')+':00';}}
+  for(const [w,h0] of Object.entries(hourWords)){
+    const hm=raw.match(new RegExp(`الساعة\\s+${w}(?:\\s+(?:و?نص(?:ف)?|و?نصف))?`));
+    if(hm){
+      let h=h0,min=/(?:و?نص(?:ف)?|و?نصف)/.test(hm[0])?30:0;
+      if(/(?:مساء|بالليل|ليل|المغرب)/.test(raw)&&h<12)h+=12;
+      if(/صباح/.test(raw)&&h===12)h=0;
+      altBookingState.time=String(h).padStart(2,'0')+':'+String(min).padStart(2,'0');
+    }
+  }
 }
 function exp3BookingArgsFromState(){return {name:altBookingState.name||'',phone:altBookingState.phone||'',party_size:Number(altBookingState.partySize)||0,date:altBookingState.date||'',time:altBookingState.time||'',notes:altBookingState.notes||'',order_items:Array.isArray(altBookingState.orderItems)?altBookingState.orderItems:[]};}
-function exp3MergeToolArgs(args){const st=exp3BookingArgsFromState();return {...args,name:String(args.name||st.name||'').trim(),phone:String(args.phone||st.phone||'').trim(),party_size:Number(args.party_size||st.party_size||0),date:String(args.date||st.date||''),time:String(args.time||st.time||''),notes:String(args.notes||st.notes||''),order_items:Array.isArray(args.order_items)&&args.order_items.length?args.order_items:st.order_items};}
+function exp3MergeToolArgs(args){
+  const st=exp3BookingArgsFromState();
+  // Booking state is authoritative for date/time because it was extracted from the
+  // guest's actual Arabic phrasing (e.g. "عشرة ونص بالليل" => 22:30).
+  // This prevents an LLM tool call from downgrading it back to ambiguous 10:30.
+  return {...args,name:String(st.name||args.name||'').trim(),phone:String(st.phone||args.phone||'').trim(),party_size:Number(st.party_size||args.party_size||0),date:String(st.date||args.date||''),time:String(st.time||args.time||''),notes:String(args.notes||st.notes||''),order_items:Array.isArray(args.order_items)&&args.order_items.length?args.order_items:st.order_items};
+}
 
 async function askAltSara(question,{greeting=false}={}){
   return altFetchJSON('/api/sara-alt-chat',{
