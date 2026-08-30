@@ -58,10 +58,6 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "smart-menu-ai-multilingual.html"));
 });
 
-app.get("/menu/cafe-victor-hugo", (req, res) => {
-  res.sendFile(path.join(__dirname, "smart-menu-ai-multilingual.html"));
-});
-
 function normalizeOpenAIError(error) {
   const status = Number(error?.status || 500);
   const rawMessage =
@@ -485,7 +481,7 @@ function requireRestaurantDashboard(req,res,next){
   if (!safeEqual(parseCookies(req).restaurant_dashboard, dashboardToken())) return res.status(401).json({ok:false,message:"يرجى تسجيل الدخول."});
   next();
 }
-app.get("/restaurant-dashboard", (req,res)=>res.sendFile(path.join(__dirname,"restaurant-dashboard.html")));
+app.get(["/restaurant", "/restaurant/", "/restaurant-dashboard", "/restaurant-dashboard/"], (req,res)=>res.sendFile(path.join(__dirname,"restaurant-dashboard.html")));
 app.post("/api/restaurant/login", (req,res)=>{
   if (!RESTAURANT_DASHBOARD_PASSWORD) return res.status(503).json({ok:false,message:"أضف RESTAURANT_DASHBOARD_PASSWORD في Render أولًا."});
   if (!safeEqual(req.body?.password, RESTAURANT_DASHBOARD_PASSWORD)) return res.status(401).json({ok:false,message:"كلمة المرور غير صحيحة."});
