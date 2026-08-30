@@ -1,5 +1,6 @@
 const express = require("express");
 const path = require("path");
+const crypto = require("crypto");
 const OpenAI = require("openai");
 const multer = require("multer");
 const { Pool } = require("pg");
@@ -10,11 +11,12 @@ const PORT = process.env.PORT || 3000;
 const apiKey = process.env.OPENAI_API_KEY || "";
 const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || "";
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
+const ANTHROPIC_WORKSPACE_ID = process.env.ANTHROPIC_WORKSPACE_ID || "";
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY || "";
 const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || "deepseek-v4-flash";
 const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || "claude-haiku-4-5-20251001";
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
 const ELEVENLABS_STT_MODEL = process.env.ELEVENLABS_STT_MODEL || "scribe_v2";
 const FISH_AUDIO_API_KEY = process.env.FISH_AUDIO_API_KEY || "";
 const FISH_AUDIO_VOICE_ID = process.env.FISH_AUDIO_VOICE_ID || "384051d27069462aa9b7a021ce541c8f";
@@ -29,6 +31,8 @@ const TWILIO_TRIAL_CONTENT_SID = process.env.TWILIO_TRIAL_CONTENT_SID || "HXfe5a
 const RESTAURANT_WHATSAPP_TO = process.env.RESTAURANT_WHATSAPP_TO || "";
 const CRON_SECRET = process.env.CRON_SECRET || "";
 const RESTAURANT_TIMEZONE = process.env.RESTAURANT_TIMEZONE || "Asia/Riyadh";
+const RESTAURANT_DASHBOARD_PASSWORD = process.env.RESTAURANT_DASHBOARD_PASSWORD || "";
+const RESTAURANT_DASHBOARD_SECRET = process.env.RESTAURANT_DASHBOARD_SECRET || RESTAURANT_DASHBOARD_PASSWORD || crypto.randomBytes(32).toString("hex");
 
 const db = DATABASE_URL
   ? new Pool({
@@ -51,6 +55,10 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static(__dirname));
 
 app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "smart-menu-ai-multilingual.html"));
+});
+
+app.get("/menu/cafe-victor-hugo", (req, res) => {
   res.sendFile(path.join(__dirname, "smart-menu-ai-multilingual.html"));
 });
 
@@ -99,7 +107,7 @@ async function initReservationDatabase() {
       order_total_sar NUMERIC(12,2) NOT NULL DEFAULT 0,
       source TEXT NOT NULL DEFAULT 'form',
       language TEXT NOT NULL DEFAULT 'ar',
-      status TEXT NOT NULL DEFAULT 'confirmed',
+      status TEXT NOT NULL DEFAULT 'new',
       reminder_sent_at TIMESTAMPTZ,
       reminder_message_sid TEXT,
       reminder_attempts INTEGER NOT NULL DEFAULT 0,
@@ -109,10 +117,32 @@ async function initReservationDatabase() {
     ALTER TABLE reservations ADD COLUMN IF NOT EXISTS order_items JSONB NOT NULL DEFAULT '[]'::jsonb;
     ALTER TABLE reservations ADD COLUMN IF NOT EXISTS order_total_sar NUMERIC(12,2) NOT NULL DEFAULT 0;
     ALTER TABLE reservations ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'form';
+    ALTER TABLE reservations ADD COLUMN IF NOT EXISTS staff_notes TEXT NOT NULL DEFAULT '';
+    ALTER TABLE reservations ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+    CREATE TABLE IF NOT EXISTS table_orders (
+      id BIGSERIAL PRIMARY KEY,
+      order_code TEXT UNIQUE NOT NULL,
+      table_number TEXT NOT NULL,
+      notes TEXT NOT NULL DEFAULT '',
+      staff_notes TEXT NOT NULL DEFAULT '',
+      order_items JSONB NOT NULL DEFAULT '[]'::jsonb,
+      order_total_sar NUMERIC(12,2) NOT NULL DEFAULT 0,
+      language TEXT NOT NULL DEFAULT 'ar',
+      source TEXT NOT NULL DEFAULT 'sara_voice',
+      status TEXT NOT NULL DEFAULT 'new',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    ALTER TABLE table_orders ADD COLUMN IF NOT EXISTS staff_notes TEXT NOT NULL DEFAULT '';
+    ALTER TABLE table_orders ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+    CREATE SEQUENCE IF NOT EXISTS table_order_number_seq START WITH 1 INCREMENT BY 1 MINVALUE 1;
+    CREATE INDEX IF NOT EXISTS table_orders_active_idx ON table_orders (status, created_at DESC);
+
     CREATE SEQUENCE IF NOT EXISTS reservation_number_seq START WITH 1 INCREMENT BY 1 MINVALUE 1;
     CREATE INDEX IF NOT EXISTS reservations_reminder_due_idx
       ON reservations (reservation_at)
-      WHERE reminder_sent_at IS NULL AND status = 'confirmed';
+      WHERE reminder_sent_at IS NULL AND status IN ('new','confirmed');
   `);
 
   // Keep the numeric sequence aligned with any existing numeric booking codes.
@@ -429,6 +459,101 @@ async function ensureReservationDatabaseReady() {
   }
 }
 
+
+
+// ======================================================
+// RESTAURANT DASHBOARD
+// ======================================================
+function parseCookies(req) {
+  const out = {};
+  String(req.headers.cookie || "").split(";").forEach(part => {
+    const i = part.indexOf("=");
+    if (i > 0) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+  });
+  return out;
+}
+function dashboardToken() {
+  const day = DateTime.now().setZone(RESTAURANT_TIMEZONE).toFormat("yyyy-LL-dd");
+  return crypto.createHmac("sha256", RESTAURANT_DASHBOARD_SECRET).update(`restaurant-dashboard:${day}`).digest("hex");
+}
+function safeEqual(a,b){
+  const aa=Buffer.from(String(a||"")), bb=Buffer.from(String(b||""));
+  return aa.length===bb.length && crypto.timingSafeEqual(aa,bb);
+}
+function requireRestaurantDashboard(req,res,next){
+  if (!RESTAURANT_DASHBOARD_PASSWORD) return res.status(503).json({ok:false,message:"أضف RESTAURANT_DASHBOARD_PASSWORD في Render أولًا."});
+  if (!safeEqual(parseCookies(req).restaurant_dashboard, dashboardToken())) return res.status(401).json({ok:false,message:"يرجى تسجيل الدخول."});
+  next();
+}
+app.get("/restaurant-dashboard", (req,res)=>res.sendFile(path.join(__dirname,"restaurant-dashboard.html")));
+app.post("/api/restaurant/login", (req,res)=>{
+  if (!RESTAURANT_DASHBOARD_PASSWORD) return res.status(503).json({ok:false,message:"أضف RESTAURANT_DASHBOARD_PASSWORD في Render أولًا."});
+  if (!safeEqual(req.body?.password, RESTAURANT_DASHBOARD_PASSWORD)) return res.status(401).json({ok:false,message:"كلمة المرور غير صحيحة."});
+  res.setHeader("Set-Cookie",`restaurant_dashboard=${dashboardToken()}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=86400`);
+  res.json({ok:true});
+});
+app.post("/api/restaurant/logout", (req,res)=>{res.setHeader("Set-Cookie","restaurant_dashboard=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0");res.json({ok:true})});
+app.get("/api/restaurant/reservations", requireRestaurantDashboard, async (req,res)=>{
+  try{
+    if(!db || !(await ensureReservationDatabaseReady())) return res.status(503).json({ok:false,message:"قاعدة الحجوزات غير جاهزة."});
+    const now=DateTime.now().setZone(RESTAURANT_TIMEZONE), start=now.startOf("day"), end=now.endOf("day");
+    const result=await db.query(`SELECT id, confirmation_code, customer_name, phone, party_size, reservation_at, notes, staff_notes, order_items, order_total_sar, source, language, status, created_at, updated_at FROM reservations ORDER BY reservation_at ASC`);
+    const rows=result.rows.map(r=>{
+      const local=DateTime.fromJSDate(new Date(r.reservation_at),{zone:"utc"}).setZone(RESTAURANT_TIMEZONE);
+      let bucket="archive";
+      if(local>=start && local<=end && !["completed","cancelled"].includes(r.status)) bucket="today";
+      else if(local>end && !["completed","cancelled"].includes(r.status)) bucket="upcoming";
+      const isLate=local<now && !["completed","cancelled"].includes(r.status);
+      if(isLate && local<start) bucket="today"; // unresolved old booking remains visible as overdue
+      return {...r,bucket,is_late:isLate};
+    });
+    res.json({ok:true,timezone:RESTAURANT_TIMEZONE,reservations:rows});
+  }catch(e){console.error("Dashboard reservations error",e);res.status(500).json({ok:false,message:"تعذر تحميل الحجوزات."})}
+});
+app.patch("/api/restaurant/reservations/:id/status", requireRestaurantDashboard, async(req,res)=>{
+  try{const allowed=["new","confirmed","arrived","completed","cancelled"];const status=String(req.body?.status||"");if(!allowed.includes(status))return res.status(400).json({ok:false,message:"حالة غير صحيحة."});const q=await db.query("UPDATE reservations SET status=$1, updated_at=NOW() WHERE id=$2 RETURNING id,status",[status,req.params.id]);if(!q.rowCount)return res.status(404).json({ok:false,message:"الحجز غير موجود."});res.json({ok:true,reservation:q.rows[0]})}catch(e){res.status(500).json({ok:false,message:"تعذر تحديث الحالة."})}
+});
+app.patch("/api/restaurant/reservations/:id/notes", requireRestaurantDashboard, async(req,res)=>{
+  try{const staffNotes=String(req.body?.staffNotes||"").trim().slice(0,1000);const q=await db.query("UPDATE reservations SET staff_notes=$1, updated_at=NOW() WHERE id=$2 RETURNING id,staff_notes",[staffNotes,req.params.id]);if(!q.rowCount)return res.status(404).json({ok:false,message:"الحجز غير موجود."});res.json({ok:true,reservation:q.rows[0]})}catch(e){res.status(500).json({ok:false,message:"تعذر حفظ الملاحظة."})}
+});
+
+
+app.get("/api/restaurant/table-orders", requireRestaurantDashboard, async (req,res)=>{
+  try{
+    if(!db || !(await ensureReservationDatabaseReady())) return res.status(503).json({ok:false,message:"قاعدة الطلبات غير جاهزة."});
+    const result=await db.query(`SELECT id, order_code, table_number, notes, staff_notes, order_items, order_total_sar, language, source, status, created_at, updated_at FROM table_orders ORDER BY created_at DESC LIMIT 500`);
+    res.json({ok:true,orders:result.rows});
+  }catch(e){console.error("Dashboard table orders error",e);res.status(500).json({ok:false,message:"تعذر تحميل طلبات الطاولات."})}
+});
+app.patch("/api/restaurant/table-orders/:id/status", requireRestaurantDashboard, async(req,res)=>{
+  try{const allowed=["new","preparing","ready","served","cancelled"];const status=String(req.body?.status||"");if(!allowed.includes(status))return res.status(400).json({ok:false,message:"حالة غير صحيحة."});const q=await db.query("UPDATE table_orders SET status=$1, updated_at=NOW() WHERE id=$2 RETURNING id,status",[status,req.params.id]);if(!q.rowCount)return res.status(404).json({ok:false,message:"الطلب غير موجود."});res.json({ok:true,order:q.rows[0]})}catch(e){res.status(500).json({ok:false,message:"تعذر تحديث حالة الطلب."})}
+});
+app.patch("/api/restaurant/table-orders/:id/notes", requireRestaurantDashboard, async(req,res)=>{
+  try{const staffNotes=String(req.body?.staffNotes||"").trim().slice(0,1000);const q=await db.query("UPDATE table_orders SET staff_notes=$1, updated_at=NOW() WHERE id=$2 RETURNING id,staff_notes",[staffNotes,req.params.id]);if(!q.rowCount)return res.status(404).json({ok:false,message:"الطلب غير موجود."});res.json({ok:true,order:q.rows[0]})}catch(e){res.status(500).json({ok:false,message:"تعذر حفظ الملاحظة."})}
+});
+app.post("/api/table-orders", async(req,res)=>{
+  try{
+    if(!db || !(await ensureReservationDatabaseReady())) return res.status(503).json({ok:false,message:"قاعدة الطلبات غير جاهزة."});
+    const {tableNumber, notes="", language="ar", orderItems=[]}=req.body||{};
+    const table=String(tableNumber||"").trim().replace(/[^0-9A-Za-zأ-ي_-]/g,"").slice(0,20);
+    if(!table) return res.status(400).json({ok:false,code:"INVALID_TABLE",message:"رقم الطاولة غير موجود في رابط QR."});
+    const items=Array.isArray(orderItems)?orderItems.slice(0,50).map(item=>{
+      const name=String(item?.name||"").trim().slice(0,160);
+      const quantity=Math.max(1,Math.min(20,Math.trunc(Number(item?.quantity)||1)));
+      const specialRequest=String(item?.specialRequest||"").trim().slice(0,300);
+      const unitPriceSar=Number(item?.unitPriceSar);
+      return {name,quantity,specialRequest,unitPriceSar:Number.isFinite(unitPriceSar)&&unitPriceSar>=0?Math.round(unitPriceSar*100)/100:null};
+    }).filter(x=>x.name):[];
+    if(!items.length) return res.status(400).json({ok:false,code:"EMPTY_ORDER",message:"الطلب لا يحتوي على أصناف."});
+    const total=Math.round(items.reduce((sum,x)=>sum+(Number.isFinite(x.unitPriceSar)?x.unitPriceSar*x.quantity:0),0)*100)/100;
+    const code=(await db.query("SELECT nextval('table_order_number_seq')::text AS code")).rows[0].code;
+    const lang=["ar","fr","en"].includes(language)?language:"ar";
+    const q=await db.query(`INSERT INTO table_orders (order_code,table_number,notes,order_items,order_total_sar,language) VALUES ($1,$2,$3,$4::jsonb,$5,$6) RETURNING *`,[code,table,String(notes||"").trim().slice(0,500),JSON.stringify(items),total,lang]);
+    const row=q.rows[0];
+    return res.status(201).json({ok:true,order:{id:row.id,code:row.order_code,tableNumber:row.table_number,notes:row.notes,orderItems:row.order_items,totalSar:Number(row.order_total_sar||0),status:row.status,createdAt:row.created_at}});
+  }catch(e){console.error("Table order save error",e);return res.status(500).json({ok:false,message:"تعذر حفظ طلب الطاولة."})}
+});
+
 app.post("/api/reservations", async (req, res) => {
   try {
     if (!db) {
@@ -700,13 +825,26 @@ app.post("/api/realtime-call", async (req, res) => {
                   properties: {
                     item_name: { type: "string", description: "Menu item name exactly as shown in the current language" },
                     quantity: { type: "integer", minimum: 1, maximum: 20 },
-                    special_request: { type: "string", description: "Item modification/request, empty string if none" }
+                    special_request: { type: "string", description: "Any modification tied to THIS item only (e.g. بدون خس، بدون بصل، الصوص على جنب). Never put item modifications in general booking notes. Empty string if none." }
                   },
                   required: ["item_name", "quantity", "special_request"]
                 }
               }
             },
             required: ["name", "phone", "party_size", "date", "time", "notes", "order_items"]
+          }
+        },
+        {
+          type: "function",
+          name: "confirm_table_order",
+          description: "Send the seated guest's food/drink order to the restaurant only after explicit confirmation.",
+          parameters: {
+            type: "object", additionalProperties: false,
+            properties: {
+              notes: { type: "string" },
+              order_items: { type: "array", minItems: 1, items: { type: "object", additionalProperties: false, properties: { item_name:{type:"string"}, quantity:{type:"integer",minimum:1,maximum:20}, special_request:{type:"string"} }, required:["item_name","quantity","special_request"] } }
+            },
+            required:["notes","order_items"]
           }
         }
       ],
@@ -946,6 +1084,22 @@ STYLE:
 // ======================================================
 // SPEECH TO TEXT
 // ======================================================
+function looksLikeArabicSttHallucination(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return false;
+  if (/[\u0600-\u06FF]/.test(raw)) return false;
+  const normalized = raw.toLowerCase().replace(/[.,!?;:'"()[\]{}]/g, " ").replace(/\s+/g, " ").trim();
+  const words = normalized.split(" ").filter(Boolean);
+  // Keep plausible single foreign menu/product names such as "cappuccino".
+  if (words.length <= 1) return false;
+  // Common short meta/assistant hallucinations produced from weak/noisy Arabic audio.
+  if (/\b(i should|i need|i would|i can|you should|we should|should ask|need to ask|thank you|thanks for|hello there)\b/.test(normalized)) return true;
+  // A short all-Latin sentence in Arabic-locked STT is suspicious; reject rather
+  // than displaying gibberish to the guest. Longer mixed requests pass through.
+  if (/^[a-z0-9\s\-]+$/.test(normalized) && words.length >= 2 && words.length <= 5 && normalized.length <= 42) return true;
+  return false;
+}
+
 app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
   try {
     if (!apiKey) {
@@ -997,6 +1151,15 @@ app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
       await openai.audio.transcriptions.create(options);
 
     const text = String(transcription.text || "").trim();
+
+    if (isHybrid3 && language === "ar" && looksLikeArabicSttHallucination(text)) {
+      console.warn("Rejected suspicious Arabic STT transcript:", text);
+      return res.status(422).json({
+        ok: false,
+        code: "UNCERTAIN_ARABIC_TRANSCRIPT",
+        message: "ما سمعت الجملة بوضوح، قلها مرة ثانية قريب من المايك."
+      });
+    }
 
     if (!text) {
       return res.status(422).json({
@@ -1131,7 +1294,7 @@ function altLanguageName(language) {
   return "Saudi Arabic";
 }
 
-function altSaraInstructions({ language = "ar", menu = [] } = {}) {
+function altSaraInstructions({ language = "ar", menu = [], tableNumber = "" } = {}) {
   const today = DateTime.now().setZone(RESTAURANT_TIMEZONE).toISODate();
   const languageRule = language === "fr"
     ? "Speak only natural, warm conversational French."
@@ -1143,6 +1306,14 @@ function altSaraInstructions({ language = "ar", menu = [] } = {}) {
 Today in the restaurant timezone (${RESTAURANT_TIMEZONE}) is ${today}.
 ${languageRule}
 
+IDENTITY / ROLE — ABSOLUTE RULES:
+- You are always Sara, the waitress. The guest is never Sara.
+- Never rewrite the guest's request as if you were the guest.
+- Never answer with planning/meta text such as "I should ask", "I need to ask", "I should respond", or hidden reasoning.
+- Reply only with the exact words Sara should say to the guest, or call the booking tool when appropriate.
+- In Arabic mode, your visible reply must be Arabic except for unavoidable menu/product names. Do not switch to English, Portuguese, Turkish, French, or any other language.
+- If the guest says they want a booking and provides some details, acknowledge those details as Sara and ask only for the next missing booking field.
+
 MENU AND SERVICE:
 - You know the supplied menu and should use only its data for items, descriptions and prices.
 - Never invent an item, ingredient, allergen, price or availability.
@@ -1150,6 +1321,15 @@ MENU AND SERVICE:
 - Keep normal replies very short and conversational, usually 1-2 sentences. Answer directly and avoid unnecessary setup so speech can start faster.
 - For ordinary questions, aim for roughly 30 spoken words or fewer unless the guest explicitly asks for details.
 - Sound like a real waitress, not a chatbot, and never mention APIs/models/providers.
+
+TABLE SERVICE MODE:
+${tableNumber ? `- The guest opened the menu from the QR code for TABLE ${tableNumber}. They are already seated in the restaurant.
+- For a normal food/drink order, do NOT ask for name, phone, date, time, or party size.
+- Collect the menu items, quantities, item-specific modifications, and any general order note.
+- Before sending, summarize the table order briefly and ask for explicit confirmation.
+- Only after explicit confirmation, call confirm_table_order. The table number is already known by the website.
+- Keep modifications attached to each exact item, e.g. Burger Classique (بدون خس).
+- Do not use confirm_booking_order for a seated-table order unless the guest separately asks to make a future reservation.` : `- No table QR is active, so use the reservation flow below when the guest asks to book.`}
 
 BOOKING + OPTIONAL PRE-ORDER:
 - You can collect name, WhatsApp phone, party size, date, time, notes, and optional menu items/quantities/modifications.
@@ -1194,7 +1374,7 @@ const confirmBookingOrderTool = {
             properties: {
               item_name: { type: "string" },
               quantity: { type: "integer", minimum: 1, maximum: 20 },
-              special_request: { type: "string" }
+              special_request: { type: "string", description: "Modification for this exact item only, such as بدون خس. Keep it attached to the item." }
             },
             required: ["item_name", "quantity", "special_request"]
           }
@@ -1204,6 +1384,38 @@ const confirmBookingOrderTool = {
     }
   }
 };
+
+const confirmTableOrderTool = {
+  type: "function",
+  function: {
+    name: "confirm_table_order",
+    description: "Send the seated guest's food/drink order to the restaurant only after explicit confirmation.",
+    strict: true,
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        notes: { type: "string", description: "General order note, empty string if none" },
+        order_items: {
+          type: "array",
+          minItems: 1,
+          items: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              item_name: { type: "string" },
+              quantity: { type: "integer", minimum: 1, maximum: 20 },
+              special_request: { type: "string", description: "Modification for this exact item only, e.g. بدون خس" }
+            },
+            required: ["item_name", "quantity", "special_request"]
+          }
+        }
+      },
+      required: ["notes", "order_items"]
+    }
+  }
+};
+
 
 app.get("/api/sara-alt-status", (req, res) => {
   return res.json({
@@ -1258,40 +1470,41 @@ function brainProviderConfig(provider) {
 
 function brainToolResult(call) {
   if (!call) return null;
-  return { id:call.id || `brain_${Date.now()}`, name:"confirm_booking_order", arguments:typeof call.arguments === "string" ? call.arguments : JSON.stringify(call.arguments || {}) };
+  return { id:call.id || `brain_${Date.now()}`, name:call.name || "confirm_booking_order", arguments:typeof call.arguments === "string" ? call.arguments : JSON.stringify(call.arguments || {}) };
 }
 
 async function callOpenAICompatibleBrain({ endpoint, apiKey, model, messages, extraBody = {}, strictTools = true }) {
   const response = await fetch(endpoint, {
     method:"POST",
     headers:{ Authorization:`Bearer ${apiKey}`, "Content-Type":"application/json" },
-    body:JSON.stringify({ model, messages, tools:[strictTools ? confirmBookingOrderTool : {...confirmBookingOrderTool,function:{...confirmBookingOrderTool.function,strict:undefined}}], tool_choice:"auto", max_tokens:160, temperature:0.25, ...extraBody })
+    body:JSON.stringify({ model, messages, tools:[confirmBookingOrderTool,confirmTableOrderTool].map(t=>strictTools?t:{...t,function:{...t.function,strict:undefined}}), tool_choice:"auto", max_tokens:160, temperature:0.25, ...extraBody })
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data?.error?.message || data?.message || `AI HTTP ${response.status}`);
   const message = data?.choices?.[0]?.message || {};
-  const call = Array.isArray(message.tool_calls) ? message.tool_calls.find(x => x?.function?.name === "confirm_booking_order") : null;
-  if (call) return { toolCall:brainToolResult({ id:call.id, arguments:call.function?.arguments }) };
+  const call = Array.isArray(message.tool_calls) ? message.tool_calls.find(x => ["confirm_booking_order","confirm_table_order"].includes(x?.function?.name)) : null;
+  if (call) return { toolCall:brainToolResult({ id:call.id, name:call.function?.name, arguments:call.function?.arguments }) };
   return { answer:String(message.content || "").trim() };
 }
 
 async function callClaudeBrain({ apiKey, model, system, history, userText }) {
-  const tools = [{
-    name:confirmBookingOrderTool.function.name,
-    description:confirmBookingOrderTool.function.description,
-    input_schema:confirmBookingOrderTool.function.parameters
-  }];
+  const tools = [confirmBookingOrderTool,confirmTableOrderTool].map(t=>({name:t.function.name,description:t.function.description,input_schema:t.function.parameters}));
   const messages = [...history, { role:"user", content:userText }];
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method:"POST",
-    headers:{ "x-api-key":apiKey, "anthropic-version":"2023-06-01", "content-type":"application/json" },
+    headers:{
+      "x-api-key":apiKey,
+      "anthropic-version":"2023-06-01",
+      ...(ANTHROPIC_WORKSPACE_ID ? {"anthropic-workspace-id":ANTHROPIC_WORKSPACE_ID} : {}),
+      "content-type":"application/json"
+    },
     body:JSON.stringify({ model, system, messages, tools, tool_choice:{type:"auto"}, max_tokens:160, temperature:0.25 })
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data?.error?.message || data?.message || `Claude HTTP ${response.status}`);
   const blocks = Array.isArray(data?.content) ? data.content : [];
-  const tool = blocks.find(x => x?.type === "tool_use" && x?.name === "confirm_booking_order");
-  if (tool) return { toolCall:brainToolResult({ id:tool.id, arguments:tool.input }) };
+  const tool = blocks.find(x => x?.type === "tool_use" && ["confirm_booking_order","confirm_table_order"].includes(x?.name));
+  if (tool) return { toolCall:brainToolResult({ id:tool.id, name:tool.name, arguments:tool.input }) };
   return { answer:blocks.filter(x => x?.type === "text").map(x => x.text).join(" ").trim() };
 }
 
@@ -1307,30 +1520,26 @@ function geminiSafeSchema(value) {
 }
 
 async function callGeminiBrain({ apiKey, model, system, history, userText }) {
-  const declaration = {
-    name:confirmBookingOrderTool.function.name,
-    description:confirmBookingOrderTool.function.description,
-    parameters:geminiSafeSchema(confirmBookingOrderTool.function.parameters)
-  };
+  const declarations = [confirmBookingOrderTool,confirmTableOrderTool].map(t=>({name:t.function.name,description:t.function.description,parameters:geminiSafeSchema(t.function.parameters)}));
   const contents = history.map(m => ({ role:m.role === "assistant" ? "model" : "user", parts:[{text:m.content}] }));
   contents.push({ role:"user", parts:[{text:userText}] });
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
   const response = await fetch(endpoint, {
     method:"POST",
     headers:{ "Content-Type":"application/json" },
-    body:JSON.stringify({ systemInstruction:{parts:[{text:system}]}, contents, tools:[{functionDeclarations:[declaration]}], generationConfig:{temperature:0.25,maxOutputTokens:160} })
+    body:JSON.stringify({ systemInstruction:{parts:[{text:system}]}, contents, tools:[{functionDeclarations:declarations}], generationConfig:{temperature:0.25,maxOutputTokens:160} })
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data?.error?.message || data?.message || `Gemini HTTP ${response.status}`);
   const parts = data?.candidates?.[0]?.content?.parts || [];
-  const fc = parts.find(x => x?.functionCall?.name === "confirm_booking_order")?.functionCall;
-  if (fc) return { toolCall:brainToolResult({ arguments:fc.args }) };
+  const fc = parts.find(x => ["confirm_booking_order","confirm_table_order"].includes(x?.functionCall?.name))?.functionCall;
+  if (fc) return { toolCall:brainToolResult({ name:fc.name, arguments:fc.args }) };
   return { answer:parts.map(x => x?.text || "").join(" ").trim() };
 }
 
 app.post("/api/sara-alt-chat", async (req, res) => {
   try {
-    const { question = "", history = [], menu = [], language = "ar", greeting = false, bookingState = null, provider = "deepseek" } = req.body || {};
+    const { question = "", history = [], menu = [], language = "ar", greeting = false, bookingState = null, tableNumber = "", provider = "deepseek" } = req.body || {};
     const cfg = brainProviderConfig(provider);
     if (!cfg.key) return res.status(401).json({ ok:false, code:`${cfg.provider.toUpperCase()}_NOT_CONFIGURED`, message:`مفتاح ${cfg.label} غير موجود في Render.` });
     const q = String(question || "").trim();
@@ -1340,7 +1549,7 @@ app.post("/api/sara-alt-chat", async (req, res) => {
       role: m?.role === "assistant" ? "assistant" : "user",
       content: String(m?.content || m?.text || "").trim()
     })).filter(m => m.content) : [];
-    const system = altSaraInstructions({ language, menu }) + (bookingState && typeof bookingState === "object" ? `\n\nKNOWN BOOKING STATE FROM THE WEBSITE (authoritative):\n${JSON.stringify(bookingState)}\nSTRICT BOOKING MEMORY RULES:\n- Never ask again for any field that already has a non-empty value in this state.\n- If the guest corrects only the WhatsApp number, replace only the phone and preserve name, party size, date, time, notes, and order.\n- If the guest asks you to repeat the WhatsApp number, repeat the stored phone exactly digit by digit; do not invent or regroup digits.\n- A correction does not restart the booking flow. Continue from the remaining missing field, or ask for final confirmation if nothing is missing.\n- When the guest confirms, fill tool arguments from this state instead of leaving fields blank.` : "");
+    const system = altSaraInstructions({ language, menu, tableNumber:String(tableNumber||"") }) + (bookingState && typeof bookingState === "object" ? `\n\nKNOWN BOOKING STATE FROM THE WEBSITE (authoritative):\n${JSON.stringify(bookingState)}\nSTRICT BOOKING MEMORY RULES:\n- Never ask again for any field that already has a non-empty value in this state.\n- If the guest corrects only the WhatsApp number, replace only the phone and preserve name, party size, date, time, notes, and order.\n- If the guest asks you to repeat the WhatsApp number, repeat the stored phone exactly digit by digit; do not invent or regroup digits.\n- A correction does not restart the booking flow. Continue from the remaining missing field, or ask for final confirmation if nothing is missing.\n- When the guest confirms, fill tool arguments from this state instead of leaving fields blank.` : "");
     const userText = greeting
       ? (language === "ar" ? "ابدئي الآن بالترحيب فقط: هلا والله، حياك في Café Victor Hugo، معك سارة، كيف أقدر أخدمك؟" : language === "fr" ? "Accueille brièvement le client et demande comment tu peux l'aider." : "Give a very brief welcome and ask how you can help.")
       : q;

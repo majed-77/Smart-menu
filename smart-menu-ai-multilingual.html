@@ -282,6 +282,10 @@ var speechSource = window.speechSource || null;
 var speechUnlocked = false;
 
 const TND_TO_SAR=1.2956;
+const saraTableNumber=(()=>{
+  const raw=new URLSearchParams(location.search).get('table');
+  return raw && /^[0-9A-Za-zأ-ي_-]{1,20}$/.test(raw.trim()) ? raw.trim() : '';
+})();
 function displayPrice(raw,lang){
   if(raw==='—') return lang==='ar'?'السعر غير مدرج':'—';
   if(lang!=='ar') return raw;
@@ -615,7 +619,15 @@ document.querySelectorAll('[data-site-lang]').forEach((btn)=>{
 });
 document.querySelector('#changeSiteLang').onclick=()=>welcomeOverlay.classList.remove('hidden');
 const globalWaiter=document.querySelector('#globalWaiter');
-if(globalWaiter) globalWaiter.onclick=()=>openWaiter();
+if(globalWaiter){
+  globalWaiter.onclick=()=>openWaiter();
+  if(saraTableNumber){
+    globalWaiter.title=`طاولة ${saraTableNumber}`;
+    const chip=document.createElement('div'); chip.id='tableQrBadge'; chip.textContent=`🪑 طاولة ${saraTableNumber}`;
+    chip.style.cssText='position:fixed;inset-inline-end:20px;bottom:78px;z-index:24;background:#17130fee;color:#fff;border:1px solid #ffffff26;border-radius:999px;padding:8px 12px;font-weight:800;font-size:13px';
+    document.body.appendChild(chip);
+  }
+}
 
 menu.forEach((s,i)=>{
  const b=document.createElement('button');
@@ -701,6 +713,13 @@ ${languageRule}
 إذا سأل عن سعر غير مدرج بعلامة — فقولي إن السعر غير مدرج.
 لا تخترعي مكونات أو حساسية أو أسعار أو توفر غير موجود في المنيو.
 ${lang==='ar'?'للعميل العربي: لا تشرحي أن الأسعار محوّلة ولا تقولي عبارة «بالريال السعودي». إذا احتجتِ ذكر سعر صنف فقولي السعر طبيعي داخل الجملة، مثل: «سعره حوالي 26 ريال» أو عند تعداد الأصناف: «برغر كلاسيك، 28 ريال». لا تذكري الدينار التونسي أو DT أو TND نهائيًا. وإذا كان السعر غير مدرج فقولي فقط: السعر غير مدرج.':''}
+
+${saraTableNumber?`طلب من داخل المطعم:
+- العميل فتح المنيو من QR الخاص بالطاولة رقم ${saraTableNumber} وهو جالس بالمطعم الآن.
+- إذا طلب أكل أو مشروبات، لا تسألين عن الاسم أو الجوال أو التاريخ أو الوقت. رقم الطاولة معروف تلقائيًا.
+- اجمعي الأصناف والكميات وأي تعديل على كل صنف مثل بدون خس أو بدون بصل.
+- لخصي الطلب واسألي «أعتمد الطلب؟». بعد تأكيد واضح فقط استدعي confirm_table_order.
+- لا تستخدمين confirm_booking_order لهذا الطلب العادي من الطاولة. إذا طلب العميل حجزًا مستقبليًا بشكل منفصل استخدمي مسار الحجز.`:''}
 
 الحجز والطلب:
 - تقدرين تسوين حجز طاولة مع طلب مسبق من المنيو داخل نفس المحادثة.
@@ -830,6 +849,36 @@ function saraToolMessage(kind,data={}){
   if(kind==='success') return lang==='ar'?`تم حفظ الحجز والطلب بنجاح. رقم الحجز ${data.code}.`:lang==='fr'?`Réservation et commande enregistrées. Numéro ${data.code}.`:`Booking and order saved successfully. Confirmation code ${data.code}.`;
   return lang==='ar'?'تعذر حفظ الحجز الآن. اعتذري للعميل واطلبي منه المحاولة مرة ثانية.':lang==='fr'?`Impossible d’enregistrer la réservation maintenant. Présente tes excuses et propose de réessayer.`:`The booking could not be saved right now. Apologize and ask the guest to try again.`;
 }
+
+async function saveSaraTableOrder(args={}){
+  const resolved=[];
+  for(const item of (Array.isArray(args.order_items)?args.order_items:[])){
+    const found=resolveSaraOrderItem(item?.item_name);
+    if(!found) throw Object.assign(new Error(`ما لقيت الصنف «${item?.item_name||''}» بالمنيو بشكل واضح.`),{code:'MENU_ITEM_NOT_FOUND'});
+    resolved.push({name:found.canonicalName,quantity:Math.max(1,Math.min(20,Number(item?.quantity)||1)),specialRequest:String(item?.special_request||'').trim(),unitPriceSar:found.unitPriceSar});
+  }
+  if(!saraTableNumber) throw new Error('رقم الطاولة غير موجود في رابط QR.');
+  const r=await fetch('/api/table-orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tableNumber:saraTableNumber,notes:String(args.notes||'').trim(),language:waiterLanguage,orderItems:resolved})});
+  const data=await r.json().catch(()=>({}));
+  if(!r.ok||!data.order) throw new Error(data.message||'تعذر حفظ طلب الطاولة');
+  return data.order;
+}
+async function handleSaraTableOrderTool(callId,argsText){
+  if(!callId || realtimeProcessedToolCalls.has(callId)) return;
+  realtimeProcessedToolCalls.add(callId);
+  realtimeAssistantSpeaking=true; setRealtimeMicEnabled(false);
+  status.textContent=waiterLanguage==='ar'?`لحظة، أرسل طلب طاولة ${saraTableNumber}…`:'Sending your table order…';
+  let args={}; try{args=JSON.parse(argsText||'{}')}catch(e){}
+  try{
+    const order=await saveSaraTableOrder(args);
+    const output={ok:true,message:`تم إرسال الطلب للطاولة ${order.tableNumber}. رقم الطلب ${order.code}.`,order};
+    realtimeDC.send(JSON.stringify({type:'conversation.item.create',item:{type:'function_call_output',call_id:callId,output:JSON.stringify(output)}}));
+    realtimeDC.send(JSON.stringify({type:'response.create',response:{instructions:waiterLanguage==='ar'?`قولي باختصار: تم إرسال طلبك للمطعم لطاولة ${order.tableNumber}، ورقم الطلب ${order.code}.`:`Briefly confirm the table order was sent. Order number ${order.code}.`}}));
+  }catch(err){
+    const output={ok:false,message:String(err.message||'تعذر إرسال الطلب')};
+    try{realtimeDC.send(JSON.stringify({type:'conversation.item.create',item:{type:'function_call_output',call_id:callId,output:JSON.stringify(output)}}));realtimeDC.send(JSON.stringify({type:'response.create',response:{instructions:`اعتذري باختصار: ${output.message}`}}));}catch(e){}
+  }
+}
 async function handleSaraBookingTool(callId,argsText){
   if(!callId || realtimeProcessedToolCalls.has(callId)) return;
   realtimeProcessedToolCalls.add(callId);
@@ -889,8 +938,16 @@ function handleRealtimeEvent(event){
   let e;
   try{e=JSON.parse(event.data);}catch(err){return;}
 
+  if(e.type==='response.function_call_arguments.done' && e.name==='confirm_table_order'){
+    handleSaraTableOrderTool(e.call_id,e.arguments);
+    return;
+  }
   if(e.type==='response.function_call_arguments.done' && e.name==='confirm_booking_order'){
     handleSaraBookingTool(e.call_id,e.arguments);
+    return;
+  }
+  if(e.type==='response.output_item.done' && e.item?.type==='function_call' && e.item?.name==='confirm_table_order'){
+    handleSaraTableOrderTool(e.item.call_id,e.item.arguments);
     return;
   }
   if(e.type==='response.output_item.done' && e.item?.type==='function_call' && e.item?.name==='confirm_booking_order'){
@@ -1091,10 +1148,17 @@ function exp3MergeToolArgs(args){const st=exp3BookingArgsFromState();return {...
 async function askAltSara(question,{greeting=false}={}){
   return altFetchJSON('/api/sara-alt-chat',{
     method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question,menu:compactMenu(),history:conversationHistory.slice(isBrainSaraEngine()?-8:-10),language:waiterLanguage,greeting,bookingState:isBrainSaraEngine()?altBookingState:null,provider:isBrainSaraEngine()?saraBrainProvider():'deepseek'})
+    body:JSON.stringify({question,menu:compactMenu(),history:conversationHistory.slice(isBrainSaraEngine()?-8:-10),language:waiterLanguage,greeting,tableNumber:saraTableNumber,bookingState:isBrainSaraEngine()&&!saraTableNumber?altBookingState:null,provider:isBrainSaraEngine()?saraBrainProvider():'deepseek'})
   },60000);
 }
 
+
+async function handleAltTableOrderTool(toolCall){
+  let args={}; try{args=JSON.parse(toolCall?.arguments||'{}')}catch(e){}
+  status.textContent=waiterLanguage==='ar'?`لحظة، أرسل طلب طاولة ${saraTableNumber}…`:'Sending your table order…';
+  const order=await saveSaraTableOrder(args);
+  return waiterLanguage==='ar'?`تم، أرسلت طلبك للمطعم لطاولة ${order.tableNumber}. رقم طلبك ${order.code}.`:waiterLanguage==='fr'?`C'est envoyé à la table ${order.tableNumber}. Numéro de commande ${order.code}.`:`Done. Your order was sent for table ${order.tableNumber}. Order number ${order.code}.`;
+}
 async function handleAltBookingTool(toolCall){
   let args={}; try{args=JSON.parse(toolCall?.arguments||'{}');}catch(e){}
   if(isBrainSaraEngine()) args=exp3MergeToolArgs(args);
@@ -1331,23 +1395,23 @@ async function processAltVoice(blob,mime){
       return;
     }
     altCaptureStartedDuringSara=false;
-    const wasPhoneCorrection=isBrainSaraEngine() && exp3IsPhoneCorrection(q);
-    if(isBrainSaraEngine())exp3UpdateBookingState(q,'user');
+    const wasPhoneCorrection=isBrainSaraEngine() && !saraTableNumber && exp3IsPhoneCorrection(q);
+    if(isBrainSaraEngine()&&!saraTableNumber)exp3UpdateBookingState(q,'user');
     addBubble('user',q); conversationHistory.push({role:'user',content:q});
     status.textContent=isExplicitBookingConfirmation(q)&&waiterLanguage==='ar'?'تمام، أعتمد الحجز…':TEXT[waiterLanguage].thinking;
     let answer='';
-    if(isBrainSaraEngine() && exp3IsRepeatPhoneRequest(q) && altBookingState.phone){
+    if(isBrainSaraEngine() && !saraTableNumber && exp3IsRepeatPhoneRequest(q) && altBookingState.phone){
       answer=`رقم الواتساب المسجل عندي ${exp3PhoneDisplay(altBookingState.phone)}.`;
     }else if(isBrainSaraEngine() && wasPhoneCorrection && altBookingState.phone){
       answer=exp3PhoneReplyAfterCorrection();
-    }else if(isBrainSaraEngine() && altAwaitingBookingApproval() && isExplicitBookingConfirmation(q) && exp3CanConfirmBookingNow()){
+    }else if(isBrainSaraEngine() && !saraTableNumber && altAwaitingBookingApproval() && isExplicitBookingConfirmation(q) && exp3CanConfirmBookingNow()){
       answer=await exp3ConfirmBookingDirectly();
     }else{
       const data=await askAltSara(q);
-      if(data.toolCall?.name==='confirm_booking_order') answer=await handleAltBookingTool(data.toolCall); else answer=String(data.answer||'').trim();
+      if(data.toolCall?.name==='confirm_table_order') answer=await handleAltTableOrderTool(data.toolCall); else if(data.toolCall?.name==='confirm_booking_order') answer=await handleAltBookingTool(data.toolCall); else answer=String(data.answer||'').trim();
     }
     if(!answer)throw new Error('No answer');
-    if(isBrainSaraEngine())exp3UpdateBookingState(answer,'assistant');
+    if(isBrainSaraEngine()&&!saraTableNumber)exp3UpdateBookingState(answer,'assistant');
     addBubble('assistant',answer); conversationHistory.push({role:'assistant',content:answer}); status.textContent=TEXT[waiterLanguage].ready;
     if(isBrainSaraEngine()) await speakAI(answer); else await speakAltSara(answer,{waitForEnd:false});
     altBusy=false;
@@ -1359,22 +1423,22 @@ async function processAltVoice(blob,mime){
 async function submitAltQuestion(q){
   q=String(q||'').trim();if(!q)return;
   q=normalizeAltBookingApprovalTranscript(q);
-  const wasPhoneCorrection=isBrainSaraEngine() && exp3IsPhoneCorrection(q);
-  if(isBrainSaraEngine())exp3UpdateBookingState(q,'user');
+  const wasPhoneCorrection=isBrainSaraEngine() && !saraTableNumber && exp3IsPhoneCorrection(q);
+  if(isBrainSaraEngine()&&!saraTableNumber)exp3UpdateBookingState(q,'user');
   stopAltSpeechForBargeIn(); addBubble('user',q);conversationHistory.push({role:'user',content:q});input.value='';altBusy=true;status.textContent=TEXT[waiterLanguage].thinking;
   try{
     let answer='';
-    if(isBrainSaraEngine() && exp3IsRepeatPhoneRequest(q) && altBookingState.phone){
+    if(isBrainSaraEngine() && !saraTableNumber && exp3IsRepeatPhoneRequest(q) && altBookingState.phone){
       answer=`رقم الواتساب المسجل عندي ${exp3PhoneDisplay(altBookingState.phone)}.`;
     }else if(isBrainSaraEngine() && wasPhoneCorrection && altBookingState.phone){
       answer=exp3PhoneReplyAfterCorrection();
-    }else if(isBrainSaraEngine() && altAwaitingBookingApproval() && isExplicitBookingConfirmation(q) && exp3CanConfirmBookingNow()){
+    }else if(isBrainSaraEngine() && !saraTableNumber && altAwaitingBookingApproval() && isExplicitBookingConfirmation(q) && exp3CanConfirmBookingNow()){
       answer=await exp3ConfirmBookingDirectly();
     }else{
       const data=await askAltSara(q);
-      if(data.toolCall?.name==='confirm_booking_order')answer=await handleAltBookingTool(data.toolCall);else answer=String(data.answer||'').trim();
+      if(data.toolCall?.name==='confirm_table_order')answer=await handleAltTableOrderTool(data.toolCall);else if(data.toolCall?.name==='confirm_booking_order')answer=await handleAltBookingTool(data.toolCall);else answer=String(data.answer||'').trim();
     }
-    if(!answer)throw new Error('No answer'); if(isBrainSaraEngine())exp3UpdateBookingState(answer,'assistant'); addBubble('assistant',answer);conversationHistory.push({role:'assistant',content:answer});status.textContent=TEXT[waiterLanguage].ready;if(isBrainSaraEngine())await speakAI(answer);else await speakAltSara(answer,{waitForEnd:false});altBusy=false;
+    if(!answer)throw new Error('No answer'); if(isBrainSaraEngine()&&!saraTableNumber)exp3UpdateBookingState(answer,'assistant'); addBubble('assistant',answer);conversationHistory.push({role:'assistant',content:answer});status.textContent=TEXT[waiterLanguage].ready;if(isBrainSaraEngine())await speakAI(answer);else await speakAltSara(answer,{waitForEnd:false});altBusy=false;
   }catch(e){altBusy=false;status.textContent=e.message||TEXT[waiterLanguage].serverError;showDiagnostic(status.textContent,false);}
 }
 
