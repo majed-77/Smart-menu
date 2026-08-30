@@ -496,11 +496,14 @@ app.get("/api/restaurant/reservations", requireRestaurantDashboard, async (req,r
     const result=await db.query(`SELECT id, confirmation_code, customer_name, phone, party_size, reservation_at, notes, staff_notes, order_items, order_total_sar, source, language, status, created_at, updated_at FROM reservations ORDER BY reservation_at ASC`);
     const rows=result.rows.map(r=>{
       const local=DateTime.fromJSDate(new Date(r.reservation_at),{zone:"utc"}).setZone(RESTAURANT_TIMEZONE);
+      // Daily dashboard logic (restaurant local time):
+      // past reservations always leave the live "today" screen at midnight,
+      // future reservations stay saved under "upcoming", and only the current
+      // local calendar day contributes to today's counters.
       let bucket="archive";
       if(local>=start && local<=end && !["completed","cancelled"].includes(r.status)) bucket="today";
       else if(local>end && !["completed","cancelled"].includes(r.status)) bucket="upcoming";
-      const isLate=local<now && !["completed","cancelled"].includes(r.status);
-      if(isLate && local<start) bucket="today"; // unresolved old booking remains visible as overdue
+      const isLate=local>=start && local<now && !["completed","cancelled"].includes(r.status);
       return {...r,bucket,is_late:isLate};
     });
     res.json({ok:true,timezone:RESTAURANT_TIMEZONE,reservations:rows});
@@ -517,8 +520,14 @@ app.patch("/api/restaurant/reservations/:id/notes", requireRestaurantDashboard, 
 app.get("/api/restaurant/table-orders", requireRestaurantDashboard, async (req,res)=>{
   try{
     if(!db || !(await ensureReservationDatabaseReady())) return res.status(503).json({ok:false,message:"قاعدة الطلبات غير جاهزة."});
+    const now=DateTime.now().setZone(RESTAURANT_TIMEZONE), start=now.startOf("day"), end=now.endOf("day");
     const result=await db.query(`SELECT id, order_code, table_number, notes, staff_notes, order_items, order_total_sar, language, source, status, created_at, updated_at FROM table_orders ORDER BY created_at DESC LIMIT 500`);
-    res.json({ok:true,orders:result.rows});
+    const rows=result.rows.map(r=>{
+      const local=DateTime.fromJSDate(new Date(r.created_at),{zone:"utc"}).setZone(RESTAURANT_TIMEZONE);
+      const bucket=(local>=start && local<=end)?"today":"archive";
+      return {...r,bucket};
+    });
+    res.json({ok:true,timezone:RESTAURANT_TIMEZONE,day:start.toISODate(),orders:rows});
   }catch(e){console.error("Dashboard table orders error",e);res.status(500).json({ok:false,message:"تعذر تحميل طلبات الطاولات."})}
 });
 app.patch("/api/restaurant/table-orders/:id/status", requireRestaurantDashboard, async(req,res)=>{
