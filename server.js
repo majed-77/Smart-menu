@@ -1220,6 +1220,21 @@ function prepareArabicSaraTTS(text) {
   });
   return out;
 }
+const saraTtsCache = new Map();
+function getSaraTtsCache(key){
+  const hit=saraTtsCache.get(key);
+  if(!hit)return null;
+  // Refresh insertion order for a tiny LRU cache.
+  saraTtsCache.delete(key); saraTtsCache.set(key,hit);
+  return hit;
+}
+function setSaraTtsCache(key,buffer){
+  saraTtsCache.set(key,buffer);
+  while(saraTtsCache.size>40){
+    const oldest=saraTtsCache.keys().next().value; saraTtsCache.delete(oldest);
+  }
+}
+
 app.post("/api/tts", async (req, res) => {
   try {
     const {
@@ -1256,6 +1271,15 @@ app.post("/api/tts", async (req, res) => {
         : "أنتِ سارة، موظفة سعودية شابة في مطعم في السعودية. تكلمي باللهجة السعودية البيضاء فقط، بميل نجدي خفيف وطبيعي. ممنوع اللهجة المصرية تمامًا، وكذلك الشامية والتونسية. لا تستخدمي نبرة أو إيقاع مصري. لا تتكلمي كأنك مذيعة أو قارئة نص. خلي الأداء محادثة سعودية يومية حقيقية، دافئة وواثقة وودودة، بسرعة طبيعية وجمل قصيرة. انطقي الجيم جيمًا سعودية واضحة، والهمزة والعين والحاء بوضوح. لا تفصّحي الكلمات ولا تمدّي الحروف ولا ترفعي النبرة في نهاية كل جملة. الوقفات قصيرة والنبرة ثابتة من أول الرد لآخره. التزمي بالتشكيل الموجود للكلمات الصعبة فقط. لا تبدين كمساعد آلي ولا كصوت إعلانات.";
 
     const ttsText = language === "ar" ? prepareArabicSaraTTS(cleanText) : cleanText;
+    const cacheKey = `${language}|coral|${ttsText}`;
+    const cached = cleanText.length <= 220 ? getSaraTtsCache(cacheKey) : null;
+    if (cached) {
+      res.setHeader("Content-Type", "audio/mpeg");
+      res.setHeader("Content-Length", cached.length);
+      res.setHeader("Cache-Control", "private, max-age=3600");
+      res.setHeader("X-Sara-TTS-Cache", "HIT");
+      return res.send(cached);
+    }
 
     const speech = await openai.audio.speech.create({
       model: "gpt-4o-mini-tts",
@@ -1267,6 +1291,7 @@ app.post("/api/tts", async (req, res) => {
     });
 
     const buffer = Buffer.from(await speech.arrayBuffer());
+    if (cleanText.length <= 220) setSaraTtsCache(cacheKey, buffer);
 
     res.setHeader("Content-Type", "audio/mpeg");
     res.setHeader("Content-Length", buffer.length);
@@ -1555,7 +1580,7 @@ app.post("/api/sara-alt-chat", async (req, res) => {
     const q = String(question || "").trim();
     if (!q && !greeting) return res.status(400).json({ ok:false, code:"EMPTY_MESSAGE", message:"لا يوجد كلام لإرساله إلى سارة." });
 
-    const cleanHistory = Array.isArray(history) ? history.slice(-8).map(m => ({
+    const cleanHistory = Array.isArray(history) ? history.slice(-4).map(m => ({
       role: m?.role === "assistant" ? "assistant" : "user",
       content: String(m?.content || m?.text || "").trim()
     })).filter(m => m.content) : [];

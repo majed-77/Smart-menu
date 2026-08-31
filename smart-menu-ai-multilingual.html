@@ -1171,7 +1171,7 @@ function exp3MergeToolArgs(args){
 async function askAltSara(question,{greeting=false}={}){
   return altFetchJSON('/api/sara-alt-chat',{
     method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question,menu:compactMenu(),history:conversationHistory.slice(isBrainSaraEngine()?-8:-10),language:waiterLanguage,greeting,tableNumber:saraTableNumber,bookingState:isBrainSaraEngine()&&!saraTableNumber?altBookingState:null,provider:isBrainSaraEngine()?saraBrainProvider():'deepseek'})
+    body:JSON.stringify({question,menu:compactMenu(),history:conversationHistory.slice(isBrainSaraEngine()?-4:-10),language:waiterLanguage,greeting,tableNumber:saraTableNumber,bookingState:isBrainSaraEngine()&&!saraTableNumber?altBookingState:null,provider:isBrainSaraEngine()?saraBrainProvider():'deepseek'})
   },60000);
 }
 
@@ -1280,7 +1280,7 @@ function runAltVAD(){
     const startThreshold=isHybrid3?0.030:0.055;
     const keepThreshold=isHybrid3?0.021:0.040;
     const minSpeechMs=isHybrid3?240:220;
-    const endSilenceMs=isHybrid3?1050:600;
+    const endSilenceMs=isHybrid3?780:600;
     const canStart=!altBusy || (isHybrid3 && altSpeaking);
 
     if(canStart && !altCapturing){
@@ -1605,13 +1605,16 @@ async function startHybrid3(){
     altNoiseReadyAt=0;
     altStarted=true; altBusy=true;
     showDiagnostic((waiterLanguage==='ar'?'🧠 ':'🧠 ')+saraBrainLabel()+(waiterLanguage==='ar'?' جاهز':waiterLanguage==='fr'?' prêt':' ready'),true);
-    const data=await askAltSara('',{greeting:true});
-    const answer=String(data.answer||'').trim();
-    if(answer){
-      addBubble('assistant',answer); conversationHistory.push({role:'assistant',content:answer});
-      status.textContent=TEXT[waiterLanguage].ready;
-      await speakAI(answer);
-    }
+    // Fast greeting: this sentence is fixed, so do not wait for the brain API.
+    // Show it immediately and start TTS while the rest of the voice session finishes.
+    const answer=waiterLanguage==='ar'
+      ? 'هلا والله، حياك في Café Victor Hugo، معك سارة، كيف أقدر أخدمك؟'
+      : waiterLanguage==='fr'
+      ? 'Bienvenue au Café Victor Hugo, je suis Sara. Comment puis-je vous aider ?'
+      : 'Welcome to Café Victor Hugo, I’m Sara. How can I help you?';
+    addBubble('assistant',answer); conversationHistory.push({role:'assistant',content:answer});
+    status.textContent=TEXT[waiterLanguage].ready;
+    await speakAI(answer);
     altBusy=false; runAltVAD(); status.textContent=TEXT[waiterLanguage].ready;
   }catch(e){
     console.error('Hybrid 3 start failed',e); closeAltSara(); status.textContent=e.message; showDiagnostic(e.message,false);
