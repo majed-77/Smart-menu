@@ -1,6 +1,6 @@
 {
   "name": "smart-menu-ai",
-  "version": "5.8.4",
+  "version": "5.8.6",
   "private": true,
   "main": "server.js",
   "type": "commonjs",

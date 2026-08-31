@@ -701,7 +701,7 @@ function realtimeInstructions(){
 
   const languageRule=
     lang==='ar'
-      ?`تكلمي بلهجة سعودية بيضاء طبيعية تميل لنجد، بنبرة دافئة وواضحة. استخدمي كلام يومي مثل: هلا، أبشري/أبشر، وش ودك، تبي، تمام، من عيوني، بدون مبالغة. تجنبي الفصحى الرسمية واللهجات المصرية والشامية والتونسية.`
+      ?`تكلمي بلهجة سعودية بيضاء طبيعية تميل لنجد، وبنفس اللهجة من أول المحادثة لآخرها. استخدمي كلام يومي مثل: هلا، أبشري/أبشر، وش ودك، تبي، ودك، تمام، من عيوني، خلاص. لا تغيّرين اللهجة بين الردود. تجنبي الفصحى الرسمية واللهجات المصرية والشامية والتونسية وألفاظ مثل شو، عايز، وايد، شلون، برشا.`
       :lang==='fr'
       ?`Parle uniquement en français naturel, chaleureux et conversationnel.`
       :`Speak only in natural, warm conversational English.`;
@@ -715,16 +715,18 @@ ${languageRule}
 لا تخترعي مكونات أو حساسية أو أسعار أو توفر غير موجود في المنيو.
 ${lang==='ar'?'للعميل العربي: لا تشرحي أن الأسعار محوّلة ولا تقولي عبارة «بالريال السعودي». إذا احتجتِ ذكر سعر صنف فقولي السعر طبيعي داخل الجملة، مثل: «سعره حوالي 26 ريال» أو عند تعداد الأصناف: «برغر كلاسيك، 28 ريال». لا تذكري الدينار التونسي أو DT أو TND نهائيًا. وإذا كان السعر غير مدرج فقولي فقط: السعر غير مدرج.':''}
 
-${saraTableNumber?`طلب من داخل المطعم:
-- العميل فتح المنيو من QR الخاص بالطاولة رقم ${saraTableNumber} وهو جالس بالمطعم الآن.
-- إذا طلب أكل أو مشروبات، لا تسألين عن الاسم أو الجوال أو التاريخ أو الوقت. رقم الطاولة معروف تلقائيًا.
-- اجمعي الأصناف والكميات وأي تعديل على كل صنف مثل بدون خس أو بدون بصل.
-- لخصي الطلب واسألي «أعتمد الطلب؟». بعد تأكيد واضح فقط استدعي confirm_table_order.
-- لا تستخدمين confirm_booking_order لهذا الطلب العادي من الطاولة. إذا طلب العميل حجزًا مستقبليًا بشكل منفصل استخدمي مسار الحجز.`:`طلب خارجي من رابط المنيو:
-- العميل فتح المنيو بدون QR طاولة، وهذا لا يمنعه من الطلب. إذا طلب أكل أو مشروبات بدون أن يطلب حجزًا، اعتبريه طلب استلام خارجي من المطعم.
-- اجمعي الأصناف والكميات والتعديلات، ثم الاسم ورقم الجوال/واتساب فقط. لا تسألين عن عدد الأشخاص أو تاريخ ووقت الحجز للطلب الخارجي.
-- لخصي الطلب واسألي «أعتمد الطلب؟». بعد تأكيد واضح فقط استدعي confirm_table_order مع customer_name و phone.
-- إذا قال بوضوح إنه يريد حجز طاولة مستقبلًا فقط وقتها استخدمي confirm_booking_order.`}
+${saraTableNumber?`طلب من داخل المطعم عبر QR:
+- العميل على الطاولة رقم ${saraTableNumber} الآن.
+- إذا طلب أكل أو مشروبات، لا تسألين عن الاسم أو الجوال أو التاريخ أو الوقت.
+- اجمعي الأصناف والكميات وأي تعديل على كل صنف، واحفظي التعديل مع نفس الصنف في special_request مثل: برجر (بدون مايونيز).
+- لخصي الطلب واسألي «أعتمد الطلب؟». بعد تأكيد واضح فقط استدعي confirm_table_order مع order_mode="table".
+- إذا طلب العميل حجزًا مستقبليًا بشكل منفصل استخدمي مسار الحجز.`:`العميل داخل من رابط المنيو العادي بدون QR:
+- عنده 3 خيارات مستقلة: يطلب ويأكل/يشرب داخل المطعم، أو يطلب استلام خارجي، أو يحجز طاولة فقط.
+- إذا بدأ يطلب أكل أو مشروبات وما حدد الطريقة، اسأليه مرة واحدة فقط: «تبيه هنا بالمطعم ولا استلام خارجي؟».
+- إذا قال هنا/بالمطعم/باكل عندكم: اجمعي الأصناف والكميات والتعديلات والاسم فقط للتعريف، ثم استدعي confirm_table_order مع order_mode="dinein" بعد التأكيد. الجوال اختياري.
+- إذا قال استلام/سفري/خارجي: اجمعي الأصناف والكميات والتعديلات والاسم والجوال، ثم استدعي confirm_table_order مع order_mode="external" بعد التأكيد.
+- إذا قال إنه يريد حجز طاولة فقط: استخدمي confirm_booking_order ولا تنشئين طلب أكل إلا إذا طلب طلبًا مسبقًا.
+- أي إضافة أو حذف تخص صنفًا لازم تبقى داخل special_request للصنف نفسه، مثل «بدون مايونيز» أو «جبن إضافي»، ولا تحطيها كملاحظة عامة.`}
 
 الحجز والطلب:
 - تقدرين تسوين حجز طاولة مع طلب مسبق من المنيو داخل نفس المحادثة.
@@ -864,9 +866,11 @@ async function saveSaraTableOrder(args={}){
   }
   const customerName=String(args.customer_name||args.name||'').trim();
   const customerPhone=normalizeSaraPhone(args.phone||'');
-  if(!saraTableNumber && !customerName) throw new Error('احتاج اسمك عشان أرسل الطلب الخارجي للمطعم.');
-  if(!saraTableNumber && !customerPhone) throw new Error('احتاج رقم جوالك عشان أرسل الطلب الخارجي للمطعم.');
-  const r=await fetch('/api/table-orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tableNumber:saraTableNumber,customerName,phone:customerPhone,notes:String(args.notes||'').trim(),language:waiterLanguage,orderItems:resolved})});
+  const requestedMode=String(args.order_mode||'').toLowerCase();
+  const orderMode=saraTableNumber?'table':(requestedMode==='dinein'?'dinein':'external');
+  if(orderMode!=='table' && !customerName) throw new Error(orderMode==='dinein'?'احتاج اسمك عشان أرسل طلب الأكل داخل المطعم.':'احتاج اسمك عشان أرسل طلب الاستلام الخارجي.');
+  if(orderMode==='external' && !customerPhone) throw new Error('احتاج رقم جوالك عشان أرسل طلب الاستلام الخارجي.');
+  const r=await fetch('/api/table-orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tableNumber:saraTableNumber,orderMode,customerName,phone:customerPhone,notes:String(args.notes||'').trim(),language:waiterLanguage,orderItems:resolved})});
   const data=await r.json().catch(()=>({}));
   if(!r.ok||!data.order) throw new Error(data.message||'تعذر حفظ طلب الطاولة');
   return data.order;
@@ -879,9 +883,10 @@ async function handleSaraTableOrderTool(callId,argsText){
   let args={}; try{args=JSON.parse(argsText||'{}')}catch(e){}
   try{
     const order=await saveSaraTableOrder(args);
-    const output={ok:true,message:`تم إرسال الطلب للطاولة ${order.tableNumber}. رقم الطلب ${order.code}.`,order};
+    const modeLabel=order.orderMode==='dinein'?'للأكل داخل المطعم':order.orderMode==='external'?'للاستلام الخارجي':`لطاولة ${order.tableNumber}`;
+    const output={ok:true,message:`تم إرسال الطلب ${modeLabel}. رقم الطلب ${order.code}.`,order};
     realtimeDC.send(JSON.stringify({type:'conversation.item.create',item:{type:'function_call_output',call_id:callId,output:JSON.stringify(output)}}));
-    realtimeDC.send(JSON.stringify({type:'response.create',response:{instructions:waiterLanguage==='ar'?`قولي باختصار: تم إرسال طلبك للمطعم لطاولة ${order.tableNumber}، ورقم الطلب ${order.code}.`:`Briefly confirm the table order was sent. Order number ${order.code}.`}}));
+    realtimeDC.send(JSON.stringify({type:'response.create',response:{instructions:waiterLanguage==='ar'?`قولي باختصار: تم إرسال طلبك ${modeLabel}، ورقم الطلب ${order.code}.`:`Briefly confirm the order was sent. Order number ${order.code}.`}}));
   }catch(err){
     const output={ok:false,message:String(err.message||'تعذر إرسال الطلب')};
     try{realtimeDC.send(JSON.stringify({type:'conversation.item.create',item:{type:'function_call_output',call_id:callId,output:JSON.stringify(output)}}));realtimeDC.send(JSON.stringify({type:'response.create',response:{instructions:`اعتذري باختصار: ${output.message}`}}));}catch(e){}
@@ -1187,7 +1192,8 @@ async function handleAltTableOrderTool(toolCall){
   let args={}; try{args=JSON.parse(toolCall?.arguments||'{}')}catch(e){}
   status.textContent=waiterLanguage==='ar'?(saraTableNumber?`لحظة، أرسل طلب طاولة ${saraTableNumber}…`:'لحظة، أرسل طلبك للمطعم…'):'Sending your order…';
   const order=await saveSaraTableOrder(args);
-  if(!saraTableNumber) return waiterLanguage==='ar'?`تم، أرسلت طلبك الخارجي للمطعم. رقم طلبك ${order.code}.`:waiterLanguage==='fr'?`C'est envoyé au restaurant. Numéro de commande ${order.code}.`:`Done. Your external order was sent to the restaurant. Order number ${order.code}.`;
+  if(order.orderMode==='dinein') return waiterLanguage==='ar'?`تم، أرسلت طلبك للأكل داخل المطعم. رقم طلبك ${order.code}.`:waiterLanguage==='fr'?`C'est envoyé pour consommation sur place. Numéro ${order.code}.`:`Done. Your dine-in order was sent. Order number ${order.code}.`;
+  if(order.orderMode==='external'||!saraTableNumber) return waiterLanguage==='ar'?`تم، أرسلت طلب الاستلام الخارجي للمطعم. رقم طلبك ${order.code}.`:waiterLanguage==='fr'?`C'est envoyé pour emporter. Numéro ${order.code}.`:`Done. Your pickup order was sent. Order number ${order.code}.`;
   return waiterLanguage==='ar'?`تم، أرسلت طلبك للمطعم لطاولة ${order.tableNumber}. رقم طلبك ${order.code}.`:waiterLanguage==='fr'?`C'est envoyé à la table ${order.tableNumber}. Numéro de commande ${order.code}.`:`Done. Your order was sent for table ${order.tableNumber}. Order number ${order.code}.`;
 }
 async function handleAltBookingTool(toolCall){

@@ -544,14 +544,15 @@ app.patch("/api/restaurant/table-orders/:id/notes", requireRestaurantDashboard, 
 app.post("/api/table-orders", async(req,res)=>{
   try{
     if(!db || !(await ensureReservationDatabaseReady())) return res.status(503).json({ok:false,message:"قاعدة الطلبات غير جاهزة."});
-    const {tableNumber, customerName="", phone="", notes="", language="ar", orderItems=[]}=req.body||{};
+    const {tableNumber, orderMode="", customerName="", phone="", notes="", language="ar", orderItems=[]}=req.body||{};
     const rawTable=String(tableNumber||"").trim().replace(/[^0-9A-Za-zأ-ي_-]/g,"").slice(0,20);
-    const isExternal=!rawTable;
-    const table=isExternal?"OUTSIDE":rawTable;
+    const requestedMode=String(orderMode||"").trim().toLowerCase();
+    const mode=rawTable?"table":(requestedMode==="dinein"?"dinein":"external");
+    const table=mode==="table"?rawTable:(mode==="dinein"?"DINEIN":"OUTSIDE");
     const cleanName=String(customerName||"").trim().slice(0,120);
     const cleanPhone=normalizeWhatsAppPhone(phone)||String(phone||"").trim().slice(0,40);
-    if(isExternal && !cleanName) return res.status(400).json({ok:false,code:"MISSING_CUSTOMER_NAME",message:"اكتب اسم العميل للطلب الخارجي."});
-    if(isExternal && !cleanPhone) return res.status(400).json({ok:false,code:"MISSING_PHONE",message:"اكتب رقم جوال العميل للطلب الخارجي."});
+    if(mode!=="table" && !cleanName) return res.status(400).json({ok:false,code:"MISSING_CUSTOMER_NAME",message:mode==="dinein"?"اكتب اسم العميل لطلب الأكل داخل المطعم.":"اكتب اسم العميل لطلب الاستلام الخارجي."});
+    if(mode==="external" && !cleanPhone) return res.status(400).json({ok:false,code:"MISSING_PHONE",message:"اكتب رقم جوال العميل لطلب الاستلام الخارجي."});
     const items=Array.isArray(orderItems)?orderItems.slice(0,50).map(item=>{
       const name=String(item?.name||"").trim().slice(0,160);
       const quantity=Math.max(1,Math.min(20,Math.trunc(Number(item?.quantity)||1)));
@@ -563,9 +564,10 @@ app.post("/api/table-orders", async(req,res)=>{
     const total=Math.round(items.reduce((sum,x)=>sum+(Number.isFinite(x.unitPriceSar)?x.unitPriceSar*x.quantity:0),0)*100)/100;
     const code=(await db.query("SELECT nextval('table_order_number_seq')::text AS code")).rows[0].code;
     const lang=["ar","fr","en"].includes(language)?language:"ar";
-    const q=await db.query(`INSERT INTO table_orders (order_code,table_number,customer_name,phone,order_mode,notes,order_items,order_total_sar,language,source) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10) RETURNING *`,[code,table,cleanName,cleanPhone,isExternal?'external':'table',String(notes||"").trim().slice(0,500),JSON.stringify(items),total,lang,isExternal?'sara_external':'sara_voice']);
+    const source=mode==='table'?'sara_voice':(mode==='dinein'?'sara_dinein':'sara_external');
+    const q=await db.query(`INSERT INTO table_orders (order_code,table_number,customer_name,phone,order_mode,notes,order_items,order_total_sar,language,source) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10) RETURNING *`,[code,table,cleanName,cleanPhone,mode,String(notes||"").trim().slice(0,500),JSON.stringify(items),total,lang,source]);
     const row=q.rows[0];
-    return res.status(201).json({ok:true,order:{id:row.id,code:row.order_code,tableNumber:isExternal?'':row.table_number,orderMode:isExternal?'external':'table',customerName:row.customer_name,phone:row.phone,notes:row.notes,orderItems:row.order_items,totalSar:Number(row.order_total_sar||0),status:row.status,createdAt:row.created_at}});
+    return res.status(201).json({ok:true,order:{id:row.id,code:row.order_code,tableNumber:mode==='table'?row.table_number:'',orderMode:mode,customerName:row.customer_name,phone:row.phone,notes:row.notes,orderItems:row.order_items,totalSar:Number(row.order_total_sar||0),status:row.status,createdAt:row.created_at}});
   }catch(e){console.error("Table order save error",e);return res.status(500).json({ok:false,message:"تعذر حفظ طلب الطاولة."})}
 });
 
@@ -852,14 +854,17 @@ app.post("/api/realtime-call", async (req, res) => {
         {
           type: "function",
           name: "confirm_table_order",
-          description: "Send a food/drink order to the restaurant after explicit confirmation. With a table QR it is a seated-table order; without a table QR it is an external pickup order and customer_name + phone are required.",
+          description: "Send a food/drink order after explicit confirmation. order_mode is table for a QR table order, dinein for a normal-link guest who will eat/drink inside the restaurant, or external for pickup/takeaway.",
           parameters: {
             type: "object", additionalProperties: false,
             properties: {
+              order_mode: { type: "string", enum:["table","dinein","external"] },
+              customer_name: { type: "string" },
+              phone: { type: "string" },
               notes: { type: "string" },
-              order_items: { type: "array", minItems: 1, items: { type: "object", additionalProperties: false, properties: { item_name:{type:"string"}, quantity:{type:"integer",minimum:1,maximum:20}, special_request:{type:"string"} }, required:["item_name","quantity","special_request"] } }
+              order_items: { type: "array", minItems: 1, items: { type: "object", additionalProperties: false, properties: { item_name:{type:"string"}, quantity:{type:"integer",minimum:1,maximum:20}, special_request:{type:"string",description:"Item-specific change only, e.g. بدون مايونيز"} }, required:["item_name","quantity","special_request"] } }
             },
-            required:["notes","order_items"]
+            required:["order_mode","customer_name","phone","notes","order_items"]
           }
         }
       ],
@@ -1302,7 +1307,7 @@ app.post("/api/tts", async (req, res) => {
         ? "Parle naturellement en français, avec une voix chaleureuse et professionnelle de serveuse de restaurant."
         : language === "en"
         ? "Speak naturally in English, with a warm professional restaurant waitress tone."
-        : "أنتِ سارة، موظفة سعودية شابة في مطعم في السعودية. تكلمي باللهجة السعودية البيضاء فقط، بميل نجدي خفيف وطبيعي. ممنوع اللهجة المصرية تمامًا، وكذلك الشامية والتونسية. لا تستخدمي نبرة أو إيقاع مصري. لا تتكلمي كأنك مذيعة أو قارئة نص. خلي الأداء محادثة سعودية يومية حقيقية، دافئة وواثقة وودودة، بسرعة طبيعية وجمل قصيرة. انطقي الجيم جيمًا سعودية واضحة، والهمزة والعين والحاء بوضوح. لا تفصّحي الكلمات ولا تمدّي الحروف ولا ترفعي النبرة في نهاية كل جملة. الوقفات قصيرة والنبرة ثابتة من أول الرد لآخره. التزمي بالتشكيل الموجود للكلمات الصعبة فقط. لا تبدين كمساعد آلي ولا كصوت إعلانات.";
+        : "أنتِ سارة، موظفة سعودية شابة في مطعم في السعودية. تكلمي باللهجة السعودية البيضاء فقط، بميل نجدي خفيف وطبيعي. ممنوع اللهجة المصرية تمامًا، وكذلك الشامية والتونسية. لا تستخدمي نبرة أو إيقاع مصري. لا تتكلمي كأنك مذيعة أو قارئة نص. خلي الأداء محادثة سعودية يومية حقيقية، دافئة وواثقة وودودة، بسرعة طبيعية وجمل قصيرة. انطقي الجيم جيمًا سعودية واضحة، والهمزة والعين والحاء بوضوح. لا تفصّحي الكلمات ولا تمدّي الحروف ولا ترفعي النبرة في نهاية كل جملة. الوقفات قصيرة والنبرة ثابتة من أول الرد لآخره. التزمي بالتشكيل الموجود للكلمات الصعبة فقط. لا تبدين كمساعد آلي ولا كصوت إعلانات. حافظي على نفس اللهجة السعودية والنبرة من أول المقطع إلى آخره، ولا تنتقلي لأي لهجة أخرى حتى لو كان النص يحتوي اسم صنف أجنبي. تجنبي نطق الكلمات العربية بإيقاع مصري أو شامي.";
 
     const ttsText = language === "ar" ? prepareArabicSaraTTS(cleanText) : cleanText;
     const cacheKey = `${language}|coral|${ttsText}`;
@@ -1366,7 +1371,7 @@ function altSaraInstructions({ language = "ar", menu = [], tableNumber = "" } = 
     ? "Speak only natural, warm conversational French."
     : language === "en"
     ? "Speak only natural, warm conversational English."
-    : "تكلمي فقط باللهجة السعودية البيضاء الطبيعية، تميل بشكل خفيف لنجد. استخدمي كلام يومي مثل هلا، أبشر، وش ودك، تبي، تمام، من عيوني. تجنبي الفصحى الرسمية واللهجات المصرية والشامية والتونسية.";
+    : "تكلمي فقط باللهجة السعودية البيضاء الطبيعية وبنفس اللهجة من أول المحادثة لآخرها، بميل نجدي خفيف. استخدمي كلام سعودي يومي مثل: هلا، أبشر، وش ودك، تبي، ودك، تمام، من عيوني، خلاص. لا تغيّرين اللهجة بين الردود. ممنوع كلمات ولهجات مصرية أو شامية أو تونسية أو خليجية غير سعودية مثل: شو، عايز، عاوز، برشا، بزاف، وايد، شلون. تجنبي الفصحى الرسمية إلا لضرورة توضيح معلومة دقيقة.";
 
   return `Your name is Sara. You are the voice waitress for Café Victor Hugo.
 Today in the restaurant timezone (${RESTAURANT_TIMEZONE}) is ${today}.
@@ -1393,13 +1398,16 @@ ${tableNumber ? `- The guest opened the menu from the QR code for TABLE ${tableN
 - For a normal food/drink order, do NOT ask for name, phone, date, time, or party size.
 - Collect the menu items, quantities, item-specific modifications, and any general order note.
 - Before sending, summarize the table order briefly and ask for explicit confirmation.
-- Only after explicit confirmation, call confirm_table_order. The table number is already known by the website.
-- Keep modifications attached to each exact item, e.g. Burger Classique (بدون خس).
-- Do not use confirm_booking_order for a seated-table order unless the guest separately asks to make a future reservation.` : `- No table QR is active. The guest may still order from outside the restaurant.
-- If the guest asks for food/drinks without asking for a reservation, treat it as an EXTERNAL PICKUP ORDER, not as a reservation.
-- Collect the menu items, quantities, item-specific modifications, customer name, and mobile/WhatsApp number. Do NOT ask for party size, booking date, or booking time for a normal external order.
-- Briefly summarize the external order and ask for explicit confirmation. Only after approval call confirm_table_order with customer_name and phone.
-- If the guest explicitly asks to reserve a table for a future time, use the booking flow below instead.`}
+- Only after explicit confirmation, call confirm_table_order with order_mode="table". The table number is already known by the website.
+- Keep every modification attached to the exact item in special_request, e.g. Burger Classique (بدون مايونيز). Never move it to general notes.
+- Do not use confirm_booking_order for a seated-table order unless the guest separately asks to make a future reservation.` : `- No table QR is active. The guest came through the normal menu link.
+- The guest has THREE distinct choices: (1) order food/drinks to EAT OR DRINK INSIDE THE RESTAURANT, (2) order for EXTERNAL PICKUP/TAKEAWAY, or (3) RESERVE A TABLE only.
+- If the guest starts ordering food/drinks and has not said which service they want, ask ONE short question in Arabic mode: "تبيه هنا بالمطعم ولا استلام خارجي؟"
+- If they choose to eat/drink inside the restaurant: use order_mode="dinein". Collect items, quantities, item-specific modifications, and customer name for identification. Phone is optional. Do NOT ask for a booking date/time or party size unless they separately ask to reserve a table.
+- If they choose pickup/takeaway: use order_mode="external". Collect items, quantities, item-specific modifications, customer name, and mobile/WhatsApp number.
+- If they explicitly ask only to reserve a table: do not create a food order unless they also ask for a pre-order; use the booking flow below.
+- Before any food/drink order is sent, summarize it briefly and ask for explicit confirmation. Only after approval call confirm_table_order.
+- Keep every addition/removal/modification attached to the exact item in special_request, e.g. Burger Classique (بدون مايونيز), Latte (حليب شوفان). Never put item-specific changes in general notes.`}
 
 BOOKING + OPTIONAL PRE-ORDER:
 - You can collect name, WhatsApp phone, party size, date, time, notes, and optional menu items/quantities/modifications.
@@ -1459,15 +1467,16 @@ const confirmTableOrderTool = {
   type: "function",
   function: {
     name: "confirm_table_order",
-    description: "Send a food/drink order to the restaurant after explicit confirmation. With a table QR it is a seated-table order; without a table QR it is an external pickup order and customer_name + phone are required.",
+    description: "Send a food/drink order after explicit confirmation. order_mode is table for a QR table order, dinein for a normal-link guest who will eat/drink inside the restaurant, or external for pickup/takeaway.",
     strict: true,
     parameters: {
       type: "object",
       additionalProperties: false,
       properties: {
-        customer_name: { type: "string", description: "Customer name for an external order; empty string for a seated table order" },
-        phone: { type: "string", description: "Customer mobile/WhatsApp number for an external order; empty string for a seated table order" },
-        notes: { type: "string", description: "General order note, empty string if none" },
+        order_mode: { type: "string", enum: ["table","dinein","external"], description: "table = QR table, dinein = eat/drink inside restaurant without table QR, external = pickup/takeaway" },
+        customer_name: { type: "string", description: "Customer name for dinein/external orders; empty string for a QR table order" },
+        phone: { type: "string", description: "Required for external pickup, optional for dinein, empty for a QR table order" },
+        notes: { type: "string", description: "General order note only. Never put item-specific modifications here." },
         order_items: {
           type: "array",
           minItems: 1,
@@ -1483,7 +1492,7 @@ const confirmTableOrderTool = {
           }
         }
       },
-      required: ["customer_name", "phone", "notes", "order_items"]
+      required: ["order_mode", "customer_name", "phone", "notes", "order_items"]
     }
   }
 };
