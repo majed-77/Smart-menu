@@ -1157,14 +1157,40 @@ app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
     const transcription =
       await openai.audio.transcriptions.create(options);
 
-    const text = String(transcription.text || "").trim();
+    let text = String(transcription.text || "").trim();
+
+    // If Arabic audio produced a tiny Latin/meta hallucination, retry the SAME
+    // audio once instead of immediately bothering the guest with "I didn't hear you".
+    // The retry uses temperature 0 and a generic Saudi-Arabic context hint only;
+    // it intentionally contains no booking/approval vocabulary so it cannot seed
+    // fake confirmation words.
+    if (isHybrid3 && language === "ar" && looksLikeArabicSttHallucination(text)) {
+      console.warn("Suspicious Arabic STT transcript; retrying once:", text);
+      try {
+        const retryOptions = {
+          file: audioFile,
+          model: "gpt-4o-transcribe",
+          language: "ar",
+          temperature: 0,
+          prompt: "محادثة طبيعية بالعربية السعودية داخل مطعم. اكتب فقط الكلام المسموع بوضوح، ولا تترجم ولا تضف شرحاً."
+        };
+        const retry = await openai.audio.transcriptions.create(retryOptions);
+        const retryText = String(retry.text || "").trim();
+        if (retryText && !looksLikeArabicSttHallucination(retryText)) {
+          text = retryText;
+        } else {
+          console.warn("Arabic STT retry still uncertain:", retryText || text);
+        }
+      } catch (retryErr) {
+        console.warn("Arabic STT retry failed:", retryErr?.message || retryErr);
+      }
+    }
 
     if (isHybrid3 && language === "ar" && looksLikeArabicSttHallucination(text)) {
-      console.warn("Rejected suspicious Arabic STT transcript:", text);
       return res.status(422).json({
         ok: false,
         code: "UNCERTAIN_ARABIC_TRANSCRIPT",
-        message: "ما سمعت الجملة بوضوح، قلها مرة ثانية قريب من المايك."
+        message: "ما التقطت كلام واضح، حاول تقول الجملة مرة ثانية."
       });
     }
 

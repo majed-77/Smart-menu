@@ -1277,10 +1277,10 @@ function runAltVAD(){
     // Experimental 3: keep capture simple and let the phone/browser perform
     // echo cancellation + noise suppression. VAD only decides turn boundaries;
     // it no longer learns the room noise or changes thresholds dynamically.
-    const startThreshold=isHybrid3?0.030:0.055;
-    const keepThreshold=isHybrid3?0.021:0.040;
-    const minSpeechMs=isHybrid3?240:220;
-    const endSilenceMs=isHybrid3?780:600;
+    const startThreshold=isHybrid3?0.024:0.055;
+    const keepThreshold=isHybrid3?0.018:0.040;
+    const minSpeechMs=isHybrid3?280:220;
+    const endSilenceMs=isHybrid3?950:600;
     const canStart=!altBusy || (isHybrid3 && altSpeaking);
 
     if(canStart && !altCapturing){
