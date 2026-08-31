@@ -175,6 +175,23 @@ async function initReservationDatabase() {
     ALTER TABLE menu_item_overrides ADD COLUMN IF NOT EXISTS visible BOOLEAN NOT NULL DEFAULT TRUE;
     ALTER TABLE menu_item_overrides ADD COLUMN IF NOT EXISTS modifiers JSONB NOT NULL DEFAULT '[]'::jsonb;
     CREATE INDEX IF NOT EXISTS menu_item_overrides_active_idx ON menu_item_overrides (active, visible, updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS menu_categories (
+      id BIGSERIAL PRIMARY KEY,
+      name_ar TEXT UNIQUE NOT NULL,
+      name_en TEXT NOT NULL DEFAULT '',
+      name_fr TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      visible BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS menu_images (
+      id UUID PRIMARY KEY,
+      mime_type TEXT NOT NULL,
+      data BYTEA NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
   `);
 
   // Keep the numeric sequence aligned with any existing numeric booking codes.
@@ -504,6 +521,15 @@ let staticMenuCatalogCache = null;
 function staticMenuItemKey(category, name, index) {
   return `base:${crypto.createHash("sha1").update(`${category}\u0000${name}\u0000${index}`).digest("hex").slice(0,20)}`;
 }
+const BASE_CATEGORY_AR = {
+  'Petit Déjeuner':'الفطور','Cafés by Victoria Arduino':'القهوة','Signature Victor':'مشروبات فيكتور المميزة','Frappuccino':'فرابتشينو','Les Jus Frais':'العصائر الطازجة','Milkshakes':'ميلك شيك','Pizzas':'البيتزا','Burger':'البرجر','Burgers':'البرجر','Pasta':'الباستا','Pâtes':'الباستا','Salades':'السلطات','Desserts':'الحلويات','Boissons':'المشروبات','Cocktails':'الكوكتيلات','Thés':'الشاي','Tea':'الشاي'
+};
+function baseCategoryArabic(name){ return BASE_CATEGORY_AR[name] || name; }
+function legacyTndPriceToSar(raw){
+  if(!raw || raw==='—') return '—';
+  const n=parseFloat(String(raw).replace(',','.'));
+  return Number.isFinite(n) ? (n*1.2956).toFixed(2) : raw;
+}
 function loadStaticMenuCatalog() {
   if (staticMenuCatalogCache) return staticMenuCatalogCache;
   const html = fs.readFileSync(path.join(__dirname, "smart-menu-ai-multilingual.html"), "utf8");
@@ -516,14 +542,14 @@ function loadStaticMenuCatalog() {
   parsed.forEach(section => {
     (section.items || []).forEach((d, index) => flat.push({
       itemKey: staticMenuItemKey(section.cat, d[0], index),
-      category: section.cat,
+      category: baseCategoryArabic(section.cat),
       nameFr: d[0],
       nameAr: "",
       nameEn: "",
       descriptionFr: d[1] || "",
       descriptionAr: "",
       descriptionEn: "",
-      priceText: d[2] || "—",
+      priceText: legacyTndPriceToSar(d[2] || "—"),
       imageUrl: "",
       signature: Boolean(d[3]),
       active: true,
@@ -542,6 +568,7 @@ function cleanMenuField(v, max=500) { return String(v ?? "").trim().slice(0,max)
 function cleanImageUrl(v) {
   const raw = cleanMenuField(v, 1000);
   if (!raw) return "";
+  if (/^\/api\/menu-images\/[0-9a-f-]{36}$/i.test(raw)) return raw;
   try { const u = new URL(raw); return ["http:","https:"].includes(u.protocol) ? u.toString() : ""; } catch { return ""; }
 }
 async function readMenuOverrides() {
@@ -599,8 +626,8 @@ function normalizeMenuModifiers(value) {
 function normalizeMenuPayload(body={}) {
   const price = cleanMenuField(body.priceText, 40) || "—";
   return {
-    category: cleanMenuField(body.category, 120) || "Autres",
-    nameFr: cleanMenuField(body.nameFr, 160) || "Nouveau produit",
+    category: cleanMenuField(body.category, 120) || "أخرى",
+    nameFr: cleanMenuField(body.nameFr, 160),
     nameAr: cleanMenuField(body.nameAr, 160),
     nameEn: cleanMenuField(body.nameEn, 160),
     descriptionFr: cleanMenuField(body.descriptionFr, 800),
@@ -617,6 +644,19 @@ function normalizeMenuPayload(body={}) {
     categorySortOrder: Math.max(-10000, Math.min(10000, Math.trunc(Number(body.categorySortOrder)||0)))
   };
 }
+async function ensureBaseCategories(){
+  if(!db) return;
+  const cats=[...new Set(loadStaticMenuCatalog().map(x=>x.category))];
+  for(let i=0;i<cats.length;i++) await db.query(`INSERT INTO menu_categories(name_ar,sort_order) VALUES($1,$2) ON CONFLICT(name_ar) DO NOTHING`,[cats[i],i]);
+}
+async function readMenuCategories(){
+  if(!db || !(await ensureReservationDatabaseReady())) return [];
+  await ensureBaseCategories();
+  const q=await db.query(`SELECT id,name_ar,name_en,name_fr,sort_order,visible FROM menu_categories ORDER BY sort_order,id`);
+  return q.rows.map(r=>({id:r.id,nameAr:r.name_ar,nameEn:r.name_en,nameFr:r.name_fr,sortOrder:Number(r.sort_order||0),visible:r.visible!==false}));
+}
+app.get('/api/menu-categories',async(req,res)=>{try{res.json({ok:true,categories:await readMenuCategories()})}catch(e){res.status(500).json({ok:false,message:'تعذر تحميل الأقسام.'})}});
+app.get('/api/menu-images/:id',async(req,res)=>{try{if(!db)return res.sendStatus(404);const q=await db.query('SELECT mime_type,data FROM menu_images WHERE id=$1',[req.params.id]);if(!q.rowCount)return res.sendStatus(404);res.setHeader('Content-Type',q.rows[0].mime_type);res.setHeader('Cache-Control','public, max-age=31536000, immutable');res.send(q.rows[0].data)}catch(e){res.sendStatus(404)}});
 app.get("/api/menu", async (req,res) => {
   try {
     if (!db) return res.json({ok:true,managed:false,items:loadStaticMenuCatalog()});
@@ -657,6 +697,11 @@ app.post("/api/restaurant/login", (req,res)=>{
   res.json({ok:true});
 });
 app.post("/api/restaurant/logout", (req,res)=>{res.setHeader("Set-Cookie","restaurant_dashboard=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0");res.json({ok:true})});
+const menuImageUpload=multer({storage:multer.memoryStorage(),limits:{fileSize:5*1024*1024},fileFilter:(req,file,cb)=>cb(null,['image/jpeg','image/png','image/webp'].includes(file.mimetype))});
+app.post('/api/restaurant/menu/image',requireRestaurantDashboard,menuImageUpload.single('image'),async(req,res)=>{try{if(!req.file)return res.status(400).json({ok:false,message:'اختر صورة JPG أو PNG أو WebP.'});const id=crypto.randomUUID();await db.query('INSERT INTO menu_images(id,mime_type,data) VALUES($1,$2,$3)',[id,req.file.mimetype,req.file.buffer]);res.json({ok:true,imageUrl:`/api/menu-images/${id}`})}catch(e){res.status(500).json({ok:false,message:'تعذر رفع الصورة.'})}});
+app.get('/api/restaurant/menu/categories',requireRestaurantDashboard,async(req,res)=>{try{res.json({ok:true,categories:await readMenuCategories()})}catch(e){res.status(500).json({ok:false,message:'تعذر تحميل الأقسام.'})}});
+app.post('/api/restaurant/menu/categories/save',requireRestaurantDashboard,async(req,res)=>{try{const id=Number(req.body?.id)||null,nameAr=cleanMenuField(req.body?.nameAr,120);if(!nameAr)return res.status(400).json({ok:false,message:'اسم القسم بالعربية مطلوب.'});const nameEn=cleanMenuField(req.body?.nameEn,120),nameFr=cleanMenuField(req.body?.nameFr,120),sortOrder=Math.trunc(Number(req.body?.sortOrder)||0),visible=req.body?.visible!==false;if(id){const old=await db.query('SELECT name_ar FROM menu_categories WHERE id=$1',[id]);if(!old.rowCount)return res.status(404).json({ok:false,message:'القسم غير موجود.'});await db.query('UPDATE menu_categories SET name_ar=$1,name_en=$2,name_fr=$3,sort_order=$4,visible=$5,updated_at=NOW() WHERE id=$6',[nameAr,nameEn,nameFr,sortOrder,visible,id]);if(old.rows[0].name_ar!==nameAr)await db.query('UPDATE menu_item_overrides SET category=$1 WHERE category=$2',[nameAr,old.rows[0].name_ar]);}else await db.query('INSERT INTO menu_categories(name_ar,name_en,name_fr,sort_order,visible) VALUES($1,$2,$3,$4,$5)',[nameAr,nameEn,nameFr,sortOrder,visible]);res.json({ok:true})}catch(e){res.status(500).json({ok:false,message:'تعذر حفظ القسم. قد يكون الاسم مستخدمًا.'})}});
+app.post('/api/restaurant/menu/categories/remove',requireRestaurantDashboard,async(req,res)=>{try{const id=Number(req.body?.id);const q=await db.query('SELECT name_ar FROM menu_categories WHERE id=$1',[id]);if(!q.rowCount)return res.status(404).json({ok:false,message:'القسم غير موجود.'});const count=(await mergedMenuCatalog({includeInactive:true})).filter(x=>x.category===q.rows[0].name_ar&&x.active).length;if(count)return res.status(409).json({ok:false,message:`انقل أو احذف أصناف القسم أولًا (${count} صنف).`});await db.query('DELETE FROM menu_categories WHERE id=$1',[id]);res.json({ok:true})}catch(e){res.status(500).json({ok:false,message:'تعذر حذف القسم.'})}});
 app.get("/api/restaurant/menu", requireRestaurantDashboard, async (req,res)=>{
   try { res.json({ok:true,items:await mergedMenuCatalog({includeInactive:true})}); }
   catch(e){ console.error("Dashboard menu error",e); res.status(500).json({ok:false,message:"تعذر تحميل المنيو."}); }

@@ -285,17 +285,16 @@ var speechAudioContext = window.speechAudioContext || null;
 var speechSource = window.speechSource || null;
 var speechUnlocked = false;
 
-const TND_TO_SAR=1.2956;
+const TND_TO_SAR=1; // الأسعار الأساسية الآن بالريال السعودي
 const saraTableNumber=(()=>{
   const raw=new URLSearchParams(location.search).get('table');
   return raw && /^[0-9A-Za-zأ-ي_-]{1,20}$/.test(raw.trim()) ? raw.trim() : '';
 })();
 function displayPrice(raw,lang){
   if(raw==='—') return lang==='ar'?'السعر غير مدرج':'—';
-  if(lang!=='ar') return raw;
   const n=parseFloat(String(raw).replace(',','.'));
   if(!Number.isFinite(n)) return raw;
-  return `≈ ${(n*TND_TO_SAR).toFixed(2)} ر.س`;
+  return lang==='ar' ? `${n.toFixed(2)} ر.س` : `${n.toFixed(2)} SAR`;
 }
 
 let menu = [
@@ -434,7 +433,7 @@ function imageFallback(name){
  return '🍽️';
 }
 
-let siteLanguage='';
+let siteLanguage='ar';
 let waiterLanguage='ar';
 let saraEngine='openai';
 const SARA_BRAIN_ENGINES=new Set(['hybrid3','claude','gemini','kimi']);
@@ -844,7 +843,7 @@ function resolveSaraOrderItem(requestedName){
   const d=candidates[0].d;
   const raw=String(d[2]||'');
   const tnd=parseFloat(raw.replace(',','.'));
-  const unitPriceSar=Number.isFinite(tnd)?Math.round(tnd*TND_TO_SAR*100)/100:null;
+  const unitPriceSar=Number.isFinite(tnd)?Math.round(tnd*100)/100:null;
   return {name:translateMenuText(d[0],waiterLanguage),canonicalName:d[0],unitPriceSar,available:d[4]?.available!==false,modifiers:Array.isArray(d[4]?.modifiers)?d[4].modifiers:[]};
 }
 function saraModifierExtraSar(found,specialRequest=''){
@@ -853,7 +852,7 @@ function saraModifierExtraSar(found,specialRequest=''){
   for(const m of found.modifiers){
     const key=normalizeMenuLookupText(m?.name||''); if(!key||seen.has(key)||!req.includes(key))continue;
     seen.add(key); const raw=String(m?.priceText||'').replace(',','.'); const n=parseFloat(raw);
-    if(Number.isFinite(n)&&n>0) extra+=n*TND_TO_SAR;
+    if(Number.isFinite(n)&&n>0) extra+=n;
   }
   return Math.round(extra*100)/100;
 }
