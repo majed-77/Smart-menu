@@ -246,6 +246,7 @@ main{max-width:1280px;margin:auto;padding:22px 5% 60px}
           <button class="engineChoice" type="button" data-sara-engine="hybrid3">DeepSeek</button>
           <button class="engineChoice" type="button" data-sara-engine="claude">Claude</button>
           <button class="engineChoice" type="button" data-sara-engine="gemini">Gemini</button>
+          <button class="engineChoice" type="button" data-sara-engine="kimi">Kimi</button>
         </div>
       </div>
       <div class="languageGrid">
@@ -432,10 +433,10 @@ function imageFallback(name){
 let siteLanguage='';
 let waiterLanguage='ar';
 let saraEngine='openai';
-const SARA_BRAIN_ENGINES=new Set(['hybrid3','claude','gemini']);
+const SARA_BRAIN_ENGINES=new Set(['hybrid3','claude','gemini','kimi']);
 function isBrainSaraEngine(engine=saraEngine){return SARA_BRAIN_ENGINES.has(engine);}
-function saraBrainProvider(){return saraEngine==='claude'?'claude':saraEngine==='gemini'?'gemini':'deepseek';}
-function saraBrainLabel(){return saraEngine==='claude'?'Claude':saraEngine==='gemini'?'Gemini':'DeepSeek';}
+function saraBrainProvider(){return saraEngine==='claude'?'claude':saraEngine==='gemini'?'gemini':saraEngine==='kimi'?'kimi':'deepseek';}
+function saraBrainLabel(){return saraEngine==='claude'?'Claude':saraEngine==='gemini'?'Gemini':saraEngine==='kimi'?'Kimi':'DeepSeek';}
 let currentDish=null;
 let realtimePC=null;
 let realtimeDC=null;

@@ -13,10 +13,12 @@ const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || "";
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "";
 const ANTHROPIC_WORKSPACE_ID = process.env.ANTHROPIC_WORKSPACE_ID || "";
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
+const KIMI_API_KEY = process.env.KIMI_API_KEY || process.env.MOONSHOT_API_KEY || "";
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY || "";
 const DEEPSEEK_MODEL = process.env.DEEPSEEK_MODEL || "deepseek-v4-flash";
 const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || "claude-haiku-4-5-20251001";
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
+const KIMI_MODEL = process.env.KIMI_MODEL || "kimi-k2.5";
 const ELEVENLABS_STT_MODEL = process.env.ELEVENLABS_STT_MODEL || "scribe_v2";
 const FISH_AUDIO_API_KEY = process.env.FISH_AUDIO_API_KEY || "";
 const FISH_AUDIO_VOICE_ID = process.env.FISH_AUDIO_VOICE_ID || "384051d27069462aa9b7a021ce541c8f";
@@ -1428,6 +1430,8 @@ app.get("/api/sara-alt-status", (req, res) => {
     configured: altEngineConfigured(),
     elevenlabsStt: Boolean(ELEVENLABS_API_KEY),
     deepseek: Boolean(DEEPSEEK_API_KEY),
+    kimi: Boolean(KIMI_API_KEY),
+    kimiModel: KIMI_MODEL,
     fishAudio: Boolean(FISH_AUDIO_API_KEY && FISH_AUDIO_VOICE_ID),
     deepseekModel: DEEPSEEK_MODEL,
     elevenlabsSttModel: ELEVENLABS_STT_MODEL,
@@ -1470,6 +1474,7 @@ function brainProviderConfig(provider) {
   const p = String(provider || "deepseek").toLowerCase();
   if (p === "claude") return { provider:p, key:ANTHROPIC_API_KEY, model:ANTHROPIC_MODEL, label:"Claude" };
   if (p === "gemini") return { provider:p, key:GEMINI_API_KEY, model:GEMINI_MODEL, label:"Gemini" };
+  if (p === "kimi") return { provider:p, key:KIMI_API_KEY, model:KIMI_MODEL, label:"Kimi" };
   return { provider:"deepseek", key:DEEPSEEK_API_KEY, model:DEEPSEEK_MODEL, label:"DeepSeek" };
 }
 
@@ -1567,7 +1572,11 @@ app.post("/api/sara-alt-chat", async (req, res) => {
 
     } else {
       const messages = [{role:"system",content:system}, ...cleanHistory, {role:"user",content:userText}];
-      result = await callOpenAICompatibleBrain({ endpoint:"https://api.deepseek.com/chat/completions", apiKey:cfg.key, model:cfg.model, messages, extraBody:{thinking:{type:"disabled"}} });
+      if (cfg.provider === "kimi") {
+        result = await callOpenAICompatibleBrain({ endpoint:"https://api.moonshot.ai/v1/chat/completions", apiKey:cfg.key, model:cfg.model, messages, extraBody:{thinking:{type:"disabled"},temperature:0.6,top_p:0.95,max_tokens:384}, strictTools:false });
+      } else {
+        result = await callOpenAICompatibleBrain({ endpoint:"https://api.deepseek.com/chat/completions", apiKey:cfg.key, model:cfg.model, messages, extraBody:{thinking:{type:"disabled"}} });
+      }
     }
 
     if (result?.toolCall) return res.json({ ok:true, toolCall:result.toolCall });
