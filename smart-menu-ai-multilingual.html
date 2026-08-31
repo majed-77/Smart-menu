@@ -1074,7 +1074,7 @@ function handleRealtimeEvent(event){
 }
 
 function closeAltSara(){
-  altStarted=false; altBusy=false; altSpeaking=false; altCapturing=false; altBookingState={name:'',phone:'',partySize:null,date:'',time:'',notes:'',orderItems:[]}; altBargeCandidateAt=0; altCaptureStartedDuringSara=false; altLastSpokenText=''; altSpeechStoppedAt=0;
+  altStarted=false; altBusy=false; altSpeaking=false; altCapturing=false; altBookingState={name:'',phone:'',partySize:null,date:'',time:'',notes:'',orderItems:[]}; altLastConfirmedBooking={signature:'',code:'',at:0}; altBookingSaveInFlight=false; altBargeCandidateAt=0; altCaptureStartedDuringSara=false; altLastSpokenText=''; altSpeechStoppedAt=0;
   if(altVadFrame){cancelAnimationFrame(altVadFrame);altVadFrame=null;}
   try{if(altRecorder && altRecorder.state!=="inactive")altRecorder.stop();}catch(e){}
   altRecorder=null; altChunks=[];
@@ -1096,6 +1096,8 @@ async function altFetchJSON(url, options, timeout=45000){
 
 
 let altBookingState={name:'',phone:'',partySize:null,date:'',time:'',notes:'',orderItems:[]};
+let altLastConfirmedBooking={signature:'',code:'',at:0};
+let altBookingSaveInFlight=false;
 let altBargeCandidateAt=0;
 let altTtsStartedAt=0;
 let altTtsEndedAt=0;
@@ -1196,9 +1198,34 @@ async function handleAltTableOrderTool(toolCall){
   if(order.orderMode==='external'||!saraTableNumber) return waiterLanguage==='ar'?`تم، أرسلت طلب الاستلام الخارجي للمطعم. رقم طلبك ${order.code}.`:waiterLanguage==='fr'?`C'est envoyé pour emporter. Numéro ${order.code}.`:`Done. Your pickup order was sent. Order number ${order.code}.`;
   return waiterLanguage==='ar'?`تم، أرسلت طلبك للمطعم لطاولة ${order.tableNumber}. رقم طلبك ${order.code}.`:waiterLanguage==='fr'?`C'est envoyé à la table ${order.tableNumber}. Numéro de commande ${order.code}.`:`Done. Your order was sent for table ${order.tableNumber}. Order number ${order.code}.`;
 }
+function altBookingSignature(args){
+  const items=Array.isArray(args?.order_items)?args.order_items:[];
+  const normalizedItems=items.map(x=>({
+    item_name:String(x?.item_name||'').trim().toLowerCase(),
+    quantity:Number(x?.quantity)||1,
+    special_request:String(x?.special_request||'').trim().toLowerCase()
+  })).sort((a,b)=>a.item_name.localeCompare(b.item_name)||a.quantity-b.quantity||a.special_request.localeCompare(b.special_request));
+  return JSON.stringify({
+    name:String(args?.name||'').trim().toLowerCase(),
+    phone:normalizeSaraPhone(args?.phone),
+    party_size:Number(args?.party_size)||0,
+    date:String(args?.date||''),
+    time:String(args?.time||''),
+    notes:String(args?.notes||'').trim().toLowerCase(),
+    order_items:normalizedItems
+  });
+}
 async function handleAltBookingTool(toolCall){
   let args={}; try{args=JSON.parse(toolCall?.arguments||'{}');}catch(e){}
   if(isBrainSaraEngine()) args=exp3MergeToolArgs(args);
+  const signature=altBookingSignature(args);
+  if(altBookingSaveInFlight){
+    return waiterLanguage==='ar'?'لحظة، الحجز قاعد ينحفظ الآن.':waiterLanguage==='fr'?`Un instant, la réservation est en cours d’enregistrement.`:`One moment, the booking is being saved.`;
+  }
+  if(altLastConfirmedBooking.signature===signature && altLastConfirmedBooking.code && (Date.now()-altLastConfirmedBooking.at)<30*60*1000){
+    return waiterLanguage==='ar'?`حجزك معتمد مسبقًا. رقم حجزك ${altLastConfirmedBooking.code}.`:waiterLanguage==='fr'?`Votre réservation est déjà confirmée sous le numéro ${altLastConfirmedBooking.code}.`:`Your booking is already confirmed. Your booking number is ${altLastConfirmedBooking.code}.`;
+  }
+  altBookingSaveInFlight=true;
   status.textContent=saraToolMessage('saving');
   const resolved=[];
   for(const item of (Array.isArray(args.order_items)?args.order_items:[])){
@@ -1211,11 +1238,16 @@ async function handleAltBookingTool(toolCall){
   const payload={
     name:String(args.name||'').trim(),phone:normalizeSaraPhone(args.phone),partySize:Number(args.party_size),date:String(args.date||''),time:String(args.time||''),notes:String(args.notes||'').trim(),language:waiterLanguage,source:'sara_voice',orderItems:resolved
   };
-  const r=await fetch('/api/reservations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-  const data=await r.json().catch(()=>({}));
-  if(!r.ok||!data.reservation) throw new Error(data.message||'Booking save failed');
-  const code=data.reservation.code;
-  return waiterLanguage==='ar'?`تم، اعتمدت الحجز${resolved.length?' والطلب':''} بنجاح. رقم حجزك ${code}.`:waiterLanguage==='fr'?`C'est confirmé. La réservation${resolved.length?' et la commande':''} est enregistrée sous le numéro ${code}.`:`Done. Your booking${resolved.length?' and order':''} is confirmed. Your booking number is ${code}.`;
+  try{
+    const r=await fetch('/api/reservations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const data=await r.json().catch(()=>({}));
+    if(!r.ok||!data.reservation) throw new Error(data.message||'Booking save failed');
+    const code=data.reservation.code;
+    altLastConfirmedBooking={signature,code:String(code),at:Date.now()};
+    return waiterLanguage==='ar'?`تم، اعتمدت الحجز${resolved.length?' والطلب':''} بنجاح. رقم حجزك ${code}.`:waiterLanguage==='fr'?`C'est confirmé. La réservation${resolved.length?' et la commande':''} est enregistrée sous le numéro ${code}.`:`Done. Your booking${resolved.length?' and order':''} is confirmed. Your booking number is ${code}.`;
+  } finally {
+    altBookingSaveInFlight=false;
+  }
 }
 
 function stopAltSpeechForBargeIn(){
@@ -1294,7 +1326,7 @@ function runAltVAD(){
     const startThreshold=isHybrid3?0.024:0.055;
     const keepThreshold=isHybrid3?0.018:0.040;
     const minSpeechMs=isHybrid3?280:220;
-    const endSilenceMs=isHybrid3?950:600;
+    const endSilenceMs=isHybrid3?1100:600;
     const canStart=!altBusy || (isHybrid3 && altSpeaking);
 
     if(canStart && !altCapturing){

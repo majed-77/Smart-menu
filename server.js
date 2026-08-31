@@ -635,6 +635,48 @@ app.post("/api/reservations", async (req, res) => {
       return res.status(400).json({ ok: false, code: "TOO_FAR", message: "يمكن الحجز حتى سنة مقدمًا." });
     }
 
+    // Idempotency guard for Sara: repeated approval must not create a second booking.
+    // If the exact same voice booking was already saved in the last 10 minutes,
+    // return the existing reservation number instead of consuming a new sequence value.
+    if (reservationSource === "sara_voice") {
+      const duplicate = await db.query(
+        `SELECT id, confirmation_code, customer_name, phone, party_size, reservation_at, notes, order_items, order_total_sar, source, language, status, created_at
+         FROM reservations
+         WHERE source='sara_voice'
+           AND phone=$1
+           AND customer_name=$2
+           AND party_size=$3
+           AND reservation_at=$4
+           AND COALESCE(notes,'')=$5
+           AND COALESCE(order_items,'[]'::jsonb)=$6::jsonb
+           AND created_at >= NOW() - INTERVAL '10 minutes'
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [normalizedPhone, customerName, party, localDateTime.toUTC().toISO(), String(notes || "").trim().slice(0, 500), JSON.stringify(cleanOrderItems)]
+      );
+      if (duplicate.rowCount) {
+        const row = duplicate.rows[0];
+        const local = DateTime.fromJSDate(new Date(row.reservation_at), { zone: "utc" }).setZone(RESTAURANT_TIMEZONE);
+        return res.status(200).json({
+          ok: true,
+          duplicate: true,
+          reservation: {
+            code: row.confirmation_code,
+            name: row.customer_name,
+            phone: row.phone,
+            partySize: row.party_size,
+            date: local.toISODate(),
+            time: local.toFormat("HH:mm"),
+            timezone: RESTAURANT_TIMEZONE,
+            reminderMinutesBefore: 30,
+            orderItems: row.order_items || [],
+            orderTotalSar: Number(row.order_total_sar || 0),
+            source: row.source
+          }
+        });
+      }
+    }
+
     const code = await nextReservationNumber();
     const inserted = await db.query(
       `INSERT INTO reservations
