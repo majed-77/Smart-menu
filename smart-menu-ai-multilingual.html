@@ -720,7 +720,11 @@ ${saraTableNumber?`طلب من داخل المطعم:
 - إذا طلب أكل أو مشروبات، لا تسألين عن الاسم أو الجوال أو التاريخ أو الوقت. رقم الطاولة معروف تلقائيًا.
 - اجمعي الأصناف والكميات وأي تعديل على كل صنف مثل بدون خس أو بدون بصل.
 - لخصي الطلب واسألي «أعتمد الطلب؟». بعد تأكيد واضح فقط استدعي confirm_table_order.
-- لا تستخدمين confirm_booking_order لهذا الطلب العادي من الطاولة. إذا طلب العميل حجزًا مستقبليًا بشكل منفصل استخدمي مسار الحجز.`:''}
+- لا تستخدمين confirm_booking_order لهذا الطلب العادي من الطاولة. إذا طلب العميل حجزًا مستقبليًا بشكل منفصل استخدمي مسار الحجز.`:`طلب خارجي من رابط المنيو:
+- العميل فتح المنيو بدون QR طاولة، وهذا لا يمنعه من الطلب. إذا طلب أكل أو مشروبات بدون أن يطلب حجزًا، اعتبريه طلب استلام خارجي من المطعم.
+- اجمعي الأصناف والكميات والتعديلات، ثم الاسم ورقم الجوال/واتساب فقط. لا تسألين عن عدد الأشخاص أو تاريخ ووقت الحجز للطلب الخارجي.
+- لخصي الطلب واسألي «أعتمد الطلب؟». بعد تأكيد واضح فقط استدعي confirm_table_order مع customer_name و phone.
+- إذا قال بوضوح إنه يريد حجز طاولة مستقبلًا فقط وقتها استخدمي confirm_booking_order.`}
 
 الحجز والطلب:
 - تقدرين تسوين حجز طاولة مع طلب مسبق من المنيو داخل نفس المحادثة.
@@ -858,8 +862,11 @@ async function saveSaraTableOrder(args={}){
     if(!found) throw Object.assign(new Error(`ما لقيت الصنف «${item?.item_name||''}» بالمنيو بشكل واضح.`),{code:'MENU_ITEM_NOT_FOUND'});
     resolved.push({name:found.canonicalName,quantity:Math.max(1,Math.min(20,Number(item?.quantity)||1)),specialRequest:String(item?.special_request||'').trim(),unitPriceSar:found.unitPriceSar});
   }
-  if(!saraTableNumber) throw new Error('رقم الطاولة غير موجود في رابط QR.');
-  const r=await fetch('/api/table-orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tableNumber:saraTableNumber,notes:String(args.notes||'').trim(),language:waiterLanguage,orderItems:resolved})});
+  const customerName=String(args.customer_name||args.name||'').trim();
+  const customerPhone=normalizeSaraPhone(args.phone||'');
+  if(!saraTableNumber && !customerName) throw new Error('احتاج اسمك عشان أرسل الطلب الخارجي للمطعم.');
+  if(!saraTableNumber && !customerPhone) throw new Error('احتاج رقم جوالك عشان أرسل الطلب الخارجي للمطعم.');
+  const r=await fetch('/api/table-orders',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tableNumber:saraTableNumber,customerName,phone:customerPhone,notes:String(args.notes||'').trim(),language:waiterLanguage,orderItems:resolved})});
   const data=await r.json().catch(()=>({}));
   if(!r.ok||!data.order) throw new Error(data.message||'تعذر حفظ طلب الطاولة');
   return data.order;
@@ -1178,8 +1185,9 @@ async function askAltSara(question,{greeting=false}={}){
 
 async function handleAltTableOrderTool(toolCall){
   let args={}; try{args=JSON.parse(toolCall?.arguments||'{}')}catch(e){}
-  status.textContent=waiterLanguage==='ar'?`لحظة، أرسل طلب طاولة ${saraTableNumber}…`:'Sending your table order…';
+  status.textContent=waiterLanguage==='ar'?(saraTableNumber?`لحظة، أرسل طلب طاولة ${saraTableNumber}…`:'لحظة، أرسل طلبك للمطعم…'):'Sending your order…';
   const order=await saveSaraTableOrder(args);
+  if(!saraTableNumber) return waiterLanguage==='ar'?`تم، أرسلت طلبك الخارجي للمطعم. رقم طلبك ${order.code}.`:waiterLanguage==='fr'?`C'est envoyé au restaurant. Numéro de commande ${order.code}.`:`Done. Your external order was sent to the restaurant. Order number ${order.code}.`;
   return waiterLanguage==='ar'?`تم، أرسلت طلبك للمطعم لطاولة ${order.tableNumber}. رقم طلبك ${order.code}.`:waiterLanguage==='fr'?`C'est envoyé à la table ${order.tableNumber}. Numéro de commande ${order.code}.`:`Done. Your order was sent for table ${order.tableNumber}. Order number ${order.code}.`;
 }
 async function handleAltBookingTool(toolCall){
@@ -1321,9 +1329,15 @@ function altAwaitingBookingApproval(){
   return /(اعتمد الحجز|اعتمد\?|اثبت الحجز|اكد الحجز|أعتمد الحجز|أعتمد\؟)/.test(String(last?.content||'')) ||
          (/(حجز|الحجز)/.test(t) && /(اعتمد|اكد|ثبت)/.test(t));
 }
+function altAwaitingOrderApproval(){
+  const last=[...conversationHistory].reverse().find(m=>m?.role==='assistant');
+  const t=String(last?.content||'').replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا').toLowerCase();
+  return /(اعتمد الطلب|اعتمد\?|ارسل الطلب|أعتمد الطلب|أعتمد\؟)/.test(String(last?.content||'')) ||
+         (/(طلب|الطلب)/.test(t) && /(اعتمد|اكد|ثبت|ارسل)/.test(t));
+}
 function normalizeAltBookingApprovalTranscript(text){
   const raw=String(text||'').trim();
-  if(!altAwaitingBookingApproval()) return raw;
+  if(!(altAwaitingBookingApproval()||altAwaitingOrderApproval())) return raw;
   const t=raw.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[.!؟?،,;:]/g,'').replace(/\s+/g,' ').trim();
 
   // Respect clear rejections first. This prevents a short foreign STT guess
@@ -1331,7 +1345,7 @@ function normalizeAltBookingApprovalTranscript(text){
   if(/^(لا|مو|كلا|no|nope|nah|non)$/.test(t)) return raw;
 
   // Known short approval variants / common STT guesses.
-  if(/^(evet|chatgpt|yes|yeah|yep|yup|ok|okay|si|eh|nem|nem termeszet|oui|ta|da|ja|sim|mhm|uh huh|تمام|نعم|ايه|إيه|اي|اعتمد|اعتمدي)$/.test(t)) return 'اعتمد';
+  if(/^(evet|temet|chatgpt|yes|yeah|yep|yup|ok|okay|si|eh|nem|nem termeszet|oui|ta|da|ja|sim|mhm|uh huh|تمام|نعم|ايه|إيه|اي|اعتمد|اعتمدي)$/.test(t)) return 'اعتمد';
 
   const approvalHits=(t.match(/اعتمد(?:ي)?|اثبت|أثبت|اكد|أكد|نعم|ايه|إيه|تمام|موافق|evet|yes|si|oui|ta|da|ja|sim/g)||[]).length;
   if(approvalHits>=2 && t.length<140) return 'اعتمد';

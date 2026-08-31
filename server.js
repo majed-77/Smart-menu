@@ -134,6 +134,9 @@ async function initReservationDatabase() {
     );
     ALTER TABLE table_orders ADD COLUMN IF NOT EXISTS staff_notes TEXT NOT NULL DEFAULT '';
     ALTER TABLE table_orders ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+    ALTER TABLE table_orders ADD COLUMN IF NOT EXISTS customer_name TEXT NOT NULL DEFAULT '';
+    ALTER TABLE table_orders ADD COLUMN IF NOT EXISTS phone TEXT NOT NULL DEFAULT '';
+    ALTER TABLE table_orders ADD COLUMN IF NOT EXISTS order_mode TEXT NOT NULL DEFAULT 'table';
     CREATE SEQUENCE IF NOT EXISTS table_order_number_seq START WITH 1 INCREMENT BY 1 MINVALUE 1;
     CREATE INDEX IF NOT EXISTS table_orders_active_idx ON table_orders (status, created_at DESC);
 
@@ -523,7 +526,7 @@ app.get("/api/restaurant/table-orders", requireRestaurantDashboard, async (req,r
   try{
     if(!db || !(await ensureReservationDatabaseReady())) return res.status(503).json({ok:false,message:"قاعدة الطلبات غير جاهزة."});
     const now=DateTime.now().setZone(RESTAURANT_TIMEZONE), start=now.startOf("day"), end=now.endOf("day");
-    const result=await db.query(`SELECT id, order_code, table_number, notes, staff_notes, order_items, order_total_sar, language, source, status, created_at, updated_at FROM table_orders ORDER BY created_at DESC LIMIT 500`);
+    const result=await db.query(`SELECT id, order_code, table_number, customer_name, phone, order_mode, notes, staff_notes, order_items, order_total_sar, language, source, status, created_at, updated_at FROM table_orders ORDER BY created_at DESC LIMIT 500`);
     const rows=result.rows.map(r=>{
       const local=DateTime.fromJSDate(new Date(r.created_at),{zone:"utc"}).setZone(RESTAURANT_TIMEZONE);
       const bucket=(local>=start && local<=end)?"today":"archive";
@@ -541,9 +544,14 @@ app.patch("/api/restaurant/table-orders/:id/notes", requireRestaurantDashboard, 
 app.post("/api/table-orders", async(req,res)=>{
   try{
     if(!db || !(await ensureReservationDatabaseReady())) return res.status(503).json({ok:false,message:"قاعدة الطلبات غير جاهزة."});
-    const {tableNumber, notes="", language="ar", orderItems=[]}=req.body||{};
-    const table=String(tableNumber||"").trim().replace(/[^0-9A-Za-zأ-ي_-]/g,"").slice(0,20);
-    if(!table) return res.status(400).json({ok:false,code:"INVALID_TABLE",message:"رقم الطاولة غير موجود في رابط QR."});
+    const {tableNumber, customerName="", phone="", notes="", language="ar", orderItems=[]}=req.body||{};
+    const rawTable=String(tableNumber||"").trim().replace(/[^0-9A-Za-zأ-ي_-]/g,"").slice(0,20);
+    const isExternal=!rawTable;
+    const table=isExternal?"OUTSIDE":rawTable;
+    const cleanName=String(customerName||"").trim().slice(0,120);
+    const cleanPhone=normalizeWhatsAppPhone(phone)||String(phone||"").trim().slice(0,40);
+    if(isExternal && !cleanName) return res.status(400).json({ok:false,code:"MISSING_CUSTOMER_NAME",message:"اكتب اسم العميل للطلب الخارجي."});
+    if(isExternal && !cleanPhone) return res.status(400).json({ok:false,code:"MISSING_PHONE",message:"اكتب رقم جوال العميل للطلب الخارجي."});
     const items=Array.isArray(orderItems)?orderItems.slice(0,50).map(item=>{
       const name=String(item?.name||"").trim().slice(0,160);
       const quantity=Math.max(1,Math.min(20,Math.trunc(Number(item?.quantity)||1)));
@@ -555,9 +563,9 @@ app.post("/api/table-orders", async(req,res)=>{
     const total=Math.round(items.reduce((sum,x)=>sum+(Number.isFinite(x.unitPriceSar)?x.unitPriceSar*x.quantity:0),0)*100)/100;
     const code=(await db.query("SELECT nextval('table_order_number_seq')::text AS code")).rows[0].code;
     const lang=["ar","fr","en"].includes(language)?language:"ar";
-    const q=await db.query(`INSERT INTO table_orders (order_code,table_number,notes,order_items,order_total_sar,language) VALUES ($1,$2,$3,$4::jsonb,$5,$6) RETURNING *`,[code,table,String(notes||"").trim().slice(0,500),JSON.stringify(items),total,lang]);
+    const q=await db.query(`INSERT INTO table_orders (order_code,table_number,customer_name,phone,order_mode,notes,order_items,order_total_sar,language,source) VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10) RETURNING *`,[code,table,cleanName,cleanPhone,isExternal?'external':'table',String(notes||"").trim().slice(0,500),JSON.stringify(items),total,lang,isExternal?'sara_external':'sara_voice']);
     const row=q.rows[0];
-    return res.status(201).json({ok:true,order:{id:row.id,code:row.order_code,tableNumber:row.table_number,notes:row.notes,orderItems:row.order_items,totalSar:Number(row.order_total_sar||0),status:row.status,createdAt:row.created_at}});
+    return res.status(201).json({ok:true,order:{id:row.id,code:row.order_code,tableNumber:isExternal?'':row.table_number,orderMode:isExternal?'external':'table',customerName:row.customer_name,phone:row.phone,notes:row.notes,orderItems:row.order_items,totalSar:Number(row.order_total_sar||0),status:row.status,createdAt:row.created_at}});
   }catch(e){console.error("Table order save error",e);return res.status(500).json({ok:false,message:"تعذر حفظ طلب الطاولة."})}
 });
 
@@ -844,7 +852,7 @@ app.post("/api/realtime-call", async (req, res) => {
         {
           type: "function",
           name: "confirm_table_order",
-          description: "Send the seated guest's food/drink order to the restaurant only after explicit confirmation.",
+          description: "Send a food/drink order to the restaurant after explicit confirmation. With a table QR it is a seated-table order; without a table QR it is an external pickup order and customer_name + phone are required.",
           parameters: {
             type: "object", additionalProperties: false,
             properties: {
@@ -1387,7 +1395,11 @@ ${tableNumber ? `- The guest opened the menu from the QR code for TABLE ${tableN
 - Before sending, summarize the table order briefly and ask for explicit confirmation.
 - Only after explicit confirmation, call confirm_table_order. The table number is already known by the website.
 - Keep modifications attached to each exact item, e.g. Burger Classique (بدون خس).
-- Do not use confirm_booking_order for a seated-table order unless the guest separately asks to make a future reservation.` : `- No table QR is active, so use the reservation flow below when the guest asks to book.`}
+- Do not use confirm_booking_order for a seated-table order unless the guest separately asks to make a future reservation.` : `- No table QR is active. The guest may still order from outside the restaurant.
+- If the guest asks for food/drinks without asking for a reservation, treat it as an EXTERNAL PICKUP ORDER, not as a reservation.
+- Collect the menu items, quantities, item-specific modifications, customer name, and mobile/WhatsApp number. Do NOT ask for party size, booking date, or booking time for a normal external order.
+- Briefly summarize the external order and ask for explicit confirmation. Only after approval call confirm_table_order with customer_name and phone.
+- If the guest explicitly asks to reserve a table for a future time, use the booking flow below instead.`}
 
 BOOKING + OPTIONAL PRE-ORDER:
 - You can collect name, WhatsApp phone, party size, date, time, notes, and optional menu items/quantities/modifications.
@@ -1447,12 +1459,14 @@ const confirmTableOrderTool = {
   type: "function",
   function: {
     name: "confirm_table_order",
-    description: "Send the seated guest's food/drink order to the restaurant only after explicit confirmation.",
+    description: "Send a food/drink order to the restaurant after explicit confirmation. With a table QR it is a seated-table order; without a table QR it is an external pickup order and customer_name + phone are required.",
     strict: true,
     parameters: {
       type: "object",
       additionalProperties: false,
       properties: {
+        customer_name: { type: "string", description: "Customer name for an external order; empty string for a seated table order" },
+        phone: { type: "string", description: "Customer mobile/WhatsApp number for an external order; empty string for a seated table order" },
         notes: { type: "string", description: "General order note, empty string if none" },
         order_items: {
           type: "array",
@@ -1469,7 +1483,7 @@ const confirmTableOrderTool = {
           }
         }
       },
-      required: ["notes", "order_items"]
+      required: ["customer_name", "phone", "notes", "order_items"]
     }
   }
 };
