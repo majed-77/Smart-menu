@@ -1,6 +1,8 @@
 const express = require("express");
 const path = require("path");
 const crypto = require("crypto");
+const fs = require("fs");
+const vm = require("vm");
 const OpenAI = require("openai");
 const multer = require("multer");
 const { Pool } = require("pg");
@@ -144,6 +146,35 @@ async function initReservationDatabase() {
     CREATE INDEX IF NOT EXISTS reservations_reminder_due_idx
       ON reservations (reservation_at)
       WHERE reminder_sent_at IS NULL AND status IN ('new','confirmed');
+
+    CREATE TABLE IF NOT EXISTS menu_item_overrides (
+      id BIGSERIAL PRIMARY KEY,
+      item_key TEXT UNIQUE NOT NULL,
+      category TEXT,
+      name_fr TEXT,
+      name_ar TEXT,
+      name_en TEXT,
+      description_fr TEXT,
+      description_ar TEXT,
+      description_en TEXT,
+      price_text TEXT,
+      image_url TEXT,
+      signature BOOLEAN,
+      active BOOLEAN NOT NULL DEFAULT TRUE,
+      is_custom BOOLEAN NOT NULL DEFAULT FALSE,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      category_sort_order INTEGER NOT NULL DEFAULT 0,
+      calories INTEGER,
+      visible BOOLEAN NOT NULL DEFAULT TRUE,
+      modifiers JSONB NOT NULL DEFAULT '[]'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    ALTER TABLE menu_item_overrides ADD COLUMN IF NOT EXISTS category_sort_order INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE menu_item_overrides ADD COLUMN IF NOT EXISTS calories INTEGER;
+    ALTER TABLE menu_item_overrides ADD COLUMN IF NOT EXISTS visible BOOLEAN NOT NULL DEFAULT TRUE;
+    ALTER TABLE menu_item_overrides ADD COLUMN IF NOT EXISTS modifiers JSONB NOT NULL DEFAULT '[]'::jsonb;
+    CREATE INDEX IF NOT EXISTS menu_item_overrides_active_idx ON menu_item_overrides (active, visible, updated_at DESC);
   `);
 
   // Keep the numeric sequence aligned with any existing numeric booking codes.
@@ -462,6 +493,138 @@ async function ensureReservationDatabaseReady() {
 
 
 
+
+// ======================================================
+// MANAGED MENU
+// The original menu remains embedded in the customer HTML as a safe fallback.
+// Restaurant edits are stored as small PostgreSQL overrides, so owners can
+// change availability, prices, translations and images without editing code.
+// ======================================================
+let staticMenuCatalogCache = null;
+function staticMenuItemKey(category, name, index) {
+  return `base:${crypto.createHash("sha1").update(`${category}\u0000${name}\u0000${index}`).digest("hex").slice(0,20)}`;
+}
+function loadStaticMenuCatalog() {
+  if (staticMenuCatalogCache) return staticMenuCatalogCache;
+  const html = fs.readFileSync(path.join(__dirname, "smart-menu-ai-multilingual.html"), "utf8");
+  const start = Math.max(html.indexOf("const menu = ["), html.indexOf("let menu = ["));
+  const end = html.indexOf("\n\nconst TEXT=", start);
+  if (start < 0 || end < 0) throw new Error("Static menu block not found");
+  const code = html.slice(start, end) + "\nJSON.stringify(menu);";
+  const parsed = JSON.parse(vm.runInNewContext(code, Object.create(null), { timeout: 500 }));
+  const flat = [];
+  parsed.forEach(section => {
+    (section.items || []).forEach((d, index) => flat.push({
+      itemKey: staticMenuItemKey(section.cat, d[0], index),
+      category: section.cat,
+      nameFr: d[0],
+      nameAr: "",
+      nameEn: "",
+      descriptionFr: d[1] || "",
+      descriptionAr: "",
+      descriptionEn: "",
+      priceText: d[2] || "—",
+      imageUrl: "",
+      signature: Boolean(d[3]),
+      active: true,
+      custom: false,
+      sortOrder: index,
+      categorySortOrder: 0,
+      calories: null,
+      visible: true,
+      modifiers: []
+    }));
+  });
+  staticMenuCatalogCache = flat;
+  return flat;
+}
+function cleanMenuField(v, max=500) { return String(v ?? "").trim().slice(0,max); }
+function cleanImageUrl(v) {
+  const raw = cleanMenuField(v, 1000);
+  if (!raw) return "";
+  try { const u = new URL(raw); return ["http:","https:"].includes(u.protocol) ? u.toString() : ""; } catch { return ""; }
+}
+async function readMenuOverrides() {
+  if (!db || !(await ensureReservationDatabaseReady())) return [];
+  const q = await db.query(`SELECT item_key, category, name_fr, name_ar, name_en, description_fr, description_ar, description_en, price_text, image_url, signature, active, visible, calories, modifiers, is_custom, sort_order, category_sort_order, updated_at FROM menu_item_overrides ORDER BY category_sort_order, sort_order, id`);
+  return q.rows;
+}
+async function mergedMenuCatalog({ includeInactive=false }={}) {
+  const base = loadStaticMenuCatalog();
+  const overrides = await readMenuOverrides();
+  const byKey = new Map(overrides.map(r => [r.item_key, r]));
+  const items = base.map(item => {
+    const r = byKey.get(item.itemKey);
+    if (!r) return item;
+    return {
+      ...item,
+      category: r.category ?? item.category,
+      nameFr: r.name_fr ?? item.nameFr,
+      nameAr: r.name_ar ?? item.nameAr,
+      nameEn: r.name_en ?? item.nameEn,
+      descriptionFr: r.description_fr ?? item.descriptionFr,
+      descriptionAr: r.description_ar ?? item.descriptionAr,
+      descriptionEn: r.description_en ?? item.descriptionEn,
+      priceText: r.price_text ?? item.priceText,
+      imageUrl: r.image_url ?? item.imageUrl,
+      signature: r.signature == null ? item.signature : Boolean(r.signature),
+      active: Boolean(r.active),
+      sortOrder: Number(r.sort_order ?? item.sortOrder),
+      categorySortOrder: Number(r.category_sort_order ?? item.categorySortOrder),
+      calories: r.calories == null ? item.calories : Number(r.calories),
+      visible: r.visible == null ? item.visible : Boolean(r.visible),
+      modifiers: Array.isArray(r.modifiers) ? r.modifiers : item.modifiers,
+      custom: false
+    };
+  });
+  for (const r of overrides.filter(x => x.is_custom)) {
+    items.push({
+      itemKey:r.item_key, category:r.category||"Autres", nameFr:r.name_fr||"Nouveau produit", nameAr:r.name_ar||"", nameEn:r.name_en||"",
+      descriptionFr:r.description_fr||"", descriptionAr:r.description_ar||"", descriptionEn:r.description_en||"", priceText:r.price_text||"—",
+      imageUrl:r.image_url||"", signature:Boolean(r.signature), active:Boolean(r.active), visible:r.visible!==false, calories:r.calories==null?null:Number(r.calories), modifiers:Array.isArray(r.modifiers)?r.modifiers:[], custom:true, sortOrder:Number(r.sort_order||0), categorySortOrder:Number(r.category_sort_order||0)
+    });
+  }
+  items.sort((a,b)=>(Number(a.categorySortOrder||0)-Number(b.categorySortOrder||0)) || String(a.category||'').localeCompare(String(b.category||'')) || (Number(a.sortOrder||0)-Number(b.sortOrder||0)));
+  return includeInactive ? items : items.filter(x => x.visible !== false);
+}
+function normalizeMenuModifiers(value) {
+  const raw = Array.isArray(value) ? value : [];
+  return raw.slice(0,60).map((m,idx)=>({
+    type: ['addon','option'].includes(String(m?.type||'')) ? String(m.type) : 'option',
+    name: cleanMenuField(m?.name,120),
+    priceText: cleanMenuField(m?.priceText,40),
+    sortOrder: Math.max(-1000,Math.min(1000,Math.trunc(Number(m?.sortOrder)||idx)))
+  })).filter(m=>m.name).sort((a,b)=>a.sortOrder-b.sortOrder);
+}
+function normalizeMenuPayload(body={}) {
+  const price = cleanMenuField(body.priceText, 40) || "—";
+  return {
+    category: cleanMenuField(body.category, 120) || "Autres",
+    nameFr: cleanMenuField(body.nameFr, 160) || "Nouveau produit",
+    nameAr: cleanMenuField(body.nameAr, 160),
+    nameEn: cleanMenuField(body.nameEn, 160),
+    descriptionFr: cleanMenuField(body.descriptionFr, 800),
+    descriptionAr: cleanMenuField(body.descriptionAr, 800),
+    descriptionEn: cleanMenuField(body.descriptionEn, 800),
+    priceText: price,
+    imageUrl: cleanImageUrl(body.imageUrl),
+    signature: Boolean(body.signature),
+    active: body.active !== false,
+    visible: body.visible !== false,
+    calories: body.calories === '' || body.calories == null ? null : Math.max(0, Math.min(10000, Math.trunc(Number(body.calories)||0))),
+    modifiers: normalizeMenuModifiers(body.modifiers),
+    sortOrder: Math.max(-10000, Math.min(10000, Math.trunc(Number(body.sortOrder)||0))),
+    categorySortOrder: Math.max(-10000, Math.min(10000, Math.trunc(Number(body.categorySortOrder)||0)))
+  };
+}
+app.get("/api/menu", async (req,res) => {
+  try {
+    if (!db) return res.json({ok:true,managed:false,items:loadStaticMenuCatalog()});
+    const items = await mergedMenuCatalog();
+    res.json({ok:true,managed:true,items});
+  } catch(e) { console.error("Public menu error", e); res.json({ok:true,managed:false,items:loadStaticMenuCatalog()}); }
+});
+
 // ======================================================
 // RESTAURANT DASHBOARD
 // ======================================================
@@ -494,6 +657,38 @@ app.post("/api/restaurant/login", (req,res)=>{
   res.json({ok:true});
 });
 app.post("/api/restaurant/logout", (req,res)=>{res.setHeader("Set-Cookie","restaurant_dashboard=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0");res.json({ok:true})});
+app.get("/api/restaurant/menu", requireRestaurantDashboard, async (req,res)=>{
+  try { res.json({ok:true,items:await mergedMenuCatalog({includeInactive:true})}); }
+  catch(e){ console.error("Dashboard menu error",e); res.status(500).json({ok:false,message:"تعذر تحميل المنيو."}); }
+});
+app.post("/api/restaurant/menu/save", requireRestaurantDashboard, async (req,res)=>{
+  try{
+    if(!db || !(await ensureReservationDatabaseReady())) return res.status(503).json({ok:false,message:"قاعدة البيانات غير جاهزة."});
+    const itemKey=cleanMenuField(req.body?.itemKey,200);
+    const isCustom=Boolean(req.body?.custom) || !itemKey;
+    const key=itemKey || `custom:${crypto.randomUUID()}`;
+    const p=normalizeMenuPayload(req.body||{});
+    const q=await db.query(`INSERT INTO menu_item_overrides (item_key,category,name_fr,name_ar,name_en,description_fr,description_ar,description_en,price_text,image_url,signature,active,visible,calories,modifiers,is_custom,sort_order,category_sort_order,updated_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,$16,$17,$18,NOW())
+      ON CONFLICT (item_key) DO UPDATE SET category=EXCLUDED.category,name_fr=EXCLUDED.name_fr,name_ar=EXCLUDED.name_ar,name_en=EXCLUDED.name_en,description_fr=EXCLUDED.description_fr,description_ar=EXCLUDED.description_ar,description_en=EXCLUDED.description_en,price_text=EXCLUDED.price_text,image_url=EXCLUDED.image_url,signature=EXCLUDED.signature,active=EXCLUDED.active,visible=EXCLUDED.visible,calories=EXCLUDED.calories,modifiers=EXCLUDED.modifiers,sort_order=EXCLUDED.sort_order,category_sort_order=EXCLUDED.category_sort_order,updated_at=NOW()
+      RETURNING item_key,is_custom`,[key,p.category,p.nameFr,p.nameAr,p.nameEn,p.descriptionFr,p.descriptionAr,p.descriptionEn,p.priceText,p.imageUrl,p.signature,p.active,p.visible,p.calories,JSON.stringify(p.modifiers),isCustom,p.sortOrder,p.categorySortOrder]);
+    staticMenuCatalogCache=null;
+    res.json({ok:true,itemKey:q.rows[0].item_key,custom:q.rows[0].is_custom});
+  }catch(e){console.error("Save menu item error",e);res.status(500).json({ok:false,message:"تعذر حفظ الصنف."})}
+});
+app.post("/api/restaurant/menu/remove", requireRestaurantDashboard, async (req,res)=>{
+  try{
+    if(!db || !(await ensureReservationDatabaseReady())) return res.status(503).json({ok:false,message:"قاعدة البيانات غير جاهزة."});
+    const itemKey=cleanMenuField(req.body?.itemKey,200); if(!itemKey)return res.status(400).json({ok:false,message:"الصنف غير محدد."});
+    if(itemKey.startsWith("custom:")) await db.query("DELETE FROM menu_item_overrides WHERE item_key=$1",[itemKey]);
+    else await db.query(`INSERT INTO menu_item_overrides (item_key,active,is_custom) VALUES ($1,FALSE,FALSE) ON CONFLICT (item_key) DO UPDATE SET active=FALSE,updated_at=NOW()`,[itemKey]);
+    res.json({ok:true});
+  }catch(e){console.error("Remove menu item error",e);res.status(500).json({ok:false,message:"تعذر حذف الصنف."})}
+});
+app.post("/api/restaurant/menu/restore", requireRestaurantDashboard, async (req,res)=>{
+  try{const itemKey=cleanMenuField(req.body?.itemKey,200);if(!itemKey)return res.status(400).json({ok:false,message:"الصنف غير محدد."});await db.query("UPDATE menu_item_overrides SET active=TRUE,updated_at=NOW() WHERE item_key=$1",[itemKey]);res.json({ok:true});}
+  catch(e){res.status(500).json({ok:false,message:"تعذر استعادة الصنف."})}
+});
 app.get("/api/restaurant/reservations", requireRestaurantDashboard, async (req,res)=>{
   try{
     if(!db || !(await ensureReservationDatabaseReady())) return res.status(503).json({ok:false,message:"قاعدة الحجوزات غير جاهزة."});
@@ -1057,6 +1252,7 @@ ROLE:
 - Answer the customer's actual question directly.
 - Recommend food and drinks when asked.
 - Compare options using only the supplied menu data.
+- Never recommend or confirm an item marked available=false; explain briefly that it is currently unavailable and offer a visible available alternative.
 - Respect stated budget and preferences.
 
 ACCURACY:
@@ -1429,6 +1625,7 @@ IDENTITY / ROLE — ABSOLUTE RULES:
 
 MENU AND SERVICE:
 - You know the supplied menu and should use only its data for items, descriptions and prices.
+- Never recommend or confirm an item marked available=false. Say it is currently unavailable and suggest an available alternative.
 - Never invent an item, ingredient, allergen, price or availability.
 - For Arabic guests, menu prices are already prepared for display in Saudi riyals. Say prices naturally as "26 ريال" and never mention TND/DT.
 - Keep normal replies very short and conversational, usually 1-2 sentences. Answer directly and avoid unnecessary setup so speech can start faster.

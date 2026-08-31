@@ -161,6 +161,9 @@ main{max-width:1280px;margin:auto;padding:22px 5% 60px}
   main{padding-inline:14px}.grid{grid-template-columns:1fr;gap:14px}.card{border-radius:20px}
   .foodImageWrap{aspect-ratio:16/10}.dialog{padding:18px}.section-title{font-size:25px}
 }
+
+.calories{display:inline-flex;align-items:center;gap:4px;margin-top:8px;font-size:12px;font-weight:800;color:var(--muted)}
+.modifierPreview{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.modifierChip{font-size:11px;padding:5px 7px;border-radius:999px;background:#f2eee6;color:#554c3f;border:1px solid #e2dacd}.card.unavailable{opacity:.64}.unavailableBadge{position:absolute;inset-inline-end:12px;top:12px;background:#8d2525;color:#fff;border-radius:999px;padding:6px 9px;font-size:11px;font-weight:800;z-index:2}
 </style>
 </head>
 <body>
@@ -295,7 +298,7 @@ function displayPrice(raw,lang){
   return `≈ ${(n*TND_TO_SAR).toFixed(2)} ر.س`;
 }
 
-const menu = [
+let menu = [
  {cat:"Petit Déjeuner",items:[
   ["Le Matinal (1 pers)","café, jus, viennoiserie, mlewi, pain toasté, confiture, beurre, chocolat","15.00 DT"],
   ["Victorien (1 pers)","Café, jus, viennoiserie, mlewi, confiture, beurre, chocolat, pain toasté, gaufre, œuf bouilli, crème légère, mini focaccia, salade et fruit de saison","42.00 DT"],
@@ -406,6 +409,7 @@ const TEXT={
 };
 
 
+const DYNAMIC_ITEM_IMAGES={};
 const ITEM_IMAGES={
  "Le Matinal (1 pers)":"https://digitalmenu.tn/storage/clients/17763390988246/products/69f0b428a2deb.jpg",
  "Victorien (1 pers)":"https://digitalmenu.tn/storage/clients/17763390988246/products/69f0978cbd555.jpg",
@@ -417,7 +421,7 @@ const ITEM_IMAGES={
  "Tagliatelli au Saumon":"https://digitalmenu.tn/storage/clients/17763390988246/products/69e2097cd98fb.jpg",
  "Citronnade":"https://digitalmenu.tn/storage/clients/17763390988246/products/69e17e3d2f6c5.jpg"
 };
-function itemImage(name){return ITEM_IMAGES[name]||'';}
+function itemImage(name){return DYNAMIC_ITEM_IMAGES[name]||ITEM_IMAGES[name]||'';}
 function imageFallback(name){
  const n=(name||'').toLowerCase();
  if(/café|coffee|espresso|latte|capp/.test(n)) return '☕';
@@ -630,46 +634,78 @@ if(globalWaiter){
   }
 }
 
-menu.forEach((s,i)=>{
- const b=document.createElement('button');
- b.textContent=s.cat;
- b.onclick=()=>document.getElementById('s'+i).scrollIntoView({behavior:'smooth',block:'start'});
- nav.appendChild(b);
+function renderCustomerMenu(){
+ nav.innerHTML='';
+ root.innerHTML='';
+ menu.forEach((s,i)=>{
+  const b=document.createElement('button');
+  b.textContent=menuCategory(s.cat,siteLanguage||'fr');
+  b.onclick=()=>document.getElementById('s'+i).scrollIntoView({behavior:'smooth',block:'start'});
+  nav.appendChild(b);
 
- const sec=document.createElement('section');
- sec.id='s'+i;
- sec.dataset.category=s.cat;
- sec.innerHTML=`<h2 class="section-title"><span>${s.cat}</span><span class="section-count">${s.items.length}</span></h2><div class="grid"></div>`;
+  const sec=document.createElement('section');
+  sec.id='s'+i;
+  sec.dataset.category=s.cat;
+  sec.innerHTML=`<h2 class="section-title"><span>${menuCategory(s.cat,siteLanguage||'fr')}</span><span class="section-count">${s.items.length}</span></h2><div class="grid"></div>`;
+  const grid=sec.querySelector('.grid');
 
- const grid=sec.querySelector('.grid');
-
- s.items.forEach(d=>{
-   const c=document.createElement('article');
-   c.className='card';
-   c.dataset.search=(s.cat+' '+d[0]+' '+d[1]).toLowerCase();
-
-   const img=itemImage(d[0]);
-   const media=img
-     ? `<img class="foodImage" loading="lazy" src="${img}" alt="${d[0]}" onerror="this.outerHTML='<div class=&quot;foodFallback&quot;>${imageFallback(d[0])}</div>'">`
-     : `<div class="foodFallback">${imageFallback(d[0])}</div>`;
-
-   c.innerHTML=`
-     <div class="foodImageWrap">
-       ${media}
-       ${d[3]?'<span class="signature">Signature Victor</span>':''}
-       <div class="price">${displayPrice(d[2],siteLanguage||"ar")}</div>
-     </div>
-     <div class="cardBody">
-       <h3>${d[0]}</h3>
-       <div class="desc">${d[1]}</div>
-     </div>`;
-
-   grid.appendChild(c);
+  s.items.forEach(d=>{
+    const c=document.createElement('article');
+    c.className='card'+(d[4]?.available===false?' unavailable':'');
+    const localizedName=translateMenuText(d[0],siteLanguage||'fr');
+    const localizedDesc=translateMenuText(d[1],siteLanguage||'fr');
+    c.dataset.search=(s.cat+' '+d[0]+' '+d[1]+' '+localizedName+' '+localizedDesc).toLowerCase();
+    const img=itemImage(d[0]);
+    const media=img
+      ? `<img class="foodImage" loading="lazy" src="${img}" alt="${d[0]}" onerror="this.outerHTML='<div class=&quot;foodFallback&quot;>${imageFallback(d[0])}</div>'">`
+      : `<div class="foodFallback">${imageFallback(d[0])}</div>`;
+    c.innerHTML=`
+      <div class="foodImageWrap">
+        ${media}
+        ${d[3]?'<span class="signature">Signature Victor</span>':''}
+        ${d[4]?.available===false?`<span class="unavailableBadge">${siteLanguage==='ar'?'غير متوفر':siteLanguage==='fr'?'Indisponible':'Unavailable'}</span>`:''}
+        <div class="price">${displayPrice(d[2],siteLanguage||"ar")}</div>
+      </div>
+      <div class="cardBody">
+        <h3>${localizedName}</h3>
+        <div class="desc">${localizedDesc}</div>
+        ${d[4]?.calories!=null?`<div class="calories">🔥 ${Number(d[4].calories).toLocaleString(siteLanguage==='ar'?'ar-SA':'en-US')} ${siteLanguage==='ar'?'سعرة حرارية':siteLanguage==='fr'?'kcal':'kcal'}</div>`:''}
+        ${Array.isArray(d[4]?.modifiers)&&d[4].modifiers.length?`<div class="modifierPreview">${d[4].modifiers.slice(0,4).map(m=>`<span class="modifierChip">${translateMenuText(m.name,siteLanguage||'fr')}${m.priceText?` +${displayPrice(m.priceText,siteLanguage||'ar')}`:''}</span>`).join('')}</div>`:''}
+      </div>`;
+    grid.appendChild(c);
+  });
+  root.appendChild(sec);
  });
-
- root.appendChild(sec);
-});
-
+ if(siteLanguage) refreshMenuLanguage();
+}
+function managedItemsToMenu(items){
+ const sections=[];
+ const byCat=new Map();
+ for(const item of (Array.isArray(items)?items:[])){
+   const cat=String(item.category||'Autres');
+   if(!byCat.has(cat)){const sec={cat,items:[]};byCat.set(cat,sec);sections.push(sec);}
+   const name=String(item.nameFr||item.nameAr||item.nameEn||'Produit');
+   const desc=String(item.descriptionFr||'');
+   const price=String(item.priceText||'—');
+   const meta={available:item.active!==false,calories:item.calories==null?null:Number(item.calories),modifiers:Array.isArray(item.modifiers)?item.modifiers:[],sortOrder:Number(item.sortOrder||0),categorySortOrder:Number(item.categorySortOrder||0)};
+   byCat.get(cat).items.push([name,desc,price,item.signature?1:0,meta]);
+   if(item.nameAr||item.nameEn) EXACT_MENU_I18N[name]={ar:String(item.nameAr||name),en:String(item.nameEn||name)};
+   if(desc&&(item.descriptionAr||item.descriptionEn)) EXACT_MENU_I18N[desc]={ar:String(item.descriptionAr||desc),en:String(item.descriptionEn||desc)};
+   if(item.imageUrl) DYNAMIC_ITEM_IMAGES[name]=String(item.imageUrl);
+ }
+ sections.sort((a,b)=>Number(a.items?.[0]?.[4]?.categorySortOrder||0)-Number(b.items?.[0]?.[4]?.categorySortOrder||0));
+ sections.forEach(sec=>sec.items.sort((a,b)=>Number(a[4]?.sortOrder||0)-Number(b[4]?.sortOrder||0)));
+ return sections.length?sections:null;
+}
+async function loadManagedCustomerMenu(){
+ try{
+   const r=await fetch('/api/menu',{cache:'no-store'});
+   const j=await r.json();
+   if(r.ok&&j.ok){const managed=managedItemsToMenu(j.items);if(managed)menu=managed;}
+ }catch(e){console.warn('Managed menu unavailable; using embedded menu.',e);}
+ renderCustomerMenu();
+}
+loadManagedCustomerMenu();
 
 
 function closeRealtime(){
@@ -809,7 +845,17 @@ function resolveSaraOrderItem(requestedName){
   const raw=String(d[2]||'');
   const tnd=parseFloat(raw.replace(',','.'));
   const unitPriceSar=Number.isFinite(tnd)?Math.round(tnd*TND_TO_SAR*100)/100:null;
-  return {name:translateMenuText(d[0],waiterLanguage),canonicalName:d[0],unitPriceSar};
+  return {name:translateMenuText(d[0],waiterLanguage),canonicalName:d[0],unitPriceSar,available:d[4]?.available!==false,modifiers:Array.isArray(d[4]?.modifiers)?d[4].modifiers:[]};
+}
+function saraModifierExtraSar(found,specialRequest=''){
+  const req=normalizeMenuLookupText(specialRequest); if(!req||!Array.isArray(found?.modifiers))return 0;
+  let extra=0; const seen=new Set();
+  for(const m of found.modifiers){
+    const key=normalizeMenuLookupText(m?.name||''); if(!key||seen.has(key)||!req.includes(key))continue;
+    seen.add(key); const raw=String(m?.priceText||'').replace(',','.'); const n=parseFloat(raw);
+    if(Number.isFinite(n)&&n>0) extra+=n*TND_TO_SAR;
+  }
+  return Math.round(extra*100)/100;
 }
 function normalizeSaraPhone(value){
   let s=String(value||'')
@@ -862,7 +908,9 @@ async function saveSaraTableOrder(args={}){
   for(const item of (Array.isArray(args.order_items)?args.order_items:[])){
     const found=resolveSaraOrderItem(item?.item_name);
     if(!found) throw Object.assign(new Error(`ما لقيت الصنف «${item?.item_name||''}» بالمنيو بشكل واضح.`),{code:'MENU_ITEM_NOT_FOUND'});
-    resolved.push({name:found.canonicalName,quantity:Math.max(1,Math.min(20,Number(item?.quantity)||1)),specialRequest:String(item?.special_request||'').trim(),unitPriceSar:found.unitPriceSar});
+    if(found.available===false) throw Object.assign(new Error(`الصنف «${found.name}» غير متوفر حاليًا.`),{code:'MENU_ITEM_UNAVAILABLE'});
+    const specialRequest=String(item?.special_request||'').trim(); const extra=saraModifierExtraSar(found,specialRequest);
+    resolved.push({name:found.canonicalName,quantity:Math.max(1,Math.min(20,Number(item?.quantity)||1)),specialRequest,unitPriceSar:found.unitPriceSar==null?null:Math.round((found.unitPriceSar+extra)*100)/100});
   }
   const customerName=String(args.customer_name||args.name||'').trim();
   const customerPhone=normalizeSaraPhone(args.phone||'');
@@ -910,7 +958,12 @@ async function handleSaraBookingTool(callId,argsText){
         realtimeDC.send(JSON.stringify({type:'response.create'}));
         return;
       }
-      resolved.push({name:found.canonicalName,displayName:found.name,quantity:Math.max(1,Math.min(20,Number(item?.quantity)||1)),specialRequest:String(item?.special_request||'').trim(),unitPriceSar:found.unitPriceSar});
+      if(found.available===false){
+        const output={ok:false,code:'MENU_ITEM_UNAVAILABLE',message:`الصنف «${found.name}» غير متوفر حاليًا.`};
+        realtimeDC.send(JSON.stringify({type:'conversation.item.create',item:{type:'function_call_output',call_id:callId,output:JSON.stringify(output)}}));realtimeDC.send(JSON.stringify({type:'response.create'}));return;
+      }
+      const specialRequest=String(item?.special_request||'').trim(); const extra=saraModifierExtraSar(found,specialRequest);
+      resolved.push({name:found.canonicalName,displayName:found.name,quantity:Math.max(1,Math.min(20,Number(item?.quantity)||1)),specialRequest,unitPriceSar:found.unitPriceSar==null?null:Math.round((found.unitPriceSar+extra)*100)/100});
     }
     const payload={
       name:String(args.name||'').trim(),phone:normalizeSaraPhone(args.phone),partySize:Number(args.party_size),date:String(args.date||''),time:String(args.time||''),notes:String(args.notes||'').trim(),language:waiterLanguage,source:'sara_voice',
@@ -1233,7 +1286,9 @@ async function handleAltBookingTool(toolCall){
     if(!found){
       return waiterLanguage==='ar'?`ما لقيت الصنف «${item?.item_name||''}» بالمنيو بشكل واضح. وش الصنف اللي تقصده؟`:waiterLanguage==='fr'?`Je ne retrouve pas clairement « ${item?.item_name||''} » dans le menu. Quel article voulez-vous ?`:`I couldn't clearly match “${item?.item_name||''}” to the menu. Which item do you mean?`;
     }
-    resolved.push({name:found.canonicalName,quantity:Math.max(1,Math.min(20,Number(item?.quantity)||1)),specialRequest:String(item?.special_request||'').trim(),unitPriceSar:found.unitPriceSar});
+    if(found.available===false) throw new Error(`الصنف «${found.name}» غير متوفر حاليًا.`);
+    const specialRequest=String(item?.special_request||'').trim(); const extra=saraModifierExtraSar(found,specialRequest);
+    resolved.push({name:found.canonicalName,quantity:Math.max(1,Math.min(20,Number(item?.quantity)||1)),specialRequest,unitPriceSar:found.unitPriceSar==null?null:Math.round((found.unitPriceSar+extra)*100)/100});
   }
   const payload={
     name:String(args.name||'').trim(),phone:normalizeSaraPhone(args.phone),partySize:Number(args.party_size),date:String(args.date||''),time:String(args.time||''),notes:String(args.notes||'').trim(),language:waiterLanguage,source:'sara_voice',orderItems:resolved
@@ -1839,7 +1894,10 @@ function compactMenu(){
    items:s.items.map(d=>({
      name:translateMenuText(d[0],lang),
      description:translateMenuText(d[1],lang),
-     price:lang==='ar'?displayPrice(d[2],'ar'):d[2]
+     price:lang==='ar'?displayPrice(d[2],'ar'):d[2],
+     available:d[4]?.available!==false,
+     calories:d[4]?.calories??null,
+     modifiers:(Array.isArray(d[4]?.modifiers)?d[4].modifiers:[]).map(m=>({type:m.type,name:m.name,price:m.priceText?(lang==='ar'?displayPrice(m.priceText,'ar'):m.priceText):''}))
    }))
  }));
 }
