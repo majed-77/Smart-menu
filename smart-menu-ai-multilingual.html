@@ -41,13 +41,13 @@ nav button{
 }
 nav button:hover{background:#ffffff18}
 main{max-width:1280px;margin:auto;padding:22px 5% 60px}
-.hero{
+.announcementBar{display:none;margin:0 auto 14px;max-width:1200px;border:1px solid #d7b56d55;background:#d7b56d17;color:#f7e7bf;border-radius:14px;padding:11px 14px;text-align:center;font-weight:800}.hero{
   position:relative;overflow:hidden;border-radius:28px;background:
     radial-gradient(circle at 75% 20%,#d9b56633,transparent 35%),
     linear-gradient(135deg,#201910,#3a2a18);
   color:#fff;padding:38px 34px;margin:6px 0 26px;min-height:210px;display:flex;align-items:center
 }
-.heroContent{max-width:700px;position:relative;z-index:2}
+.heroContent{max-width:700px;position:relative;z-index:2}.hero.hasBanner{background-size:cover;background-position:center}.hero.hasBanner:before{content:"";position:absolute;inset:0;background:#0008;border-radius:inherit;z-index:1}.hero{position:relative;overflow:hidden}
 .heroEyebrow{display:inline-block;border:1px solid #ffffff30;background:#ffffff0e;border-radius:999px;padding:7px 11px;font-size:12px;margin-bottom:12px}
 .hero h1{font-family:"Playfair Display",serif;font-size:44px;margin:0 0 10px;line-height:1.1}
 .hero p{color:#ffffffb8;margin:0;line-height:1.8;max-width:650px}
@@ -169,7 +169,7 @@ main{max-width:1280px;margin:auto;padding:22px 5% 60px}
 <body>
 <div class="overlay" id="welcomeOverlay">
   <div class="welcomeCard">
-    <h1>Café Victor Hugo</h1>
+    <h1 id="welcomeRestaurantName">كافيه فيكتور هوغو</h1>
     <p id="welcomePrompt">اختر لغتك • Choose your language • Choisissez votre langue</p>
     <div class="languageGrid">
       <button class="languageChoice" data-site-lang="ar">🇸🇦 العربية</button>
@@ -183,8 +183,8 @@ main{max-width:1280px;margin:auto;padding:22px 5% 60px}
   <div class="topbar">
     <div class="brandRow">
       <div class="brandWrap">
-        <img class="brandLogo" src="https://digitalmenu.tn/storage/logos/cafe-victor-hugo-la-marsa-177633909869e21c70f3bb8-logo.jpg" alt="Café Victor Hugo">
-        <div><div class="brand">Café Victor Hugo</div><div class="sub">La Marsa • Café & Restaurant</div></div>
+        <img class="brandLogo" id="restaurantLogo" src="https://digitalmenu.tn/storage/logos/cafe-victor-hugo-la-marsa-177633909869e21c70f3bb8-logo.jpg" alt="شعار المطعم">
+        <div><div class="brand" id="restaurantName">كافيه فيكتور هوغو</div><div class="sub" id="restaurantSubtitle">مقهى ومطعم</div></div>
       </div>
       <button class="siteLang" id="changeSiteLang">🌐 العربية</button>
     </div>
@@ -196,10 +196,11 @@ main{max-width:1280px;margin:auto;padding:22px 5% 60px}
 </header>
 
 <main>
-  <div class="hero">
+  <div class="announcementBar" id="announcementBar"></div>
+  <div class="hero" id="restaurantHero">
     <div class="heroContent">
-      <div class="heroEyebrow">Smart Menu • AI Waitress</div>
-      <h1>Bienvenue chez Victor Hugo</h1>
+      <div class="heroEyebrow" id="heroEyebrow">منيو ذكي • سارة</div>
+      <h1 id="heroTitle">حياكم الله</h1>
       <p id="heroText"></p>
     </div>
     <div class="heroMark"></div>
@@ -380,7 +381,7 @@ const TEXT={
   quotaError:"Le compte OpenAI API n'a pas de crédit suffisant ou le quota est dépassé.",
   permissionError:"La clé OpenAI n'a pas l'autorisation d'utiliser ce modèle.",
   serverError:"Erreur du serveur AI. Consultez les logs Render.",
-  greet:(dish)=>`Bienvenue au Café Victor Hugo. Je suis votre serveuse virtuelle. Vous regardez ${dish[0]}. Posez-moi une question sur les ingrédients, le prix ou demandez-moi une recommandation.`
+  greet:(dish)=>`Bienvenue chez ${restaurantName('fr')}. Je suis votre serveuse virtuelle. Vous regardez ${dish[0]}. Posez-moi une question sur les ingrédients, le prix ou demandez-moi une recommandation.`
  },
  en:{
   hero:'Smart menu — call the virtual waitress and speak by microphone or text.',
@@ -403,7 +404,7 @@ const TEXT={
   quotaError:'The OpenAI API account has insufficient credit or quota.',
   permissionError:'The OpenAI key does not have permission to use this model.',
   serverError:'AI server error. Check Render logs.',
-  greet:(dish)=>`Welcome to Café Victor Hugo. I’m your virtual waitress. You’re viewing ${dish[0]}. Ask me about ingredients, price, or let me recommend something for you.`
+  greet:(dish)=>`Welcome to ${restaurantName('en')}. I’m your virtual waitress. You’re viewing ${dish[0]}. Ask me about ingredients, price, or let me recommend something for you.`
  }
 };
 
@@ -434,6 +435,12 @@ function imageFallback(name){
 }
 
 let siteLanguage='ar';
+let restaurantProfile={nameAr:'كافيه فيكتور هوغو',nameEn:'Café Victor Hugo',nameFr:'Café Victor Hugo',subtitleAr:'مقهى ومطعم',subtitleEn:'Café & Restaurant',subtitleFr:'Café & Restaurant',heroEyebrowAr:'منيو ذكي • سارة',heroEyebrowEn:'Smart Menu • Sara',heroEyebrowFr:'Menu intelligent • Sara',heroTitleAr:'حياكم الله',heroTitleEn:'Welcome',heroTitleFr:'Bienvenue',heroTextAr:'اطلب، احجز، أو اسأل سارة عن المنيو.',heroTextEn:'Order, reserve a table, or ask Sara about the menu.',heroTextFr:'Commandez, réservez une table ou demandez conseil à Sara.',announcementAr:'',announcementEn:'',announcementFr:'',announcementVisible:false,logoUrl:'',bannerUrl:''};
+function profileText(base,lang=siteLanguage){const cap=lang==='ar'?'Ar':lang==='en'?'En':'Fr';return restaurantProfile[base+cap]||restaurantProfile[base+'Ar']||''}
+function restaurantName(lang=siteLanguage){return profileText('name',lang)||'كافيه فيكتور هوغو'}
+function applyRestaurantProfile(){const name=restaurantName(),sub=profileText('subtitle'),title=profileText('heroTitle'),text=profileText('heroText'),eyebrow=profileText('heroEyebrow'),ann=profileText('announcement');const n=document.querySelector('#restaurantName'),wn=document.querySelector('#welcomeRestaurantName'),s=document.querySelector('#restaurantSubtitle'),t=document.querySelector('#heroTitle'),tx=document.querySelector('#heroText'),e=document.querySelector('#heroEyebrow'),a=document.querySelector('#announcementBar'),logo=document.querySelector('#restaurantLogo'),hero=document.querySelector('#restaurantHero');if(n)n.textContent=name;if(wn)wn.textContent=name;if(s)s.textContent=sub;if(t)t.textContent=title;if(tx)tx.textContent=text;if(e)e.textContent=eyebrow;if(logo&&restaurantProfile.logoUrl)logo.src=restaurantProfile.logoUrl;if(a){a.textContent=ann;a.style.display=restaurantProfile.announcementVisible&&ann?'block':'none'}if(hero){if(restaurantProfile.bannerUrl){hero.style.backgroundImage=`url(${JSON.stringify(restaurantProfile.bannerUrl).slice(1,-1)})`;hero.classList.add('hasBanner')}else{hero.style.backgroundImage='';hero.classList.remove('hasBanner')}}document.title=name+' — المنيو';}
+async function loadRestaurantProfile(){try{const r=await fetch('/api/restaurant-profile',{cache:'no-store'}),j=await r.json();if(j?.profile)restaurantProfile={...restaurantProfile,...j.profile}}catch(e){console.warn('تعذر تحميل هوية المطعم',e)}applyRestaurantProfile()}
+loadRestaurantProfile();
 let waiterLanguage='ar';
 let saraEngine='openai';
 const SARA_BRAIN_ENGINES=new Set(['hybrid3','claude','gemini','kimi']);
@@ -510,9 +517,9 @@ const MENU_I18N={
  }
 };
 function translateMenuText(value,lang){
- if(lang==='fr'||!lang) return value;
  const exact=EXACT_MENU_I18N[value];
  if(exact && exact[lang]) return exact[lang];
+ if(lang==='fr'||!lang) return value;
 
  // Fallback only for future menu items that are added later.
  const pack=MENU_I18N[lang];
@@ -564,7 +571,7 @@ function refreshMenuLanguage(){
      const sig=card.querySelector('.signature');
      if(sig){
        sig.textContent=
-         siteLanguage==='ar'?'اختيار فيكتور':
+         siteLanguage==='ar'?'⭐ صنف مميز':
          siteLanguage==='en'?'Victor Signature':
          'Signature Victor';
      }
@@ -601,9 +608,7 @@ if(searchInput){
 function applySiteLanguage(lang){
  siteLanguage=lang;
  document.documentElement.lang=lang; document.documentElement.dir=lang==='ar'?'rtl':'ltr';
- document.querySelector('#heroText').textContent=TEXT[lang].hero;
- const h1=document.querySelector('h1');
- if(h1) h1.textContent=lang==='ar'?'مرحبًا بكم في فيكتور هوغو':lang==='en'?'Welcome to Victor Hugo':'Bienvenue chez Victor Hugo';
+ applyRestaurantProfile();
  document.querySelector('#changeSiteLang').textContent=TEXT[lang].siteLang;
  document.querySelector('#waiterLangTitle').textContent=TEXT[lang].waiterTitle;
  document.querySelector('#waiterLangSubtitle').textContent=TEXT[lang].waiterSub;
@@ -683,13 +688,13 @@ function managedItemsToMenu(items){
  for(const item of (Array.isArray(items)?items:[])){
    const cat=String(item.category||'Autres');
    if(!byCat.has(cat)){const sec={cat,items:[]};byCat.set(cat,sec);sections.push(sec);}
-   const name=String(item.nameFr||item.nameAr||item.nameEn||'Produit');
-   const desc=String(item.descriptionFr||'');
+   const name=String(item.nameAr||item.nameEn||item.nameFr||'صنف');
+   const desc=String(item.descriptionAr||item.descriptionEn||item.descriptionFr||'');
    const price=String(item.priceText||'—');
    const meta={available:item.active!==false,calories:item.calories==null?null:Number(item.calories),modifiers:Array.isArray(item.modifiers)?item.modifiers:[],sortOrder:Number(item.sortOrder||0),categorySortOrder:Number(item.categorySortOrder||0)};
    byCat.get(cat).items.push([name,desc,price,item.signature?1:0,meta]);
-   if(item.nameAr||item.nameEn) EXACT_MENU_I18N[name]={ar:String(item.nameAr||name),en:String(item.nameEn||name)};
-   if(desc&&(item.descriptionAr||item.descriptionEn)) EXACT_MENU_I18N[desc]={ar:String(item.descriptionAr||desc),en:String(item.descriptionEn||desc)};
+   EXACT_MENU_I18N[name]={ar:String(item.nameAr||name),en:String(item.nameEn||item.nameAr||name),fr:String(item.nameFr||item.nameAr||name)};
+   if(desc) EXACT_MENU_I18N[desc]={ar:String(item.descriptionAr||desc),en:String(item.descriptionEn||item.descriptionAr||desc),fr:String(item.descriptionFr||item.descriptionAr||desc)};
    if(item.imageUrl) DYNAMIC_ITEM_IMAGES[name]=String(item.imageUrl);
  }
  sections.sort((a,b)=>Number(a.items?.[0]?.[4]?.categorySortOrder||0)-Number(b.items?.[0]?.[4]?.categorySortOrder||0));
@@ -741,7 +746,7 @@ function realtimeInstructions(){
       ?`Parle uniquement en français naturel, chaleureux et conversationnel.`
       :`Speak only in natural, warm conversational English.`;
 
-  return `اسمك سارة. أنت النادلة الصوتية العامة لمقهى Café Victor Hugo في المرسى.
+  return `اسمك سارة. أنت النادلة الصوتية العامة لمطعم ${restaurantName('ar')}.
 ${languageRule}
 عرّفي نفسك دائمًا باسم سارة عند الترحيب الأول فقط. أنت مسؤولة عن المنيو كامل، ولست مرتبطة بصنف محدد.
 افهمي كل الأصناف والأقسام والأسعار والمكونات الموجودة في بيانات المنيو أدناه.
@@ -1714,10 +1719,10 @@ async function startHybrid3(){
     // Fast greeting: this sentence is fixed, so do not wait for the brain API.
     // Show it immediately and start TTS while the rest of the voice session finishes.
     const answer=waiterLanguage==='ar'
-      ? 'هلا والله، حياك في Café Victor Hugo، معك سارة، كيف أقدر أخدمك؟'
+      ? `هلا والله، حياك في ${restaurantName('ar')}، معك سارة، كيف أقدر أخدمك؟`
       : waiterLanguage==='fr'
-      ? 'Bienvenue au Café Victor Hugo, je suis Sara. Comment puis-je vous aider ?'
-      : 'Welcome to Café Victor Hugo, I’m Sara. How can I help you?';
+      ? `Bienvenue chez ${restaurantName('fr')}, je suis Sara. Comment puis-je vous aider ?`
+      : `Welcome to ${restaurantName('en')}, I’m Sara. How can I help you?`;
     addBubble('assistant',answer); conversationHistory.push({role:'assistant',content:answer});
     status.textContent=TEXT[waiterLanguage].ready;
     await speakAI(answer);
@@ -1787,10 +1792,10 @@ async function startRealtime(){
         response:{
           instructions:
             waiterLanguage==='ar'
-              ?`ابدئي بترحيب قصير وطبيعي باللهجة السعودية، واذكري اسم المطعم واسمك بوضوح. قولي: هلا والله، حياك في Café Victor Hugo، معك سارة، كيف أقدر أخدمك؟ لا تقولي كلمة نادلتك في الترحيب، ولا تذكري أي تفاصيل تقنية. إذا كان مناسبًا، تقدرين تساعدين في المنيو أو الحجز والطلب.`
+              ?`ابدئي بترحيب قصير وطبيعي باللهجة السعودية، واذكري اسم المطعم واسمك بوضوح. قولي: هلا والله، حياك في ${restaurantName('ar')}، معك سارة، كيف أقدر أخدمك؟ لا تقولي كلمة نادلتك في الترحيب، ولا تذكري أي تفاصيل تقنية. إذا كان مناسبًا، تقدرين تساعدين في المنيو أو الحجز والطلب.`
               :waiterLanguage==='fr'
-              ?`Accueille brièvement le client, mentionne clairement le restaurant Café Victor Hugo et présente-toi comme Sara, sa serveuse. Puis demande comment tu peux l'aider avec le menu.`
-              :`Give a very brief welcome, clearly mention Café Victor Hugo, introduce yourself as Sara, the guest's waitress, then ask how you can help with the menu.`
+              ?`Accueille brièvement le client, mentionne clairement le restaurant ${restaurantName('fr')} et présente-toi comme Sara, sa serveuse. Puis demande comment tu peux l'aider avec le menu.`
+              :`Give a very brief welcome, clearly mention ${restaurantName('en')}, introduce yourself as Sara, the guest's waitress, then ask how you can help with the menu.`
         }
       }));
     });

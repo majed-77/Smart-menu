@@ -192,6 +192,33 @@ async function initReservationDatabase() {
       data BYTEA NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS restaurant_settings (
+      id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+      name_ar TEXT NOT NULL DEFAULT 'كافيه فيكتور هوغو',
+      name_en TEXT NOT NULL DEFAULT 'Café Victor Hugo',
+      name_fr TEXT NOT NULL DEFAULT 'Café Victor Hugo',
+      subtitle_ar TEXT NOT NULL DEFAULT 'مقهى ومطعم',
+      subtitle_en TEXT NOT NULL DEFAULT 'Café & Restaurant',
+      subtitle_fr TEXT NOT NULL DEFAULT 'Café & Restaurant',
+      hero_eyebrow_ar TEXT NOT NULL DEFAULT 'منيو ذكي • سارة',
+      hero_eyebrow_en TEXT NOT NULL DEFAULT 'Smart Menu • Sara',
+      hero_eyebrow_fr TEXT NOT NULL DEFAULT 'Menu intelligent • Sara',
+      hero_title_ar TEXT NOT NULL DEFAULT 'حياكم الله',
+      hero_title_en TEXT NOT NULL DEFAULT 'Welcome',
+      hero_title_fr TEXT NOT NULL DEFAULT 'Bienvenue',
+      hero_text_ar TEXT NOT NULL DEFAULT 'اطلب، احجز، أو اسأل سارة عن المنيو.',
+      hero_text_en TEXT NOT NULL DEFAULT 'Order, reserve a table, or ask Sara about the menu.',
+      hero_text_fr TEXT NOT NULL DEFAULT 'Commandez, réservez une table ou demandez conseil à Sara.',
+      announcement_ar TEXT NOT NULL DEFAULT '',
+      announcement_en TEXT NOT NULL DEFAULT '',
+      announcement_fr TEXT NOT NULL DEFAULT '',
+      announcement_visible BOOLEAN NOT NULL DEFAULT FALSE,
+      logo_url TEXT NOT NULL DEFAULT 'https://digitalmenu.tn/storage/logos/cafe-victor-hugo-la-marsa-177633909869e21c70f3bb8-logo.jpg',
+      banner_url TEXT NOT NULL DEFAULT '',
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    INSERT INTO restaurant_settings(id) VALUES(1) ON CONFLICT(id) DO NOTHING;
   `);
 
   // Keep the numeric sequence aligned with any existing numeric booking codes.
@@ -666,6 +693,34 @@ app.get("/api/menu", async (req,res) => {
 });
 
 // ======================================================
+
+const RESTAURANT_PROFILE_DEFAULTS = {
+  nameAr:'كافيه فيكتور هوغو', nameEn:'Café Victor Hugo', nameFr:'Café Victor Hugo',
+  subtitleAr:'مقهى ومطعم', subtitleEn:'Café & Restaurant', subtitleFr:'Café & Restaurant',
+  heroEyebrowAr:'منيو ذكي • سارة', heroEyebrowEn:'Smart Menu • Sara', heroEyebrowFr:'Menu intelligent • Sara',
+  heroTitleAr:'حياكم الله', heroTitleEn:'Welcome', heroTitleFr:'Bienvenue',
+  heroTextAr:'اطلب، احجز، أو اسأل سارة عن المنيو.', heroTextEn:'Order, reserve a table, or ask Sara about the menu.', heroTextFr:'Commandez, réservez une table ou demandez conseil à Sara.',
+  announcementAr:'', announcementEn:'', announcementFr:'', announcementVisible:false,
+  logoUrl:'https://digitalmenu.tn/storage/logos/cafe-victor-hugo-la-marsa-177633909869e21c70f3bb8-logo.jpg', bannerUrl:''
+};
+function restaurantProfileRow(row={}){
+  return {
+    nameAr:row.name_ar??RESTAURANT_PROFILE_DEFAULTS.nameAr,nameEn:row.name_en??RESTAURANT_PROFILE_DEFAULTS.nameEn,nameFr:row.name_fr??RESTAURANT_PROFILE_DEFAULTS.nameFr,
+    subtitleAr:row.subtitle_ar??RESTAURANT_PROFILE_DEFAULTS.subtitleAr,subtitleEn:row.subtitle_en??RESTAURANT_PROFILE_DEFAULTS.subtitleEn,subtitleFr:row.subtitle_fr??RESTAURANT_PROFILE_DEFAULTS.subtitleFr,
+    heroEyebrowAr:row.hero_eyebrow_ar??RESTAURANT_PROFILE_DEFAULTS.heroEyebrowAr,heroEyebrowEn:row.hero_eyebrow_en??RESTAURANT_PROFILE_DEFAULTS.heroEyebrowEn,heroEyebrowFr:row.hero_eyebrow_fr??RESTAURANT_PROFILE_DEFAULTS.heroEyebrowFr,
+    heroTitleAr:row.hero_title_ar??RESTAURANT_PROFILE_DEFAULTS.heroTitleAr,heroTitleEn:row.hero_title_en??RESTAURANT_PROFILE_DEFAULTS.heroTitleEn,heroTitleFr:row.hero_title_fr??RESTAURANT_PROFILE_DEFAULTS.heroTitleFr,
+    heroTextAr:row.hero_text_ar??RESTAURANT_PROFILE_DEFAULTS.heroTextAr,heroTextEn:row.hero_text_en??RESTAURANT_PROFILE_DEFAULTS.heroTextEn,heroTextFr:row.hero_text_fr??RESTAURANT_PROFILE_DEFAULTS.heroTextFr,
+    announcementAr:row.announcement_ar??'',announcementEn:row.announcement_en??'',announcementFr:row.announcement_fr??'',announcementVisible:Boolean(row.announcement_visible),
+    logoUrl:row.logo_url??RESTAURANT_PROFILE_DEFAULTS.logoUrl,bannerUrl:row.banner_url??''
+  };
+}
+async function readRestaurantProfile(){
+  if(!db) return {...RESTAURANT_PROFILE_DEFAULTS};
+  const q=await db.query('SELECT * FROM restaurant_settings WHERE id=1');
+  return restaurantProfileRow(q.rows[0]||{});
+}
+app.get('/api/restaurant-profile',async(req,res)=>{try{res.json({ok:true,profile:await readRestaurantProfile()})}catch(e){console.error('Profile read error',e);res.json({ok:true,profile:{...RESTAURANT_PROFILE_DEFAULTS}})}});
+
 // RESTAURANT DASHBOARD
 // ======================================================
 function parseCookies(req) {
@@ -697,6 +752,17 @@ app.post("/api/restaurant/login", (req,res)=>{
   res.json({ok:true});
 });
 app.post("/api/restaurant/logout", (req,res)=>{res.setHeader("Set-Cookie","restaurant_dashboard=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0");res.json({ok:true})});
+
+const restaurantAssetUpload=multer({storage:multer.memoryStorage(),limits:{fileSize:5*1024*1024},fileFilter:(req,file,cb)=>cb(null,['image/jpeg','image/png','image/webp'].includes(file.mimetype))});
+app.get('/api/restaurant/settings',requireRestaurantDashboard,async(req,res)=>{try{res.json({ok:true,profile:await readRestaurantProfile()})}catch(e){res.status(500).json({ok:false,message:'تعذر تحميل إعدادات المطعم.'})}});
+app.post('/api/restaurant/settings/image',requireRestaurantDashboard,restaurantAssetUpload.single('image'),async(req,res)=>{try{if(!req.file)return res.status(400).json({ok:false,message:'اختر صورة JPG أو PNG أو WebP.'});const id=crypto.randomUUID();await db.query('INSERT INTO menu_images(id,mime_type,data) VALUES($1,$2,$3)',[id,req.file.mimetype,req.file.buffer]);res.json({ok:true,imageUrl:`/api/menu-images/${id}`})}catch(e){res.status(500).json({ok:false,message:'تعذر رفع الصورة.'})}});
+app.post('/api/restaurant/settings/save',requireRestaurantDashboard,async(req,res)=>{try{
+  const b=req.body||{}, clean=(v,n=500)=>String(v??'').trim().slice(0,n);
+  const vals=[clean(b.nameAr,120),clean(b.nameEn,120),clean(b.nameFr,120),clean(b.subtitleAr,200),clean(b.subtitleEn,200),clean(b.subtitleFr,200),clean(b.heroEyebrowAr,160),clean(b.heroEyebrowEn,160),clean(b.heroEyebrowFr,160),clean(b.heroTitleAr,200),clean(b.heroTitleEn,200),clean(b.heroTitleFr,200),clean(b.heroTextAr,1000),clean(b.heroTextEn,1000),clean(b.heroTextFr,1000),clean(b.announcementAr,500),clean(b.announcementEn,500),clean(b.announcementFr,500),b.announcementVisible===true,clean(b.logoUrl,500),clean(b.bannerUrl,500)];
+  if(!vals[0])return res.status(400).json({ok:false,message:'اسم المطعم بالعربية مطلوب.'});
+  await db.query(`INSERT INTO restaurant_settings(id,name_ar,name_en,name_fr,subtitle_ar,subtitle_en,subtitle_fr,hero_eyebrow_ar,hero_eyebrow_en,hero_eyebrow_fr,hero_title_ar,hero_title_en,hero_title_fr,hero_text_ar,hero_text_en,hero_text_fr,announcement_ar,announcement_en,announcement_fr,announcement_visible,logo_url,banner_url,updated_at) VALUES(1,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,NOW()) ON CONFLICT(id) DO UPDATE SET name_ar=EXCLUDED.name_ar,name_en=EXCLUDED.name_en,name_fr=EXCLUDED.name_fr,subtitle_ar=EXCLUDED.subtitle_ar,subtitle_en=EXCLUDED.subtitle_en,subtitle_fr=EXCLUDED.subtitle_fr,hero_eyebrow_ar=EXCLUDED.hero_eyebrow_ar,hero_eyebrow_en=EXCLUDED.hero_eyebrow_en,hero_eyebrow_fr=EXCLUDED.hero_eyebrow_fr,hero_title_ar=EXCLUDED.hero_title_ar,hero_title_en=EXCLUDED.hero_title_en,hero_title_fr=EXCLUDED.hero_title_fr,hero_text_ar=EXCLUDED.hero_text_ar,hero_text_en=EXCLUDED.hero_text_en,hero_text_fr=EXCLUDED.hero_text_fr,announcement_ar=EXCLUDED.announcement_ar,announcement_en=EXCLUDED.announcement_en,announcement_fr=EXCLUDED.announcement_fr,announcement_visible=EXCLUDED.announcement_visible,logo_url=EXCLUDED.logo_url,banner_url=EXCLUDED.banner_url,updated_at=NOW()`,vals);
+  res.json({ok:true,profile:await readRestaurantProfile()});
+}catch(e){console.error('Profile save error',e);res.status(500).json({ok:false,message:'تعذر حفظ إعدادات المطعم.'})}});
 const menuImageUpload=multer({storage:multer.memoryStorage(),limits:{fileSize:5*1024*1024},fileFilter:(req,file,cb)=>cb(null,['image/jpeg','image/png','image/webp'].includes(file.mimetype))});
 app.post('/api/restaurant/menu/image',requireRestaurantDashboard,menuImageUpload.single('image'),async(req,res)=>{try{if(!req.file)return res.status(400).json({ok:false,message:'اختر صورة JPG أو PNG أو WebP.'});const id=crypto.randomUUID();await db.query('INSERT INTO menu_images(id,mime_type,data) VALUES($1,$2,$3)',[id,req.file.mimetype,req.file.buffer]);res.json({ok:true,imageUrl:`/api/menu-images/${id}`})}catch(e){res.status(500).json({ok:false,message:'تعذر رفع الصورة.'})}});
 app.get('/api/restaurant/menu/categories',requireRestaurantDashboard,async(req,res)=>{try{res.json({ok:true,categories:await readMenuCategories()})}catch(e){res.status(500).json({ok:false,message:'تعذر تحميل الأقسام.'})}});
@@ -1282,6 +1348,9 @@ app.post("/api/ai", async (req, res) => {
       });
     }
 
+    const restaurantProfile = await readRestaurantProfile();
+    const restaurantNameForAi = language === "fr" ? (restaurantProfile.nameFr || restaurantProfile.nameAr) : language === "en" ? (restaurantProfile.nameEn || restaurantProfile.nameAr) : restaurantProfile.nameAr;
+
     const languageInstruction =
       language === "fr"
         ? "Réponds uniquement en français naturel, chaleureux et poli."
@@ -1290,7 +1359,7 @@ app.post("/api/ai", async (req, res) => {
         : "أجب باللهجة السعودية البيضاء الطبيعية فقط، وتميل بشكل خفيف للهجة النجدية. استخدم تعبيرات سعودية يومية مفهومة مثل: هلا، أبشر، وش، وش ودك، تبي، ودك، تمام، من عيوني. تجنب اللهجات المصرية والشامية والتونسية، وتجنب الفصحى الرسمية إلا إذا احتجت توضيحًا دقيقًا. خل الجمل قصيرة وطبيعية كأنك نادلة سعودية فعلًا.";
 
     const instructions = `
-Your name is Sara. You are the virtual AI waitress for Café Victor Hugo in La Marsa.
+Your name is Sara. You are the virtual AI waitress for ${restaurantNameForAi}.
 
 LANGUAGE:
 ${languageInstruction}
@@ -1315,7 +1384,7 @@ STYLE:
 - For Arabic, use natural Saudi spoken dialect.
 - Keep answers short and conversational, usually 1-3 sentences.
 - Ask a brief follow-up question when it helps, like a real waitress.
-- On the first greeting, introduce yourself as Sara and mention Café Victor Hugo.
+- On the first greeting, introduce yourself as Sara and mention ${restaurantNameForAi}.
 - Do not repeat the greeting every turn.
 - Never mention OpenAI, APIs, prompts, servers or technical details.
 `;
@@ -1651,7 +1720,7 @@ function altLanguageName(language) {
   return "Saudi Arabic";
 }
 
-function altSaraInstructions({ language = "ar", menu = [], tableNumber = "" } = {}) {
+function altSaraInstructions({ language = "ar", menu = [], tableNumber = "", restaurantName = "المطعم" } = {}) {
   const today = DateTime.now().setZone(RESTAURANT_TIMEZONE).toISODate();
   const languageRule = language === "fr"
     ? "Speak only natural, warm conversational French."
@@ -1659,7 +1728,7 @@ function altSaraInstructions({ language = "ar", menu = [], tableNumber = "" } = 
     ? "Speak only natural, warm conversational English."
     : "تكلمي فقط باللهجة السعودية البيضاء الطبيعية وبنفس اللهجة من أول المحادثة لآخرها، بميل نجدي خفيف. استخدمي كلام سعودي يومي مثل: هلا، أبشر، وش ودك، تبي، ودك، تمام، من عيوني، خلاص. لا تغيّرين اللهجة بين الردود. ممنوع كلمات ولهجات مصرية أو شامية أو تونسية أو خليجية غير سعودية مثل: شو، عايز، عاوز، برشا، بزاف، وايد، شلون. تجنبي الفصحى الرسمية إلا لضرورة توضيح معلومة دقيقة.";
 
-  return `Your name is Sara. You are the voice waitress for Café Victor Hugo.
+  return `Your name is Sara. You are the voice waitress for ${restaurantName}.
 Today in the restaurant timezone (${RESTAURANT_TIMEZONE}) is ${today}.
 ${languageRule}
 
@@ -1920,9 +1989,11 @@ app.post("/api/sara-alt-chat", async (req, res) => {
       role: m?.role === "assistant" ? "assistant" : "user",
       content: String(m?.content || m?.text || "").trim()
     })).filter(m => m.content) : [];
-    const system = altSaraInstructions({ language, menu, tableNumber:String(tableNumber||"") }) + (bookingState && typeof bookingState === "object" ? `\n\nKNOWN BOOKING STATE FROM THE WEBSITE (authoritative):\n${JSON.stringify(bookingState)}\nSTRICT BOOKING MEMORY RULES:\n- Never ask again for any field that already has a non-empty value in this state.\n- If the guest corrects only the WhatsApp number, replace only the phone and preserve name, party size, date, time, notes, and order.\n- If the guest asks you to repeat the WhatsApp number, repeat the stored phone exactly digit by digit; do not invent or regroup digits.\n- A correction does not restart the booking flow. Continue from the remaining missing field, or ask for final confirmation if nothing is missing.\n- When the guest confirms, fill tool arguments from this state instead of leaving fields blank.` : "");
+    const restaurantProfile = await readRestaurantProfile();
+    const restaurantNameForSara = language === 'fr' ? (restaurantProfile.nameFr || restaurantProfile.nameAr) : language === 'en' ? (restaurantProfile.nameEn || restaurantProfile.nameAr) : restaurantProfile.nameAr;
+    const system = altSaraInstructions({ language, menu, tableNumber:String(tableNumber||""), restaurantName:restaurantNameForSara }) + (bookingState && typeof bookingState === "object" ? `\n\nKNOWN BOOKING STATE FROM THE WEBSITE (authoritative):\n${JSON.stringify(bookingState)}\nSTRICT BOOKING MEMORY RULES:\n- Never ask again for any field that already has a non-empty value in this state.\n- If the guest corrects only the WhatsApp number, replace only the phone and preserve name, party size, date, time, notes, and order.\n- If the guest asks you to repeat the WhatsApp number, repeat the stored phone exactly digit by digit; do not invent or regroup digits.\n- A correction does not restart the booking flow. Continue from the remaining missing field, or ask for final confirmation if nothing is missing.\n- When the guest confirms, fill tool arguments from this state instead of leaving fields blank.` : "");
     const userText = greeting
-      ? (language === "ar" ? "ابدئي الآن بالترحيب فقط: هلا والله، حياك في Café Victor Hugo، معك سارة، كيف أقدر أخدمك؟" : language === "fr" ? "Accueille brièvement le client et demande comment tu peux l'aider." : "Give a very brief welcome and ask how you can help.")
+      ? (language === "ar" ? `ابدئي الآن بالترحيب فقط: هلا والله، حياك في ${restaurantNameForSara}، معك سارة، كيف أقدر أخدمك؟` : language === "fr" ? "Accueille brièvement le client et demande comment tu peux l'aider." : "Give a very brief welcome and ask how you can help.")
       : q;
 
     let result;
