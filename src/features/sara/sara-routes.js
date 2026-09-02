@@ -734,7 +734,7 @@ router.post("/cartesia-tts", async (req, res) => {
     // override. Cartesia accepts language as optional; letting the voice/model
     // infer Arabic preserves the voice's own locale/accent conditioning, which
     // is closer to Playground behavior for this Saudi-sounding voice.
-    const cartesiaLanguage = language === "fr" ? "fr" : language === "en" ? "en" : null;
+    const cartesiaLanguage = language === "ar" ? "ar" : language === "fr" ? "fr" : "en";
     const response = await fetch("https://api.cartesia.ai/tts/bytes", {
       method: "POST",
       headers: {
@@ -747,7 +747,8 @@ router.post("/cartesia-tts", async (req, res) => {
         transcript: prepareCartesiaTranscript(cleanText),
         voice: { mode: "id", id: env.cartesiaVoiceId },
         output_format: { container: "wav", encoding: "pcm_s16le", sample_rate: 44100 },
-        ...(cartesiaLanguage ? { language: cartesiaLanguage } : {})
+        language: cartesiaLanguage,
+        generation_config: { volume: 1, speed: 1 }
       })
     });
 

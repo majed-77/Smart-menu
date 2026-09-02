@@ -111,3 +111,11 @@ The experimental `openai-deepgram` engine now uses the requested direction:
 - Keeps Deepgram STT pinned to ar-SA.
 - For Arabic Cartesia TTS, omits the generic language override so the selected voice/model can preserve its native locale/accent conditioning. English/French still send explicit language codes.
 - Removes generation speed/volume overrides for Cartesia parity.
+
+## v6.0.12 microphone + Cartesia voice parity
+- iPhone microphone capture now enables AGC and no longer forces voiceIsolation, which can gate quiet Arabic consonants.
+- Deepgram VAD starts after only 25 ms of confirmed speech with lower adaptive start/release thresholds, reducing clipped first words.
+- End-of-turn hangover is 1.8 s to preserve natural pauses without making the conversation feel stuck.
+- Fatima voice ID remains unchanged.
+- Cartesia Arabic explicitly sends `language: ar`, speed 1, volume 1.
+- Default Cartesia model for this specific Fatima voice is pinned to `sonic-3` for parity testing with the voice's known integration profile; override with CARTESIA_TTS_MODEL if your Playground test uses another model.

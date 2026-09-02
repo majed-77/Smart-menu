@@ -1062,13 +1062,13 @@ function runAltVAD(){
       const capped=Math.min(rms,altNoiseFloor*2.2+0.006);
       altNoiseFloor=altNoiseFloor*0.985+capped*0.015;
     }
-    const adaptiveStart=isDeepgramEngine?Math.min(0.040,Math.max(0.014,altNoiseFloor*2.15+0.004)):0;
-    const adaptiveKeep=isDeepgramEngine?Math.min(0.018,Math.max(0.0055,altNoiseFloor*1.20+0.0015)):0;
+    const adaptiveStart=isDeepgramEngine?Math.min(0.032,Math.max(0.010,altNoiseFloor*1.65+0.0025)):0;
+    const adaptiveKeep=isDeepgramEngine?Math.min(0.014,Math.max(0.0045,altNoiseFloor*1.08+0.0008)):0;
     const startThreshold=isDeepgramEngine?adaptiveStart:(isHybrid3?0.024:0.055);
     const keepThreshold=isDeepgramEngine?adaptiveKeep:(isHybrid3?0.018:0.040);
-    const minSpeechMs=isDeepgramEngine?420:(isHybrid3?280:220);
-    const endSilenceMs=isDeepgramEngine?2100:(isHybrid3?1100:600);
-    const startHoldMs=isDeepgramEngine?85:0;
+    const minSpeechMs=isDeepgramEngine?260:(isHybrid3?280:220);
+    const endSilenceMs=isDeepgramEngine?1800:(isHybrid3?1100:600);
+    const startHoldMs=isDeepgramEngine?25:0;
     const canStart=!altBusy || (isHybrid3 && altSpeaking);
 
     if(canStart && !altCapturing){
@@ -1285,7 +1285,10 @@ async function startAltSara(){
     const cfg=await altFetchJSON('/api/sara-alt-status',{cache:'no-store'});
     if(!cfg.configured)throw new Error(waiterLanguage==='ar'?'المحرك التجريبي يحتاج مفاتيح ElevenLabs وDeepSeek وFish Audio في Render.':'Experimental engine keys are not configured.');
     const supported=navigator.mediaDevices.getSupportedConstraints?.()||{};
-    const constraints={echoCancellation:true,noiseSuppression:true,autoGainControl:false,channelCount:1};if(supported.voiceIsolation)constraints.voiceIsolation=true;
+    const constraints={echoCancellation:true,noiseSuppression:true,autoGainControl:true,channelCount:1};
+    // Do not force iOS voiceIsolation here: on some iPhones it can gate soft Arabic
+    // consonants and the first syllable. AGC keeps quiet guests audible instead.
+    if(supported.sampleRate)constraints.sampleRate=48000;
     altStream=await navigator.mediaDevices.getUserMedia({audio:constraints});
     const AC=window.AudioContext||window.webkitAudioContext; altAudioContext=new AC(); const src=altAudioContext.createMediaStreamSource(altStream); altAnalyser=altAudioContext.createAnalyser();altAnalyser.fftSize=1024;altAnalyser.smoothingTimeConstant=.2;src.connect(altAnalyser);
     altStarted=true; altBusy=true;

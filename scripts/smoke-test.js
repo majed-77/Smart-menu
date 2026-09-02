@@ -48,8 +48,8 @@ check("Deepgram engine sends Deepgram STT mode", customerJs.includes("form.appen
 check("Deepgram key is server-side env only", fs.readFileSync(path.join(root, "src/config/env.js"), "utf8").includes('DEEPGRAM_API_KEY') && !customerJs.includes('DEEPGRAM_API_KEY'));
 check("Deepgram STT key is server-side env only", fs.readFileSync(path.join(root, "src/config/env.js"), "utf8").includes('DEEPGRAM_API_KEY') && !customerJs.includes('DEEPGRAM_API_KEY'));
 check("Settings form is not auto-refreshed while editing", dashboardJs.includes("if(!['menu','settings'].includes(view))load()"));
-check("Customer assets are version-busted", customerHtml.includes("customer.css?v=6.0.11") && customerHtml.includes("customer-app.js?v=6.0.11"));
-check("Dashboard assets are version-busted", dashboardHtml.includes("dashboard.css?v=6.0.11") && dashboardHtml.includes("dashboard-app.js?v=6.0.11"));
+check("Customer assets are version-busted", customerHtml.includes("customer.css?v=6.0.12") && customerHtml.includes("customer-app.js?v=6.0.12"));
+check("Dashboard assets are version-busted", dashboardHtml.includes("dashboard.css?v=6.0.12") && dashboardHtml.includes("dashboard-app.js?v=6.0.12"));
 check("Static assets revalidate instead of one-day cache", fs.readFileSync(path.join(root, "src/app.js"), "utf8").includes('Cache-Control", "no-cache, max-age=0, must-revalidate') && !fs.readFileSync(path.join(root, "src/app.js"), "utf8").includes('maxAge: env.nodeEnv === "production" ? "1d" : 0'));
 check("HTML routes disable stale cache", fs.readFileSync(path.join(root, "src/app.js"), "utf8").includes('no-store, no-cache, must-revalidate, proxy-revalidate'));
 
@@ -95,16 +95,20 @@ console.log(`\n✓ ${checks.length} smoke checks passed.`);
   if (!customer.includes("'/api/cartesia-tts'")) throw new Error('Cartesia TTS client route missing');
   if (!customer.includes("form.append('mode','deepgram-stt')")) throw new Error('Deepgram STT mode missing');
   if (!sara.includes('https://api.cartesia.ai/tts/bytes')) throw new Error('Cartesia TTS endpoint missing');
-  if (!sara.includes('...(cartesiaLanguage ? { language: cartesiaLanguage } : {})')) throw new Error('Cartesia optional language mapping missing');
+  if (!sara.includes('language: cartesiaLanguage')) throw new Error('Cartesia language mapping missing');
   if (!envFile.includes('731ace69-ee17-41bc-8c6f-665c9f1db95c')) throw new Error('Cartesia voice id missing');
   if (!sara.includes('function prepareCartesiaTranscript')) throw new Error('Cartesia transcript parity helper missing');
   if (!sara.includes('transcript: prepareCartesiaTranscript(cleanText)')) throw new Error('Exact Cartesia transcript is not wired');
-  if (sara.includes('generation_config: { volume: 1, speed: 1 }')) throw new Error('Cartesia generation overrides should be omitted for Playground parity');
+  if (!sara.includes('generation_config: { volume: 1, speed: 1 }')) throw new Error('Cartesia neutral generation config missing');
   if (sara.includes('prepareSaudiCartesiaTTS(cleanText)')) throw new Error('Legacy Cartesia dialect rewriting is still active');
   if (sara.includes('speed: language === \"ar\" ? 0.96 : 1')) throw new Error('Legacy Arabic Cartesia slowdown is still active');
   console.log('✓ v6.0.10 Cartesia playground-parity checks passed');
 }
 
 // v6.0.11 adaptive VAD + native Cartesia Arabic voice conditioning
-check("Deepgram adaptive noise-floor VAD", customerJs.includes('altNoiseFloor*2.15') && customerJs.includes('endSilenceMs=isDeepgramEngine?2100'));
+check("Deepgram adaptive noise-floor VAD", customerJs.includes('altNoiseFloor*1.65') && customerJs.includes('endSilenceMs=isDeepgramEngine?1800'));
+check("Deepgram VAD preserves first syllable", customerJs.includes('startHoldMs=isDeepgramEngine?25'));
+check("iPhone mic uses AGC without forced voiceIsolation", customerJs.includes('autoGainControl:true') && !customerJs.includes('constraints.voiceIsolation=true'));
+check("Fatima voice uses sonic-3 parity model", fs.readFileSync(path.join(root,'src/config/env.js'),'utf8').includes('CARTESIA_TTS_MODEL", "sonic-3"'));
+check("Cartesia Arabic explicitly selected", routeSources.includes('language === "ar" ? "ar"'));
 check("Cartesia Arabic language override omitted", routeSources.includes('cartesiaLanguage = language === \"fr\" ? \"fr\" : language === \"en\" ? \"en\" : null'));

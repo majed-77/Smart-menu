@@ -30,7 +30,7 @@ const env = Object.freeze({
   deepgramTtsModelAr: readString("DEEPGRAM_TTS_MODEL_AR"),
   cartesiaApiKey: readString("CARTESIA_API_KEY"),
   cartesiaVoiceId: readString("CARTESIA_VOICE_ID", "731ace69-ee17-41bc-8c6f-665c9f1db95c"),
-  cartesiaTtsModel: readString("CARTESIA_TTS_MODEL", "sonic-3.5"),
+  cartesiaTtsModel: readString("CARTESIA_TTS_MODEL", "sonic-3"),
   cartesiaApiVersion: readString("CARTESIA_API_VERSION", "2026-03-01"),
   deepseekApiKey: readString("DEEPSEEK_API_KEY"),
   anthropicApiKey: readString("ANTHROPIC_API_KEY"),
