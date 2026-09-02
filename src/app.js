@@ -51,13 +51,32 @@ function createApp() {
     message: { ok: false, code: "LOGIN_RATE_LIMITED", message: "محاولات دخول كثيرة. حاول بعد قليل." }
   });
 
+  // HTML must always be revalidated so a new deploy cannot keep an old UI shell in Safari/Chrome.
   app.get("/", (_request, response) => {
+    response.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    response.setHeader("Pragma", "no-cache");
+    response.setHeader("Expires", "0");
     response.sendFile(path.join(PUBLIC_DIR, "index.html"));
   });
   app.get(["/restaurant", "/restaurant/", "/restaurant-dashboard", "/restaurant-dashboard/"], (_request, response) => {
+    response.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    response.setHeader("Pragma", "no-cache");
+    response.setHeader("Expires", "0");
     response.sendFile(path.join(PUBLIC_DIR, "restaurant-dashboard.html"));
   });
-  app.use("/assets", express.static(path.join(PUBLIC_DIR, "assets"), { maxAge: env.nodeEnv === "production" ? "1d" : 0 }));
+
+  // Do not keep JS/CSS for a full day. Revalidate on every navigation so deploys appear immediately.
+  // ETag remains enabled, so unchanged assets can still return a lightweight 304 response.
+  app.use(
+    "/assets",
+    express.static(path.join(PUBLIC_DIR, "assets"), {
+      maxAge: 0,
+      etag: true,
+      setHeaders(response) {
+        response.setHeader("Cache-Control", "no-cache, max-age=0, must-revalidate");
+      }
+    })
+  );
 
   app.use("/api/restaurant/login", loginLimiter);
   app.use(
@@ -91,7 +110,7 @@ function createApp() {
     response.json({
       ok: true,
       service: "Smart Menu AI",
-      version: "6.0.1",
+      version: "6.0.5",
       primaryLanguage: "ar",
       currency: "SAR",
       databaseConfigured: Boolean(pool),

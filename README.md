@@ -1,4 +1,4 @@
-# Smart Menu AI — v6.0.4
+# Smart Menu AI — v6.0.5
 
 نسخة معاد هيكلتها باحترافية لنظام المنيو الذكي. **العربية هي المصدر الأساسي للبيانات** والأسعار مخزنة وتعرض مباشرة بالريال السعودي (SAR). الإنجليزية والفرنسية ترجمات اختيارية.
 
@@ -60,7 +60,13 @@ The experimental `openai-deepgram` engine now uses the requested direction:
 - The customer UI shows only a simple Sara-ready status, not provider details.
 - This engine does not use Deepgram TTS. Existing Deepgram TTS support remains available in the code for future experiments but is not part of this engine.
 
-## v6.0.4 — إصلاح نموذج إعدادات المطعم
+## v6.0.5 — إصلاح نموذج إعدادات المطعم
 - إيقاف التحديث التلقائي كل 5 ثوانٍ أثناء فتح تبويب **إعدادات المطعم**.
 - قبل الإصلاح كان التحديث الدوري يعيد تحميل البيانات المحفوظة من الخادم أثناء الكتابة، لذلك النص الذي يحذفه أو يعدله المستخدم كان يرجع قبل الضغط على حفظ.
 - التحديث التلقائي للطلبات والحجوزات ما زال يعمل في شاشات التشغيل، ولا يتوقف إلا أثناء إدارة المنيو أو إعدادات المطعم.
+
+
+## v6.0.5
+- منع بقاء JavaScript/CSS القديم بعد النشر عبر إعادة التحقق من الأصول وإضافة version query.
+- صفحات العميل ولوحة المطعم ترسل no-store لمنع واجهة قديمة بعد Deploy.
+- المسار التجريبي يبقى Deepgram STT (ar-SA) → OpenAI LLM → OpenAI TTS.
