@@ -47,6 +47,7 @@ check("Deepgram engine uses OpenAI TTS", customerJs.includes("const ttsEndpoint=
 check("Deepgram engine sends Deepgram STT mode", customerJs.includes("form.append('mode','deepgram-stt')"));
 check("Deepgram key is server-side env only", fs.readFileSync(path.join(root, "src/config/env.js"), "utf8").includes('DEEPGRAM_API_KEY') && !customerJs.includes('DEEPGRAM_API_KEY'));
 check("Deepgram STT key is server-side env only", fs.readFileSync(path.join(root, "src/config/env.js"), "utf8").includes('DEEPGRAM_API_KEY') && !customerJs.includes('DEEPGRAM_API_KEY'));
+check("Settings form is not auto-refreshed while editing", dashboardJs.includes("if(!['menu','settings'].includes(view))load()"));
 
 const customerEndpoints = [...new Set([...customerJs.matchAll(/["'`]\/api\/([A-Za-z0-9_\-/]+)/g)].map((m) => m[1]))];
 const dashboardEndpoints = [...new Set([...dashboardJs.matchAll(/["'`]\/api\/([A-Za-z0-9_\-/]+)/g)].map((m) => m[1]))];
