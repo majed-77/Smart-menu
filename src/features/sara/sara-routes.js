@@ -730,7 +730,11 @@ router.post("/cartesia-tts", async (req, res) => {
       return res.status(409).json({ ok:false, code:"CARTESIA_VOICE_NOT_CONFIGURED", message:"CARTESIA_VOICE_ID غير مضبوط." });
     }
 
-    const cartesiaLanguage = language === "fr" ? "fr" : language === "en" ? "en" : "ar";
+    // For the selected Arabic voice, do not force the generic `ar` language
+    // override. Cartesia accepts language as optional; letting the voice/model
+    // infer Arabic preserves the voice's own locale/accent conditioning, which
+    // is closer to Playground behavior for this Saudi-sounding voice.
+    const cartesiaLanguage = language === "fr" ? "fr" : language === "en" ? "en" : null;
     const response = await fetch("https://api.cartesia.ai/tts/bytes", {
       method: "POST",
       headers: {
@@ -743,8 +747,7 @@ router.post("/cartesia-tts", async (req, res) => {
         transcript: prepareCartesiaTranscript(cleanText),
         voice: { mode: "id", id: env.cartesiaVoiceId },
         output_format: { container: "wav", encoding: "pcm_s16le", sample_rate: 44100 },
-        language: cartesiaLanguage,
-        generation_config: { volume: 1, speed: 1 }
+        ...(cartesiaLanguage ? { language: cartesiaLanguage } : {})
       })
     });
 

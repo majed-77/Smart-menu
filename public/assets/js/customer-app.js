@@ -1053,13 +1053,22 @@ function runAltVAD(){
     const isHybrid3=isBrainSaraEngine();
     const isDeepgramEngine=saraEngine==='openai-deepgram'||saraEngine==='openai-deepgram-cartesia';
 
-    // Deepgram Saudi STT needs a little more microphone sensitivity than the
-    // other hybrid engines. Lower thresholds reduce missed first/quiet words,
-    // while the longer end-silence window avoids cutting the guest mid-sentence.
-    const startThreshold=isDeepgramEngine?0.020:(isHybrid3?0.024:0.055);
-    const keepThreshold=isDeepgramEngine?0.0075:(isHybrid3?0.018:0.040);
-    const minSpeechMs=isDeepgramEngine?300:(isHybrid3?280:220);
-    const endSilenceMs=isDeepgramEngine?1650:(isHybrid3?1100:600);
+    // Adaptive VAD for Deepgram: a fixed RMS threshold is unreliable across
+    // iPhones/Android devices and restaurant noise. Track the ambient floor while
+    // idle, require a short voice hold to start, then use a much lower release
+    // threshold plus a long hangover so natural pauses do not cut the guest off.
+    if(isDeepgramEngine && !altCapturing && !altSpeaking){
+      if(!altNoiseFloor || !Number.isFinite(altNoiseFloor))altNoiseFloor=Math.max(0.004,rms);
+      const capped=Math.min(rms,altNoiseFloor*2.2+0.006);
+      altNoiseFloor=altNoiseFloor*0.985+capped*0.015;
+    }
+    const adaptiveStart=isDeepgramEngine?Math.min(0.040,Math.max(0.014,altNoiseFloor*2.15+0.004)):0;
+    const adaptiveKeep=isDeepgramEngine?Math.min(0.018,Math.max(0.0055,altNoiseFloor*1.20+0.0015)):0;
+    const startThreshold=isDeepgramEngine?adaptiveStart:(isHybrid3?0.024:0.055);
+    const keepThreshold=isDeepgramEngine?adaptiveKeep:(isHybrid3?0.018:0.040);
+    const minSpeechMs=isDeepgramEngine?420:(isHybrid3?280:220);
+    const endSilenceMs=isDeepgramEngine?2100:(isHybrid3?1100:600);
+    const startHoldMs=isDeepgramEngine?85:0;
     const canStart=!altBusy || (isHybrid3 && altSpeaking);
 
     if(canStart && !altCapturing){
@@ -1076,11 +1085,12 @@ function runAltVAD(){
           }
         }else altBargeCandidateAt=0;
       }else if(rms>startThreshold){
-        // Start immediately so the first syllable is not clipped. The minimum
-        // speech duration + STT language lock reject tiny noise bursts later.
-        startAltCapture();
-        altVoiceCandidateAt=0;
-      }
+        if(!altVoiceCandidateAt)altVoiceCandidateAt=now;
+        if(now-altVoiceCandidateAt>=startHoldMs){
+          startAltCapture();
+          altVoiceCandidateAt=0;
+        }
+      }else altVoiceCandidateAt=0;
     }
 
     if(altCapturing){
@@ -1408,9 +1418,9 @@ async function startHybrid3(){
     // trigger recording earlier instead of being swallowed by smoothing.
     altAnalyser.smoothingTimeConstant=(saraEngine==='openai-deepgram'||saraEngine==='openai-deepgram-cartesia')?.22:.35;
     src.connect(altAnalyser);
-    // Fixed VAD: no restaurant-noise calibration; native phone processing handles noise.
-    altNoiseFloor=0.012; altNoiseLastUpdate=0; altVoiceCandidateAt=0; altBargeCandidateAt=0;
-    altNoiseReadyAt=0;
+    // Seed adaptive VAD conservatively; it continuously learns the ambient floor while idle.
+    altNoiseFloor=0.006; altNoiseLastUpdate=0; altVoiceCandidateAt=0; altBargeCandidateAt=0;
+    altNoiseReadyAt=performance.now()+450;
     altStarted=true; altBusy=true;
     const engineReadyNote=(saraEngine==='openai-deepgram'||saraEngine==='openai-deepgram-cartesia')
       ? (waiterLanguage==='ar'?'🟢 سارة جاهزة':waiterLanguage==='fr'?'🟢 Sara prête':'🟢 Sara ready')
