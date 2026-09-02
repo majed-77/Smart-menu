@@ -611,6 +611,50 @@ function prepareArabicSaraTTS(text) {
   });
   return out;
 }
+
+// Cartesia does not expose a Saudi-Arabic locale code on the TTS endpoint;
+// it accepts Arabic as `ar`. To keep Sara sounding as Saudi as the selected
+// voice allows, feed Cartesia a dialect-optimized copy of the visible reply.
+// This changes only speech rendering; the chat text remains untouched.
+function prepareSaudiCartesiaTTS(text) {
+  let out = String(text || "").trim();
+  const replacements = [
+    [/كيف يمكنني مساعدتك[؟?]?/g, "كيف أقدر أخدمك؟"],
+    [/كيف أستطيع مساعدتك[؟?]?/g, "كيف أقدر أخدمك؟"],
+    [/ماذا تريد/g, "وش ودك"],
+    [/ماذا ترغب/g, "وش ودك"],
+    [/هل تريد/g, "تبي"],
+    [/هل ترغب/g, "ودك"],
+    [/سوف /g, "بـ"],
+    [/حسنًا/g, "تمام"],
+    [/حسناً/g, "تمام"],
+    [/بالطبع/g, "أبشر"],
+    [/لا بأس/g, "ما عليه"],
+    [/انتظر قليلًا/g, "لحظة بس"],
+    [/انتظري قليلًا/g, "لحظة بس"],
+    [/أريد أن أتأكد/g, "أبي أتأكد"],
+    [/أود أن أتأكد/g, "أبي أتأكد"],
+    [/يرجى/g, "لو سمحت"],
+    [/يمكنك/g, "تقدر"],
+    [/يمكنني/g, "أقدر"],
+    [/تستطيع/g, "تقدر"],
+    [/أستطيع/g, "أقدر"],
+    [/سأقوم بتأكيد/g, "باعتمد"],
+    [/تم تأكيد/g, "تم اعتماد"],
+    [/مرحبًا/g, "هلا والله"],
+    [/أهلاً وسهلاً/g, "حياك الله"],
+    [/أهلا وسهلا/g, "حياك الله"]
+  ];
+  for (const [pattern, replacement] of replacements) out = out.replace(pattern, replacement);
+
+  // TTS-friendly Saudi readings for phrases and digits that occur often in bookings.
+  out = prepareArabicSaraTTS(out);
+  return out
+    .replace(/\s+/g, " ")
+    .replace(/\s+([،.!؟?])/g, "$1")
+    .trim();
+}
+
 const saraTtsCache = new Map();
 function getSaraTtsCache(key){
   const hit=saraTtsCache.get(key);
@@ -730,11 +774,11 @@ router.post("/cartesia-tts", async (req, res) => {
       },
       body: JSON.stringify({
         model_id: env.cartesiaTtsModel,
-        transcript: cleanText,
+        transcript: language === "ar" ? prepareSaudiCartesiaTTS(cleanText) : cleanText,
         voice: { mode: "id", id: env.cartesiaVoiceId },
         output_format: { container: "wav", encoding: "pcm_s16le", sample_rate: 44100 },
         language: cartesiaLanguage,
-        generation_config: { volume: 1, speed: 1 }
+        generation_config: { volume: 1, speed: language === "ar" ? 0.96 : 1 }
       })
     });
 
@@ -837,7 +881,7 @@ function altSaraInstructions({ language = "ar", menu = [], tableNumber = "", res
     ? "Speak only natural, warm conversational French."
     : language === "en"
     ? "Speak only natural, warm conversational English."
-    : "تكلمي فقط باللهجة السعودية البيضاء الطبيعية وبنفس اللهجة من أول المحادثة لآخرها، بميل نجدي خفيف. استخدمي كلام سعودي يومي مثل: هلا، أبشر، وش ودك، تبي، ودك، تمام، من عيوني، خلاص. لا تغيّرين اللهجة بين الردود. ممنوع كلمات ولهجات مصرية أو شامية أو تونسية أو خليجية غير سعودية مثل: شو، عايز، عاوز، برشا، بزاف، وايد، شلون. تجنبي الفصحى الرسمية إلا لضرورة توضيح معلومة دقيقة.";
+    : "تكلمي فقط باللهجة السعودية البيضاء الطبيعية وبنفس اللهجة من أول المحادثة لآخرها، بميل نجدي خفيف. اكتبي الرد كما يُنطق سعوديًا لأن النص سيذهب مباشرة لمحرك صوت: هلا والله، حياك، أبشر، وش ودك، تبي، ودك، تمام، من عيوني، خلاص، ما عليه، أقدر، عندنا. لا تستخدمي الصياغات الفصحى مثل: ماذا تريد، هل ترغب، بالطبع، حسنًا، يمكنني مساعدتك، أود أن. لا تغيّرين اللهجة بين الردود. ممنوع كلمات ولهجات مصرية أو شامية أو تونسية أو خليجية غير سعودية مثل: شو، عايز، عاوز، برشا، بزاف، وايد، شلون. تجنبي الفصحى الرسمية إلا لضرورة توضيح معلومة دقيقة.";
 
   return `Your name is Sara. You are the voice waitress for ${restaurantName}.
 Today in the restaurant timezone (${env.restaurantTimezone}) is ${today}.

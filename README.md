@@ -79,10 +79,18 @@ The experimental `openai-deepgram` engine now uses the requested direction:
 - تقليل تنعيم VAD لتسريع اكتشاف أول مقطع صوتي.
 - إضافة Nova-3 keyterm prompting لعبارات سعودية مهمة مثل اعتمد، تمام، حجز، طلب، رقم الجوال.
 
-## v6.0.8 — Cartesia voice + steadier Deepgram VAD
+## v6.0.9 — Cartesia voice + steadier Deepgram VAD
 
 - Added a new experimental engine: **Deepgram STT (`ar-SA`) → OpenAI LLM → Cartesia TTS**.
 - Cartesia voice ID defaults to `731ace69-ee17-41bc-8c6f-665c9f1db95c` and can be overridden with `CARTESIA_VOICE_ID`.
 - Cartesia TTS uses `sonic-3.5`, API version `2026-03-01`, and Arabic language code `ar`.
 - The Cartesia API key remains server-side only (`CARTESIA_API_KEY`).
 - Deepgram microphone VAD was rebalanced to reduce mid-sentence cuts: start threshold `0.020`, keep threshold `0.0075`, minimum speech `300ms`, end silence `1650ms`.
+
+
+## v6.0.9 — Saudi dialect hardening for Cartesia
+- Keeps the selected Cartesia voice ID.
+- Sends Arabic replies through a Saudi-colloquial speech copy before TTS while leaving visible chat text unchanged.
+- Strengthens Sara's LLM instruction to avoid formal Arabic phrasing that pulls generic Arabic voices away from a Saudi feel.
+- Uses a slightly calmer Arabic Cartesia speed (0.96) for more natural conversational delivery.
+- Important: Cartesia's current public TTS language parameter is `ar`, not `ar-SA`; Cartesia Voice Localization currently exposes Modern Standard Arabic as the Arabic accent option, so code alone cannot guarantee a native Saudi phonetic accent for a generic Arabic voice.

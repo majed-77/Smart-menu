@@ -48,8 +48,8 @@ check("Deepgram engine sends Deepgram STT mode", customerJs.includes("form.appen
 check("Deepgram key is server-side env only", fs.readFileSync(path.join(root, "src/config/env.js"), "utf8").includes('DEEPGRAM_API_KEY') && !customerJs.includes('DEEPGRAM_API_KEY'));
 check("Deepgram STT key is server-side env only", fs.readFileSync(path.join(root, "src/config/env.js"), "utf8").includes('DEEPGRAM_API_KEY') && !customerJs.includes('DEEPGRAM_API_KEY'));
 check("Settings form is not auto-refreshed while editing", dashboardJs.includes("if(!['menu','settings'].includes(view))load()"));
-check("Customer assets are version-busted", customerHtml.includes("customer.css?v=6.0.8") && customerHtml.includes("customer-app.js?v=6.0.8"));
-check("Dashboard assets are version-busted", dashboardHtml.includes("dashboard.css?v=6.0.8") && dashboardHtml.includes("dashboard-app.js?v=6.0.8"));
+check("Customer assets are version-busted", customerHtml.includes("customer.css?v=6.0.9") && customerHtml.includes("customer-app.js?v=6.0.9"));
+check("Dashboard assets are version-busted", dashboardHtml.includes("dashboard.css?v=6.0.9") && dashboardHtml.includes("dashboard-app.js?v=6.0.9"));
 check("Static assets revalidate instead of one-day cache", fs.readFileSync(path.join(root, "src/app.js"), "utf8").includes('Cache-Control", "no-cache, max-age=0, must-revalidate') && !fs.readFileSync(path.join(root, "src/app.js"), "utf8").includes('maxAge: env.nodeEnv === "production" ? "1d" : 0'));
 check("HTML routes disable stale cache", fs.readFileSync(path.join(root, "src/app.js"), "utf8").includes('no-store, no-cache, must-revalidate, proxy-revalidate'));
 
@@ -82,7 +82,7 @@ check("Deepgram VAD uses faster smoothing", customerJs.includes("saraEngine==='o
 check("Deepgram Nova-3 uses Saudi restaurant keyterms", routeSources.includes('url.searchParams.append("keyterm", term)') && routeSources.includes('"اعتمد"') && routeSources.includes('"رقم الجوال"'));
 console.log(`\n✓ ${checks.length} smoke checks passed.`);
 
-// v6.0.8 Cartesia integration static checks
+// v6.0.9 Cartesia integration static checks
 {
   const fs = require('fs');
   const path = require('path');
@@ -97,5 +97,9 @@ console.log(`\n✓ ${checks.length} smoke checks passed.`);
   if (!sara.includes('https://api.cartesia.ai/tts/bytes')) throw new Error('Cartesia TTS endpoint missing');
   if (!sara.includes('language: cartesiaLanguage')) throw new Error('Cartesia language mapping missing');
   if (!envFile.includes('731ace69-ee17-41bc-8c6f-665c9f1db95c')) throw new Error('Cartesia voice id missing');
-  console.log('✓ v6.0.8 Cartesia integration checks passed');
+  if (!sara.includes('function prepareSaudiCartesiaTTS')) throw new Error('Saudi Cartesia speech preprocessing missing');
+  if (!sara.includes('كيف أقدر أخدمك؟') || !sara.includes('وش ودك') || !sara.includes('أبشر')) throw new Error('Saudi lexical steering missing');
+  if (!sara.includes('prepareSaudiCartesiaTTS(cleanText)')) throw new Error('Saudi speech copy is not wired to Cartesia');
+  if (!sara.includes('speed: language === \"ar\" ? 0.96 : 1')) throw new Error('Arabic Cartesia pacing adjustment missing');
+  console.log('✓ v6.0.9 Cartesia integration checks passed');
 }
