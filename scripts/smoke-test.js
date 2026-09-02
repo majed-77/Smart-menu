@@ -43,13 +43,13 @@ check("Deepgram STT + OpenAI engine button exists", customerHtml.includes('data-
 check("OpenAI brain provider exists", routeSources.includes('provider === "openai"'));
 check("Deepgram STT route mode exists", routeSources.includes('deepgram-stt') && routeSources.includes('api.deepgram.com/v1/listen'));
 check("Deepgram Arabic STT pinned to Saudi dialect", fs.readFileSync(path.join(root, "src/config/env.js"), "utf8").includes('DEEPGRAM_STT_LANGUAGE_AR') && fs.readFileSync(path.join(root, "src/config/env.js"), "utf8").includes('ar-SA'));
-check("Deepgram engine uses OpenAI TTS", customerJs.includes("const ttsEndpoint='/api/tts';"));
+check("Original Deepgram engine keeps OpenAI TTS", customerJs.includes("saraEngine==='openai-deepgram-cartesia'?'/api/cartesia-tts':'/api/tts'"));
 check("Deepgram engine sends Deepgram STT mode", customerJs.includes("form.append('mode','deepgram-stt')"));
 check("Deepgram key is server-side env only", fs.readFileSync(path.join(root, "src/config/env.js"), "utf8").includes('DEEPGRAM_API_KEY') && !customerJs.includes('DEEPGRAM_API_KEY'));
 check("Deepgram STT key is server-side env only", fs.readFileSync(path.join(root, "src/config/env.js"), "utf8").includes('DEEPGRAM_API_KEY') && !customerJs.includes('DEEPGRAM_API_KEY'));
 check("Settings form is not auto-refreshed while editing", dashboardJs.includes("if(!['menu','settings'].includes(view))load()"));
-check("Customer assets are version-busted", customerHtml.includes("customer.css?v=6.0.6") && customerHtml.includes("customer-app.js?v=6.0.6"));
-check("Dashboard assets are version-busted", dashboardHtml.includes("dashboard.css?v=6.0.6") && dashboardHtml.includes("dashboard-app.js?v=6.0.6"));
+check("Customer assets are version-busted", customerHtml.includes("customer.css?v=6.0.8") && customerHtml.includes("customer-app.js?v=6.0.8"));
+check("Dashboard assets are version-busted", dashboardHtml.includes("dashboard.css?v=6.0.8") && dashboardHtml.includes("dashboard-app.js?v=6.0.8"));
 check("Static assets revalidate instead of one-day cache", fs.readFileSync(path.join(root, "src/app.js"), "utf8").includes('Cache-Control", "no-cache, max-age=0, must-revalidate') && !fs.readFileSync(path.join(root, "src/app.js"), "utf8").includes('maxAge: env.nodeEnv === "production" ? "1d" : 0'));
 check("HTML routes disable stale cache", fs.readFileSync(path.join(root, "src/app.js"), "utf8").includes('no-store, no-cache, must-revalidate, proxy-revalidate'));
 
@@ -76,4 +76,26 @@ if (failed) {
   console.error(`\n${failed} smoke check(s) failed.`);
   process.exit(1);
 }
+
+check("Deepgram VAD uses more sensitive thresholds", customerJs.includes("isDeepgramEngine?0.016") && customerJs.includes("isDeepgramEngine?0.011") && customerJs.includes("isDeepgramEngine?1250"));
+check("Deepgram VAD uses faster smoothing", customerJs.includes("saraEngine==='openai-deepgram'?.18:.35"));
+check("Deepgram Nova-3 uses Saudi restaurant keyterms", routeSources.includes('url.searchParams.append("keyterm", term)') && routeSources.includes('"اعتمد"') && routeSources.includes('"رقم الجوال"'));
 console.log(`\n✓ ${checks.length} smoke checks passed.`);
+
+// v6.0.8 Cartesia integration static checks
+{
+  const fs = require('fs');
+  const path = require('path');
+  const root = path.join(__dirname, '..');
+  const customer = fs.readFileSync(path.join(root, 'public/assets/js/customer-app.js'), 'utf8');
+  const index = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
+  const sara = fs.readFileSync(path.join(root, 'src/features/sara/sara-routes.js'), 'utf8');
+  const envFile = fs.readFileSync(path.join(root, 'src/config/env.js'), 'utf8');
+  if (!index.includes('openai-deepgram-cartesia')) throw new Error('Cartesia engine button missing');
+  if (!customer.includes("'/api/cartesia-tts'")) throw new Error('Cartesia TTS client route missing');
+  if (!customer.includes("form.append('mode','deepgram-stt')")) throw new Error('Deepgram STT mode missing');
+  if (!sara.includes('https://api.cartesia.ai/tts/bytes')) throw new Error('Cartesia TTS endpoint missing');
+  if (!sara.includes('language: cartesiaLanguage')) throw new Error('Cartesia language mapping missing');
+  if (!envFile.includes('731ace69-ee17-41bc-8c6f-665c9f1db95c')) throw new Error('Cartesia voice id missing');
+  console.log('✓ v6.0.8 Cartesia integration checks passed');
+}

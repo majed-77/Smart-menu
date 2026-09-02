@@ -433,7 +433,14 @@ router.post("/transcribe", upload.single("audio"), async (req, res) => {
       url.searchParams.set("model", env.deepgramSttModel);
       url.searchParams.set("language", deepgramLanguage);
       url.searchParams.set("smart_format", "true");
-      url.searchParams.set("punctuate", "true");
+      // Nova-3 keyterm prompting improves recall of short restaurant phrases
+      // that are especially important in Saudi Arabic confirmations/changes.
+      if (language === "ar") {
+        [
+          "اعتمد", "نعم", "ايه", "إيه", "تمام", "بدون", "زيادة",
+          "حجز", "طاولة", "طلب", "واتساب", "رقم الجوال", "الساعة"
+        ].forEach((term) => url.searchParams.append("keyterm", term));
+      }
 
       const dgResponse = await fetch(url, {
         method: "POST",
@@ -691,6 +698,67 @@ router.post("/tts", async (req, res) => {
       code: e.code,
       message: e.message || "تعذر تشغيل صوت النادلة."
     });
+  }
+});
+
+
+// ======================================================
+// DEEPGRAM STT + OPENAI LLM + CARTESIA TTS
+// Voice chosen by the restaurant owner; Cartesia key stays server-side.
+// ======================================================
+router.post("/cartesia-tts", async (req, res) => {
+  try {
+    const { text, language = "ar" } = req.body || {};
+    const cleanText = String(text || "").trim();
+    if (!cleanText) {
+      return res.status(400).json({ ok:false, code:"EMPTY_TEXT", message:"لا يوجد نص لتحويله إلى صوت." });
+    }
+    if (!env.cartesiaApiKey) {
+      return res.status(401).json({ ok:false, code:"CARTESIA_NOT_CONFIGURED", message:"CARTESIA_API_KEY غير موجود في Render." });
+    }
+    if (!env.cartesiaVoiceId) {
+      return res.status(409).json({ ok:false, code:"CARTESIA_VOICE_NOT_CONFIGURED", message:"CARTESIA_VOICE_ID غير مضبوط." });
+    }
+
+    const cartesiaLanguage = language === "fr" ? "fr" : language === "en" ? "en" : "ar";
+    const response = await fetch("https://api.cartesia.ai/tts/bytes", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.cartesiaApiKey}`,
+        "Cartesia-Version": env.cartesiaApiVersion,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model_id: env.cartesiaTtsModel,
+        transcript: cleanText,
+        voice: { mode: "id", id: env.cartesiaVoiceId },
+        output_format: { container: "wav", encoding: "pcm_s16le", sample_rate: 44100 },
+        language: cartesiaLanguage,
+        generation_config: { volume: 1, speed: 1 }
+      })
+    });
+
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      console.error("Cartesia TTS HTTP error:", response.status, detail.slice(0, 500));
+      return res.status(502).json({
+        ok:false,
+        code:"CARTESIA_TTS_ERROR",
+        message:"تعذر تشغيل صوت سارة مؤقتًا."
+      });
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (!buffer.length) throw new Error("Cartesia returned empty audio.");
+
+    res.setHeader("Content-Type", response.headers.get("content-type") || "audio/wav");
+    res.setHeader("Content-Length", buffer.length);
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("X-Sara-TTS-Provider", "cartesia");
+    return res.send(buffer);
+  } catch (error) {
+    console.error("Cartesia TTS error:", error);
+    return res.status(502).json({ ok:false, code:"CARTESIA_TTS_ERROR", message:"تعذر تشغيل صوت سارة مؤقتًا." });
   }
 });
 

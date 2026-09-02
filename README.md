@@ -1,4 +1,4 @@
-# Smart Menu AI — v6.0.6
+# Smart Menu AI — v6.0.7
 
 نسخة معاد هيكلتها باحترافية لنظام المنيو الذكي. **العربية هي المصدر الأساسي للبيانات** والأسعار مخزنة وتعرض مباشرة بالريال السعودي (SAR). الإنجليزية والفرنسية ترجمات اختيارية.
 
@@ -60,13 +60,29 @@ The experimental `openai-deepgram` engine now uses the requested direction:
 - The customer UI shows only a simple Sara-ready status, not provider details.
 - This engine does not use Deepgram TTS. Existing Deepgram TTS support remains available in the code for future experiments but is not part of this engine.
 
-## v6.0.6 — إصلاح نموذج إعدادات المطعم
+## v6.0.7 — إصلاح نموذج إعدادات المطعم
 - إيقاف التحديث التلقائي كل 5 ثوانٍ أثناء فتح تبويب **إعدادات المطعم**.
 - قبل الإصلاح كان التحديث الدوري يعيد تحميل البيانات المحفوظة من الخادم أثناء الكتابة، لذلك النص الذي يحذفه أو يعدله المستخدم كان يرجع قبل الضغط على حفظ.
 - التحديث التلقائي للطلبات والحجوزات ما زال يعمل في شاشات التشغيل، ولا يتوقف إلا أثناء إدارة المنيو أو إعدادات المطعم.
 
 
-## v6.0.6
+## v6.0.7
 - منع بقاء JavaScript/CSS القديم بعد النشر عبر إعادة التحقق من الأصول وإضافة version query.
 - صفحات العميل ولوحة المطعم ترسل no-store لمنع واجهة قديمة بعد Deploy.
 - المسار التجريبي يبقى Deepgram STT (ar-SA) → OpenAI LLM → OpenAI TTS.
+
+
+## v6.0.7 — تحسين التقاط الصوت مع Deepgram
+- حساسية أعلى للمايك في محرك Deepgram STT فقط.
+- بداية تسجيل أبكر للكلام الهادئ والقصير.
+- مهلة سكوت 1.25 ثانية لتجنب قطع الجملة.
+- تقليل تنعيم VAD لتسريع اكتشاف أول مقطع صوتي.
+- إضافة Nova-3 keyterm prompting لعبارات سعودية مهمة مثل اعتمد، تمام، حجز، طلب، رقم الجوال.
+
+## v6.0.8 — Cartesia voice + steadier Deepgram VAD
+
+- Added a new experimental engine: **Deepgram STT (`ar-SA`) → OpenAI LLM → Cartesia TTS**.
+- Cartesia voice ID defaults to `731ace69-ee17-41bc-8c6f-665c9f1db95c` and can be overridden with `CARTESIA_VOICE_ID`.
+- Cartesia TTS uses `sonic-3.5`, API version `2026-03-01`, and Arabic language code `ar`.
+- The Cartesia API key remains server-side only (`CARTESIA_API_KEY`).
+- Deepgram microphone VAD was rebalanced to reduce mid-sentence cuts: start threshold `0.020`, keep threshold `0.0075`, minimum speech `300ms`, end silence `1650ms`.

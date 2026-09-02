@@ -131,10 +131,10 @@ async function loadRestaurantProfile(){try{const r=await fetch('/api/restaurant-
 loadRestaurantProfile();
 let waiterLanguage='ar';
 let saraEngine='openai';
-const SARA_BRAIN_ENGINES=new Set(['hybrid3','claude','gemini','kimi','openai-deepgram']);
+const SARA_BRAIN_ENGINES=new Set(['hybrid3','claude','gemini','kimi','openai-deepgram','openai-deepgram-cartesia']);
 function isBrainSaraEngine(engine=saraEngine){return SARA_BRAIN_ENGINES.has(engine);}
-function saraBrainProvider(){return saraEngine==='openai-deepgram'?'openai':saraEngine==='claude'?'claude':saraEngine==='gemini'?'gemini':saraEngine==='kimi'?'kimi':'deepseek';}
-function saraBrainLabel(){return saraEngine==='openai-deepgram'?'سارة':saraEngine==='claude'?'Claude':saraEngine==='gemini'?'Gemini':saraEngine==='kimi'?'Kimi':'DeepSeek';}
+function saraBrainProvider(){return (saraEngine==='openai-deepgram'||saraEngine==='openai-deepgram-cartesia')?'openai':saraEngine==='claude'?'claude':saraEngine==='gemini'?'gemini':saraEngine==='kimi'?'kimi':'deepseek';}
+function saraBrainLabel(){return (saraEngine==='openai-deepgram'||saraEngine==='openai-deepgram-cartesia')?'سارة':saraEngine==='claude'?'Claude':saraEngine==='gemini'?'Gemini':saraEngine==='kimi'?'Kimi':'DeepSeek';}
 let currentDish=null;
 let realtimePC=null;
 let realtimeDC=null;
@@ -1051,14 +1051,15 @@ function runAltVAD(){
     for(let i=0;i<data.length;i++){const x=(data[i]-128)/128;sum+=x*x;}
     const rms=Math.sqrt(sum/data.length), now=performance.now();
     const isHybrid3=isBrainSaraEngine();
+    const isDeepgramEngine=saraEngine==='openai-deepgram'||saraEngine==='openai-deepgram-cartesia';
 
-    // Experimental 3: keep capture simple and let the phone/browser perform
-    // echo cancellation + noise suppression. VAD only decides turn boundaries;
-    // it no longer learns the room noise or changes thresholds dynamically.
-    const startThreshold=isHybrid3?0.024:0.055;
-    const keepThreshold=isHybrid3?0.018:0.040;
-    const minSpeechMs=isHybrid3?280:220;
-    const endSilenceMs=isHybrid3?1100:600;
+    // Deepgram Saudi STT needs a little more microphone sensitivity than the
+    // other hybrid engines. Lower thresholds reduce missed first/quiet words,
+    // while the longer end-silence window avoids cutting the guest mid-sentence.
+    const startThreshold=isDeepgramEngine?0.020:(isHybrid3?0.024:0.055);
+    const keepThreshold=isDeepgramEngine?0.0075:(isHybrid3?0.018:0.040);
+    const minSpeechMs=isDeepgramEngine?300:(isHybrid3?280:220);
+    const endSilenceMs=isDeepgramEngine?1650:(isHybrid3?1100:600);
     const canStart=!altBusy || (isHybrid3 && altSpeaking);
 
     if(canStart && !altCapturing){
@@ -1204,7 +1205,7 @@ async function processAltVoice(blob,mime){
   try{
     status.textContent=TEXT[waiterLanguage].transcribing;
     const ext=mime.includes('mp4')?'m4a':mime.includes('ogg')?'ogg':'webm';
-    const form=new FormData(); form.append('audio',blob,'voice.'+ext); form.append('language',waiterLanguage); if(saraEngine==='openai-deepgram')form.append('mode','deepgram-stt'); else if(isBrainSaraEngine())form.append('mode','hybrid3');
+    const form=new FormData(); form.append('audio',blob,'voice.'+ext); form.append('language',waiterLanguage); if(saraEngine==='openai-deepgram'||saraEngine==='openai-deepgram-cartesia')form.append('mode','deepgram-stt'); else if(isBrainSaraEngine())form.append('mode','hybrid3');
     const sttUrl=isBrainSaraEngine()?'/api/transcribe':'/api/sara-alt-transcribe';
     const r=await fetch(sttUrl,{method:'POST',body:form}); const d=await r.json().catch(()=>({}));
     if(!r.ok||!d.text)throw new Error(d.message||'Transcription failed');
@@ -1402,12 +1403,16 @@ async function startHybrid3(){
     altAudioContext=new AC();
     const src=altAudioContext.createMediaStreamSource(altStream);
     altAnalyser=altAudioContext.createAnalyser();
-    altAnalyser.fftSize=2048; altAnalyser.smoothingTimeConstant=.35; src.connect(altAnalyser);
+    altAnalyser.fftSize=2048;
+    // Faster envelope response for Deepgram so quiet/short Saudi utterances
+    // trigger recording earlier instead of being swallowed by smoothing.
+    altAnalyser.smoothingTimeConstant=(saraEngine==='openai-deepgram'||saraEngine==='openai-deepgram-cartesia')?.22:.35;
+    src.connect(altAnalyser);
     // Fixed VAD: no restaurant-noise calibration; native phone processing handles noise.
     altNoiseFloor=0.012; altNoiseLastUpdate=0; altVoiceCandidateAt=0; altBargeCandidateAt=0;
     altNoiseReadyAt=0;
     altStarted=true; altBusy=true;
-    const engineReadyNote=saraEngine==='openai-deepgram'
+    const engineReadyNote=(saraEngine==='openai-deepgram'||saraEngine==='openai-deepgram-cartesia')
       ? (waiterLanguage==='ar'?'🟢 سارة جاهزة':waiterLanguage==='fr'?'🟢 Sara prête':'🟢 Sara ready')
       : (waiterLanguage==='ar'?'🧠 ':'🧠 ')+saraBrainLabel()+(waiterLanguage==='ar'?' جاهز':waiterLanguage==='fr'?' prêt':' ready');
     showDiagnostic(engineReadyNote,true);
@@ -1711,7 +1716,7 @@ async function speakAI(text){
       speechSource=null;
     }
 
-    const ttsEndpoint='/api/tts';
+    const ttsEndpoint=saraEngine==='openai-deepgram-cartesia'?'/api/cartesia-tts':'/api/tts';
     const r=await fetch(ttsEndpoint,{
       method:'POST',
       headers:{'Content-Type':'application/json'},

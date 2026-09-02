@@ -85,6 +85,7 @@ function createApp() {
       "/api/ai",
       "/api/transcribe",
       "/api/tts",
+      "/api/cartesia-tts",
       "/api/sara-alt-transcribe",
       "/api/sara-alt-chat",
       "/api/sara-alt-tts"
@@ -110,12 +111,13 @@ function createApp() {
     response.json({
       ok: true,
       service: "Smart Menu AI",
-      version: "6.0.5",
+      version: "6.0.8",
       primaryLanguage: "ar",
       currency: "SAR",
       databaseConfigured: Boolean(pool),
       openaiConfigured: Boolean(env.openaiApiKey),
       deepseekConfigured: Boolean(env.deepseekApiKey),
+      cartesiaConfigured: Boolean(env.cartesiaApiKey && env.cartesiaVoiceId),
       timestamp: new Date().toISOString()
     });
   });
