@@ -39,11 +39,14 @@ check("Customer supports 1.1s DeepSeek silence", customerJs.includes("isHybrid3?
 check("Booking idempotency preserved", fs.readFileSync(path.join(root, "src/features/orders/orders-service.js"), "utf8").includes("INTERVAL '10 minutes'"));
 check("Security headers enabled", fs.readFileSync(path.join(root, "src/app.js"), "utf8").includes("helmet("));
 check("Rate limiting enabled", fs.readFileSync(path.join(root, "src/app.js"), "utf8").includes("rateLimit("));
-check("OpenAI + Deepgram engine button exists", customerHtml.includes('data-sara-engine="openai-deepgram"'));
+check("Deepgram STT + OpenAI engine button exists", customerHtml.includes('data-sara-engine="openai-deepgram"') && customerHtml.includes("Deepgram STT + OpenAI"));
 check("OpenAI brain provider exists", routeSources.includes('provider === "openai"'));
-check("Deepgram TTS route exists", routeSources.includes('/deepgram-tts'));
+check("Deepgram STT route mode exists", routeSources.includes('deepgram-stt') && routeSources.includes('api.deepgram.com/v1/listen'));
+check("Deepgram Arabic STT pinned to Saudi dialect", fs.readFileSync(path.join(root, "src/config/env.js"), "utf8").includes('DEEPGRAM_STT_LANGUAGE_AR') && fs.readFileSync(path.join(root, "src/config/env.js"), "utf8").includes('ar-SA'));
+check("Deepgram engine uses OpenAI TTS", customerJs.includes("const ttsEndpoint='/api/tts';"));
+check("Deepgram engine sends Deepgram STT mode", customerJs.includes("form.append('mode','deepgram-stt')"));
 check("Deepgram key is server-side env only", fs.readFileSync(path.join(root, "src/config/env.js"), "utf8").includes('DEEPGRAM_API_KEY') && !customerJs.includes('DEEPGRAM_API_KEY'));
-check("Arabic Deepgram safety fallback documented in code", routeSources.includes('openai-arabic-fallback'));
+check("Deepgram STT key is server-side env only", fs.readFileSync(path.join(root, "src/config/env.js"), "utf8").includes('DEEPGRAM_API_KEY') && !customerJs.includes('DEEPGRAM_API_KEY'));
 
 const customerEndpoints = [...new Set([...customerJs.matchAll(/["'`]\/api\/([A-Za-z0-9_\-/]+)/g)].map((m) => m[1]))];
 const dashboardEndpoints = [...new Set([...dashboardJs.matchAll(/["'`]\/api\/([A-Za-z0-9_\-/]+)/g)].map((m) => m[1]))];

@@ -1,4 +1,4 @@
-# Smart Menu AI — v6.0.2
+# Smart Menu AI — v6.0.3
 
 نسخة معاد هيكلتها باحترافية لنظام المنيو الذكي. **العربية هي المصدر الأساسي للبيانات** والأسعار مخزنة وتعرض مباشرة بالريال السعودي (SAR). الإنجليزية والفرنسية ترجمات اختيارية.
 
@@ -47,3 +47,15 @@ npm start
 - LLM: OpenAI، افتراضيًا `gpt-5.4-mini` ويمكن تغييره عبر `OPENAI_LLM_MODEL`.
 - TTS: Deepgram Aura-2 للإنجليزية والفرنسية.
 - ملاحظة مهمة: Deepgram لا يدرج العربية ضمن لغات TTS الرسمية حاليًا؛ لذلك عند اختيار العربية يستخدم هذا المحرك صوت OpenAI السعودي الاحتياطي تلقائيًا بدل إرسال العربية لصوت غير مدعوم. يمكن ضبط `DEEPGRAM_TTS_MODEL_AR` مستقبلًا إذا توفر نموذج عربي رسمي.
+
+
+## v6.0.3 — Deepgram STT + OpenAI
+
+The experimental `openai-deepgram` engine now uses the requested direction:
+
+`Deepgram Nova-3 STT (ar-SA) -> OpenAI LLM -> OpenAI TTS`
+
+- Arabic recognition is pinned to Saudi Arabic via `DEEPGRAM_STT_LANGUAGE_AR=ar-SA`.
+- The browser never receives `DEEPGRAM_API_KEY`; audio is sent to the Smart Menu server first.
+- The customer UI shows only a simple Sara-ready status, not provider details.
+- This engine does not use Deepgram TTS. Existing Deepgram TTS support remains available in the code for future experiments but is not part of this engine.

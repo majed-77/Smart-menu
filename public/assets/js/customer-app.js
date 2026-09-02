@@ -134,7 +134,7 @@ let saraEngine='openai';
 const SARA_BRAIN_ENGINES=new Set(['hybrid3','claude','gemini','kimi','openai-deepgram']);
 function isBrainSaraEngine(engine=saraEngine){return SARA_BRAIN_ENGINES.has(engine);}
 function saraBrainProvider(){return saraEngine==='openai-deepgram'?'openai':saraEngine==='claude'?'claude':saraEngine==='gemini'?'gemini':saraEngine==='kimi'?'kimi':'deepseek';}
-function saraBrainLabel(){return saraEngine==='openai-deepgram'?'OpenAI + Deepgram':saraEngine==='claude'?'Claude':saraEngine==='gemini'?'Gemini':saraEngine==='kimi'?'Kimi':'DeepSeek';}
+function saraBrainLabel(){return saraEngine==='openai-deepgram'?'سارة':saraEngine==='claude'?'Claude':saraEngine==='gemini'?'Gemini':saraEngine==='kimi'?'Kimi':'DeepSeek';}
 let currentDish=null;
 let realtimePC=null;
 let realtimeDC=null;
@@ -1186,7 +1186,7 @@ async function processAltVoice(blob,mime){
   try{
     status.textContent=TEXT[waiterLanguage].transcribing;
     const ext=mime.includes('mp4')?'m4a':mime.includes('ogg')?'ogg':'webm';
-    const form=new FormData(); form.append('audio',blob,'voice.'+ext); form.append('language',waiterLanguage); if(isBrainSaraEngine())form.append('mode','hybrid3');
+    const form=new FormData(); form.append('audio',blob,'voice.'+ext); form.append('language',waiterLanguage); if(saraEngine==='openai-deepgram')form.append('mode','deepgram-stt'); else if(isBrainSaraEngine())form.append('mode','hybrid3');
     const sttUrl=isBrainSaraEngine()?'/api/transcribe':'/api/sara-alt-transcribe';
     const r=await fetch(sttUrl,{method:'POST',body:form}); const d=await r.json().catch(()=>({}));
     if(!r.ok||!d.text)throw new Error(d.message||'Transcription failed');
@@ -1385,8 +1385,8 @@ async function startHybrid3(){
     altNoiseFloor=0.012; altNoiseLastUpdate=0; altVoiceCandidateAt=0; altBargeCandidateAt=0;
     altNoiseReadyAt=0;
     altStarted=true; altBusy=true;
-    const engineReadyNote=saraEngine==='openai-deepgram'&&waiterLanguage==='ar'
-      ? '🧠 OpenAI جاهز — Deepgram لا يدعم TTS العربي رسميًا حاليًا، لذلك الصوت العربي يستخدم OpenAI تلقائيًا'
+    const engineReadyNote=saraEngine==='openai-deepgram'
+      ? (waiterLanguage==='ar'?'🟢 سارة جاهزة':waiterLanguage==='fr'?'🟢 Sara prête':'🟢 Sara ready')
       : (waiterLanguage==='ar'?'🧠 ':'🧠 ')+saraBrainLabel()+(waiterLanguage==='ar'?' جاهز':waiterLanguage==='fr'?' prêt':' ready');
     showDiagnostic(engineReadyNote,true);
     // Fast greeting: this sentence is fixed, so do not wait for the brain API.
@@ -1689,7 +1689,7 @@ async function speakAI(text){
       speechSource=null;
     }
 
-    const ttsEndpoint=saraEngine==='openai-deepgram'?'/api/deepgram-tts':'/api/tts';
+    const ttsEndpoint='/api/tts';
     const r=await fetch(ttsEndpoint,{
       method:'POST',
       headers:{'Content-Type':'application/json'},

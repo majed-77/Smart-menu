@@ -392,7 +392,18 @@ function looksLikeArabicSttHallucination(text) {
 
 router.post("/transcribe", upload.single("audio"), async (req, res) => {
   try {
-    if (!apiKey) {
+    const transcribeMode = String(req.body?.mode || "");
+    const useDeepgramStt = transcribeMode === "deepgram-stt";
+
+    if (useDeepgramStt && !env.deepgramApiKey) {
+      return res.status(401).json({
+        ok: false,
+        code: "DEEPGRAM_NOT_CONFIGURED",
+        message: "مفتاح Deepgram غير موجود في إعدادات السيرفر."
+      });
+    }
+
+    if (!useDeepgramStt && !apiKey) {
       return res.status(401).json({
         ok: false,
         code: "invalid_api_key",
@@ -409,9 +420,73 @@ router.post("/transcribe", upload.single("audio"), async (req, res) => {
     }
 
     const language = req.body.language || "ar";
+    const mime = req.file.mimetype || "audio/webm";
+
+    // Experimental Deepgram STT + OpenAI brain/TTS engine. Arabic is pinned to
+    // Saudi Arabic (ar-SA) so the speech recognizer is evaluated on the dialect
+    // we actually need in the restaurant instead of generic Arabic.
+    if (useDeepgramStt) {
+      const deepgramLanguage = language === "ar"
+        ? env.deepgramSttLanguageAr
+        : language === "fr" ? "fr" : "en";
+      const url = new URL("https://api.deepgram.com/v1/listen");
+      url.searchParams.set("model", env.deepgramSttModel);
+      url.searchParams.set("language", deepgramLanguage);
+      url.searchParams.set("smart_format", "true");
+      url.searchParams.set("punctuate", "true");
+
+      const dgResponse = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Token ${env.deepgramApiKey}`,
+          "Content-Type": mime
+        },
+        body: req.file.buffer
+      });
+
+      const dgPayload = await dgResponse.json().catch(() => null);
+      if (!dgResponse.ok) {
+        const detail = dgPayload?.err_msg || dgPayload?.message || `Deepgram STT HTTP ${dgResponse.status}`;
+        console.error("Deepgram STT error:", detail);
+        return res.status(502).json({
+          ok: false,
+          code: "DEEPGRAM_STT_ERROR",
+          message: "تعذر فهم الصوت حاليًا، حاول مرة ثانية."
+        });
+      }
+
+      const text = String(
+        dgPayload?.results?.channels?.[0]?.alternatives?.[0]?.transcript || ""
+      ).trim();
+
+      if (!text) {
+        return res.status(422).json({
+          ok: false,
+          code: "NO_SPEECH_DETECTED",
+          message: language === "fr"
+            ? "Aucune parole claire détectée."
+            : language === "en"
+            ? "No clear speech was detected."
+            : "ما التقطت كلام واضح، حاول تقول الجملة مرة ثانية."
+        });
+      }
+
+      // Keep the existing Arabic safety net for obviously corrupted short
+      // transcripts, while allowing real foreign menu names in Arabic speech.
+      if (language === "ar" && looksLikeArabicSttHallucination(text)) {
+        return res.status(422).json({
+          ok: false,
+          code: "UNCERTAIN_ARABIC_TRANSCRIPT",
+          message: "ما التقطت كلام واضح، حاول تقول الجملة مرة ثانية."
+        });
+      }
+
+      res.setHeader("X-Sara-STT-Provider", "deepgram");
+      res.setHeader("X-Sara-STT-Model", env.deepgramSttModel);
+      return res.json({ ok: true, text });
+    }
 
     let filename = "speech.webm";
-    const mime = req.file.mimetype || "audio/webm";
 
     if (mime.includes("mp4")) filename = "speech.m4a";
     else if (mime.includes("mpeg")) filename = "speech.mp3";
@@ -830,6 +905,9 @@ router.get("/sara-alt-status", (req, res) => {
     deepseek: Boolean(env.deepseekApiKey),
     openaiLlm: Boolean(env.openaiApiKey),
     openaiLlmModel: env.openaiLlmModel,
+    deepgramStt: Boolean(env.deepgramApiKey),
+    deepgramSttModel: env.deepgramSttModel,
+    deepgramSttLanguageAr: env.deepgramSttLanguageAr,
     deepgramTts: Boolean(env.deepgramApiKey),
     deepgramTtsArabicSupported: Boolean(env.deepgramTtsModelAr),
     kimi: Boolean(env.kimiApiKey),
