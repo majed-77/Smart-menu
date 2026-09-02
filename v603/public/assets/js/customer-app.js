@@ -801,7 +801,7 @@ function handleRealtimeEvent(event){
 }
 
 function closeAltSara(){
-  altStarted=false; altBusy=false; altSpeaking=false; altCapturing=false; altBookingState={name:'',phone:'',partySize:null,date:'',time:'',notes:'',orderItems:[]}; altBookingActive=false; altLastConfirmedBooking={signature:'',code:'',at:0}; altBookingSaveInFlight=false; altBargeCandidateAt=0; altCaptureStartedDuringSara=false; altLastSpokenText=''; altSpeechStoppedAt=0;
+  altStarted=false; altBusy=false; altSpeaking=false; altCapturing=false; altBookingState={name:'',phone:'',partySize:null,date:'',time:'',notes:'',orderItems:[]}; altLastConfirmedBooking={signature:'',code:'',at:0}; altBookingSaveInFlight=false; altBargeCandidateAt=0; altCaptureStartedDuringSara=false; altLastSpokenText=''; altSpeechStoppedAt=0;
   if(altVadFrame){cancelAnimationFrame(altVadFrame);altVadFrame=null;}
   try{if(altRecorder && altRecorder.state!=="inactive")altRecorder.stop();}catch(e){}
   altRecorder=null; altChunks=[];
@@ -823,7 +823,6 @@ async function altFetchJSON(url, options, timeout=45000){
 
 
 let altBookingState={name:'',phone:'',partySize:null,date:'',time:'',notes:'',orderItems:[]};
-let altBookingActive=false;
 let altLastConfirmedBooking={signature:'',code:'',at:0};
 let altBookingSaveInFlight=false;
 let altBargeCandidateAt=0;
@@ -859,11 +858,9 @@ function exp3PhoneDigitsFromSpeech(raw){
 }
 function exp3UpdateBookingState(text,role='user'){
   let raw=normalizeArabicDigitsExp3(String(text||'')).replace(/\s+/g,' ').trim(); if(!raw)return;
-  if(role==='user' && /(?:احجز|أحجز|حجز|الحجز|حجزت|حجزي|طاولة)/.test(raw)) altBookingActive=true;
   const phone=exp3PhoneDigitsFromSpeech(raw);
   if(phone)altBookingState.phone=phone;
-  const rawForNames=raw.replace(/[،,.!?؟]+$/g,'').trim();
-  let m=rawForNames.match(/(?:اسم(?:\s+الحجز)?|اسمي|باسم)\s+([\u0600-\u06FF]{2,})(?=\s+(?:رقم|والرقم|واتساب|رقم الواتساب|لـ|لشخص|اليوم|بكره|غدا|غدًا|الساعة)|$)/i);
+  let m=raw.match(/(?:اسم(?:\s+الحجز)?|اسمي|باسم)\s+([\u0600-\u06FF]{2,})(?=\s+(?:رقم|والرقم|واتساب|رقم الواتساب|لـ|لشخص|اليوم|بكره|غدا|غدًا|الساعة)|$)/i);
   if(m)altBookingState.name=m[1];
   // Sara's booking summary is also authoritative context. Keep the same booking state
   // instead of making the guest repeat their name at final confirmation.
@@ -872,7 +869,7 @@ function exp3UpdateBookingState(text,role='user'){
     if(m&&!/(حجز|الحجز|تمام|اكيد|أكيد)/.test(m[1]))altBookingState.name=m[1];
   }
   if(role==='user'&&!altBookingState.name){
-    m=rawForNames.match(/^([\u0600-\u06FF]{2,})$/); if(m&&!/(اعتمد|تمام|نعم|ايه|حجز|واتساب)/.test(m[1]))altBookingState.name=m[1];
+    m=raw.match(/^([\u0600-\u06FF]{2,})$/); if(m&&!/(اعتمد|تمام|نعم|ايه|حجز|واتساب)/.test(m[1]))altBookingState.name=m[1];
   }
   m=raw.match(/(?:ل|لـ)?(\d{1,2})\s*(?:اشخاص|أشخاص|شخص)/); if(m)altBookingState.partySize=Math.max(1,Math.min(30,Number(m[1])));
   if(/(?:ل|لـ)?شخصين/.test(raw)) altBookingState.partySize=2;
@@ -1162,21 +1159,6 @@ function exp3BookingMissingFields(){
   if(!a.name)miss.push('الاسم'); if(!a.phone)miss.push('رقم الواتساب'); if(!a.party_size)miss.push('عدد الأشخاص'); if(!a.date)miss.push('التاريخ'); if(!a.time)miss.push('الوقت');
   return miss;
 }
-function exp3BookingMissingReply(){
-  if(!altBookingActive || saraTableNumber)return '';
-  const miss=exp3BookingMissingFields();
-  if(!miss.length)return '';
-  const field=miss[0];
-  if(waiterLanguage==='ar'){
-    if(field==='الاسم')return 'تمام، وش الاسم اللي أسجل عليه الحجز؟';
-    if(field==='رقم الواتساب')return 'تمام، عطيني رقم الجوال أو الواتساب عشان أكمل الحجز.';
-    if(field==='عدد الأشخاص')return 'تمام، الحجز لكم شخص؟';
-    if(field==='التاريخ')return 'تمام، أي يوم تبي الحجز؟';
-    if(field==='الوقت')return 'تمام، الساعة كم تبي الحجز؟';
-  }
-  if(waiterLanguage==='fr')return field==='رقم الواتساب'?'Quel est votre numéro WhatsApp pour terminer la réservation ?':`Il me manque encore : ${field}.`;
-  return field==='رقم الواتساب'?'What WhatsApp/mobile number should I use to complete the booking?':`I still need: ${field}.`;
-}
 function exp3PhoneReplyAfterCorrection(){
   const p=exp3PhoneDisplay(altBookingState.phone); if(!p)return '';
   const miss=exp3BookingMissingFields();
@@ -1228,8 +1210,6 @@ async function processAltVoice(blob,mime){
       answer=exp3PhoneReplyAfterCorrection();
     }else if(isBrainSaraEngine() && !saraTableNumber && altAwaitingBookingApproval() && isExplicitBookingConfirmation(q) && exp3CanConfirmBookingNow()){
       answer=await exp3ConfirmBookingDirectly();
-    }else if(isBrainSaraEngine() && !saraTableNumber && exp3BookingMissingReply()){
-      answer=exp3BookingMissingReply();
     }else{
       const data=await askAltSara(q);
       if(data.toolCall?.name==='confirm_table_order') answer=await handleAltTableOrderTool(data.toolCall); else if(data.toolCall?.name==='confirm_booking_order') answer=await handleAltBookingTool(data.toolCall); else answer=String(data.answer||'').trim();
@@ -1258,8 +1238,6 @@ async function submitAltQuestion(q){
       answer=exp3PhoneReplyAfterCorrection();
     }else if(isBrainSaraEngine() && !saraTableNumber && altAwaitingBookingApproval() && isExplicitBookingConfirmation(q) && exp3CanConfirmBookingNow()){
       answer=await exp3ConfirmBookingDirectly();
-    }else if(isBrainSaraEngine() && !saraTableNumber && exp3BookingMissingReply()){
-      answer=exp3BookingMissingReply();
     }else{
       const data=await askAltSara(q);
       if(data.toolCall?.name==='confirm_table_order')answer=await handleAltTableOrderTool(data.toolCall);else if(data.toolCall?.name==='confirm_booking_order')answer=await handleAltBookingTool(data.toolCall);else answer=String(data.answer||'').trim();

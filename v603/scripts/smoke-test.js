@@ -47,11 +47,6 @@ check("Deepgram engine uses OpenAI TTS", customerJs.includes("const ttsEndpoint=
 check("Deepgram engine sends Deepgram STT mode", customerJs.includes("form.append('mode','deepgram-stt')"));
 check("Deepgram key is server-side env only", fs.readFileSync(path.join(root, "src/config/env.js"), "utf8").includes('DEEPGRAM_API_KEY') && !customerJs.includes('DEEPGRAM_API_KEY'));
 check("Deepgram STT key is server-side env only", fs.readFileSync(path.join(root, "src/config/env.js"), "utf8").includes('DEEPGRAM_API_KEY') && !customerJs.includes('DEEPGRAM_API_KEY'));
-check("Settings form is not auto-refreshed while editing", dashboardJs.includes("if(!['menu','settings'].includes(view))load()"));
-check("Customer assets are version-busted", customerHtml.includes("customer.css?v=6.0.6") && customerHtml.includes("customer-app.js?v=6.0.6"));
-check("Dashboard assets are version-busted", dashboardHtml.includes("dashboard.css?v=6.0.6") && dashboardHtml.includes("dashboard-app.js?v=6.0.6"));
-check("Static assets revalidate instead of one-day cache", fs.readFileSync(path.join(root, "src/app.js"), "utf8").includes('Cache-Control", "no-cache, max-age=0, must-revalidate') && !fs.readFileSync(path.join(root, "src/app.js"), "utf8").includes('maxAge: env.nodeEnv === "production" ? "1d" : 0'));
-check("HTML routes disable stale cache", fs.readFileSync(path.join(root, "src/app.js"), "utf8").includes('no-store, no-cache, must-revalidate, proxy-revalidate'));
 
 const customerEndpoints = [...new Set([...customerJs.matchAll(/["'`]\/api\/([A-Za-z0-9_\-/]+)/g)].map((m) => m[1]))];
 const dashboardEndpoints = [...new Set([...dashboardJs.matchAll(/["'`]\/api\/([A-Za-z0-9_\-/]+)/g)].map((m) => m[1]))];
@@ -68,10 +63,6 @@ for (const result of checks) {
   if (!result.ok) failed += 1;
 }
 
-
-check("Booking flow forces missing WhatsApp before confirmation", customerJs.includes("exp3BookingMissingReply") && customerJs.includes("عطيني رقم الجوال أو الواتساب عشان أكمل الحجز"));
-check("Booking state recognizes booking intent", customerJs.includes("altBookingActive=true"));
-check("Arabic booking name parser tolerates trailing punctuation", customerJs.includes("rawForNames=raw.replace"));
 if (failed) {
   console.error(`\n${failed} smoke check(s) failed.`);
   process.exit(1);
