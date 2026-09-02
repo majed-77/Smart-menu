@@ -131,10 +131,10 @@ async function loadRestaurantProfile(){try{const r=await fetch('/api/restaurant-
 loadRestaurantProfile();
 let waiterLanguage='ar';
 let saraEngine='openai';
-const SARA_BRAIN_ENGINES=new Set(['hybrid3','claude','gemini','kimi']);
+const SARA_BRAIN_ENGINES=new Set(['hybrid3','claude','gemini','kimi','openai-deepgram']);
 function isBrainSaraEngine(engine=saraEngine){return SARA_BRAIN_ENGINES.has(engine);}
-function saraBrainProvider(){return saraEngine==='claude'?'claude':saraEngine==='gemini'?'gemini':saraEngine==='kimi'?'kimi':'deepseek';}
-function saraBrainLabel(){return saraEngine==='claude'?'Claude':saraEngine==='gemini'?'Gemini':saraEngine==='kimi'?'Kimi':'DeepSeek';}
+function saraBrainProvider(){return saraEngine==='openai-deepgram'?'openai':saraEngine==='claude'?'claude':saraEngine==='gemini'?'gemini':saraEngine==='kimi'?'kimi':'deepseek';}
+function saraBrainLabel(){return saraEngine==='openai-deepgram'?'OpenAI + Deepgram':saraEngine==='claude'?'Claude':saraEngine==='gemini'?'Gemini':saraEngine==='kimi'?'Kimi':'DeepSeek';}
 let currentDish=null;
 let realtimePC=null;
 let realtimeDC=null;
@@ -1385,7 +1385,10 @@ async function startHybrid3(){
     altNoiseFloor=0.012; altNoiseLastUpdate=0; altVoiceCandidateAt=0; altBargeCandidateAt=0;
     altNoiseReadyAt=0;
     altStarted=true; altBusy=true;
-    showDiagnostic((waiterLanguage==='ar'?'🧠 ':'🧠 ')+saraBrainLabel()+(waiterLanguage==='ar'?' جاهز':waiterLanguage==='fr'?' prêt':' ready'),true);
+    const engineReadyNote=saraEngine==='openai-deepgram'&&waiterLanguage==='ar'
+      ? '🧠 OpenAI جاهز — Deepgram لا يدعم TTS العربي رسميًا حاليًا، لذلك الصوت العربي يستخدم OpenAI تلقائيًا'
+      : (waiterLanguage==='ar'?'🧠 ':'🧠 ')+saraBrainLabel()+(waiterLanguage==='ar'?' جاهز':waiterLanguage==='fr'?' prêt':' ready');
+    showDiagnostic(engineReadyNote,true);
     // Fast greeting: this sentence is fixed, so do not wait for the brain API.
     // Show it immediately and start TTS while the rest of the voice session finishes.
     const answer=waiterLanguage==='ar'
@@ -1686,7 +1689,8 @@ async function speakAI(text){
       speechSource=null;
     }
 
-    const r=await fetch('/api/tts',{
+    const ttsEndpoint=saraEngine==='openai-deepgram'?'/api/deepgram-tts':'/api/tts';
+    const r=await fetch(ttsEndpoint,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({text:clean,language:waiterLanguage})

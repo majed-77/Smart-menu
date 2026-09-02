@@ -9,6 +9,7 @@ const customerHtml = fs.readFileSync(path.join(root, "public", "index.html"), "u
 const dashboardHtml = fs.readFileSync(path.join(root, "public", "restaurant-dashboard.html"), "utf8");
 const customerJs = fs.readFileSync(path.join(root, "public", "assets", "js", "customer-app.js"), "utf8");
 const dashboardJs = fs.readFileSync(path.join(root, "public", "assets", "js", "dashboard-app.js"), "utf8");
+const databaseSource = fs.readFileSync(path.join(root, "src", "db", "database.js"), "utf8");
 const routeSources = [
   "src/app.js",
   "src/features/menu/menu-routes.js",
@@ -38,6 +39,11 @@ check("Customer supports 1.1s DeepSeek silence", customerJs.includes("isHybrid3?
 check("Booking idempotency preserved", fs.readFileSync(path.join(root, "src/features/orders/orders-service.js"), "utf8").includes("INTERVAL '10 minutes'"));
 check("Security headers enabled", fs.readFileSync(path.join(root, "src/app.js"), "utf8").includes("helmet("));
 check("Rate limiting enabled", fs.readFileSync(path.join(root, "src/app.js"), "utf8").includes("rateLimit("));
+check("OpenAI + Deepgram engine button exists", customerHtml.includes('data-sara-engine="openai-deepgram"'));
+check("OpenAI brain provider exists", routeSources.includes('provider === "openai"'));
+check("Deepgram TTS route exists", routeSources.includes('/deepgram-tts'));
+check("Deepgram key is server-side env only", fs.readFileSync(path.join(root, "src/config/env.js"), "utf8").includes('DEEPGRAM_API_KEY') && !customerJs.includes('DEEPGRAM_API_KEY'));
+check("Arabic Deepgram safety fallback documented in code", routeSources.includes('openai-arabic-fallback'));
 
 const customerEndpoints = [...new Set([...customerJs.matchAll(/["'`]\/api\/([A-Za-z0-9_\-/]+)/g)].map((m) => m[1]))];
 const dashboardEndpoints = [...new Set([...dashboardJs.matchAll(/["'`]\/api\/([A-Za-z0-9_\-/]+)/g)].map((m) => m[1]))];

@@ -621,6 +621,59 @@ router.post("/tts", async (req, res) => {
 
 
 // ======================================================
+// OPENAI STT + OPENAI LLM + DEEPGRAM TTS (experimental)
+// Deepgram currently does not publish an Arabic Aura/Flux TTS voice. For Arabic,
+// this route safely falls back to the existing OpenAI Saudi-Arabic TTS unless
+// DEEPGRAM_TTS_MODEL_AR is explicitly configured in the future.
+// ======================================================
+router.post("/deepgram-tts", async (req, res) => {
+  try {
+    const { text, language = "ar" } = req.body || {};
+    const cleanText = String(text || "").trim();
+    if (!cleanText) return res.status(400).json({ ok:false, code:"EMPTY_TEXT", message:"لا يوجد نص لتحويله إلى صوت." });
+    if (!env.deepgramApiKey) return res.status(401).json({ ok:false, code:"DEEPGRAM_NOT_CONFIGURED", message:"مفتاح Deepgram غير موجود في Render." });
+
+    const model = language === "fr" ? env.deepgramTtsModelFr : language === "en" ? env.deepgramTtsModelEn : env.deepgramTtsModelAr;
+    if (language === "ar" && !model) {
+      if (!apiKey) return res.status(409).json({ ok:false, code:"DEEPGRAM_ARABIC_TTS_UNSUPPORTED", message:"Deepgram لا يوفر صوت TTS عربي رسمي حاليًا، ومفتاح OpenAI غير متوفر للصوت الاحتياطي." });
+      const voiceInstructions = "أنتِ سارة، موظفة سعودية شابة في مطعم في السعودية. تكلمي باللهجة السعودية البيضاء فقط، بميل نجدي خفيف وطبيعي، وبأسلوب محادثة يومي دافئ ومختصر. لا تنتقلي لأي لهجة أخرى.";
+      const ttsText = prepareArabicSaraTTS(cleanText);
+      const speech = await openai.audio.speech.create({ model:"gpt-4o-mini-tts", voice:"coral", input:ttsText, instructions:voiceInstructions, speed:1.0, response_format:"mp3" });
+      const buffer = Buffer.from(await speech.arrayBuffer());
+      res.setHeader("Content-Type", "audio/mpeg");
+      res.setHeader("Content-Length", buffer.length);
+      res.setHeader("Cache-Control", "no-store");
+      res.setHeader("X-Sara-TTS-Provider", "openai-arabic-fallback");
+      return res.send(buffer);
+    }
+
+    const url = new URL("https://api.deepgram.com/v1/speak");
+    url.searchParams.set("model", model);
+    url.searchParams.set("encoding", "mp3");
+    const response = await fetch(url, {
+      method:"POST",
+      headers:{ Authorization:`Token ${env.deepgramApiKey}`, "Content-Type":"application/json" },
+      body:JSON.stringify({ text:cleanText })
+    });
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      throw new Error(detail || `Deepgram TTS HTTP ${response.status}`);
+    }
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (!buffer.length) throw new Error("Deepgram TTS returned empty audio.");
+    res.setHeader("Content-Type", response.headers.get("content-type") || "audio/mpeg");
+    res.setHeader("Content-Length", buffer.length);
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("X-Sara-TTS-Provider", "deepgram");
+    return res.send(buffer);
+  } catch (error) {
+    console.error("Deepgram TTS error:", error);
+    return res.status(502).json({ ok:false, code:"DEEPGRAM_TTS_ERROR", message:error?.message || "تعذر تشغيل صوت Deepgram." });
+  }
+});
+
+
+// ======================================================
 // EXPERIMENTAL SARA ENGINE
 // ElevenLabs Scribe STT -> DeepSeek V4 Flash -> Fish Audio TTS
 // Keeps the existing OpenAI Realtime engine untouched as a fallback.
@@ -775,6 +828,10 @@ router.get("/sara-alt-status", (req, res) => {
     configured: altEngineConfigured(),
     elevenlabsStt: Boolean(env.elevenLabsApiKey),
     deepseek: Boolean(env.deepseekApiKey),
+    openaiLlm: Boolean(env.openaiApiKey),
+    openaiLlmModel: env.openaiLlmModel,
+    deepgramTts: Boolean(env.deepgramApiKey),
+    deepgramTtsArabicSupported: Boolean(env.deepgramTtsModelAr),
     kimi: Boolean(env.kimiApiKey),
     kimiModel: env.kimiModel,
     fishAudio: Boolean(env.fishAudioApiKey && env.fishAudioVoiceId),
@@ -817,6 +874,7 @@ router.post("/sara-alt-transcribe", upload.single("audio"), async (req, res) => 
 
 function brainProviderConfig(provider) {
   const p = String(provider || "deepseek").toLowerCase();
+  if (p === "openai") return { provider:p, key:env.openaiApiKey, model:env.openaiLlmModel, label:"OpenAI" };
   if (p === "claude") return { provider:p, key:env.anthropicApiKey, model:env.anthropicModel, label:"Claude" };
   if (p === "gemini") return { provider:p, key:env.geminiApiKey, model:env.geminiModel, label:"Gemini" };
   if (p === "kimi") return { provider:p, key:env.kimiApiKey, model:env.kimiModel, label:"Kimi" };
@@ -829,10 +887,13 @@ function brainToolResult(call) {
 }
 
 async function callOpenAICompatibleBrain({ endpoint, apiKey, model, messages, extraBody = {}, strictTools = true }) {
+  const baseBody = { model, messages, tools:[confirmBookingOrderTool,confirmTableOrderTool].map(t=>strictTools?t:{...t,function:{...t.function,strict:undefined}}), tool_choice:"auto" };
+  if (!Object.prototype.hasOwnProperty.call(extraBody, "max_completion_tokens")) baseBody.max_tokens = 160;
+  if (!/api\.openai\.com/.test(endpoint)) baseBody.temperature = 0.25;
   const response = await fetch(endpoint, {
     method:"POST",
     headers:{ Authorization:`Bearer ${apiKey}`, "Content-Type":"application/json" },
-    body:JSON.stringify({ model, messages, tools:[confirmBookingOrderTool,confirmTableOrderTool].map(t=>strictTools?t:{...t,function:{...t.function,strict:undefined}}), tool_choice:"auto", max_tokens:160, temperature:0.25, ...extraBody })
+    body:JSON.stringify({ ...baseBody, ...extraBody })
   });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data?.error?.message || data?.message || `AI HTTP ${response.status}`);
@@ -919,7 +980,9 @@ router.post("/sara-alt-chat", async (req, res) => {
 
     } else {
       const messages = [{role:"system",content:system}, ...cleanHistory, {role:"user",content:userText}];
-      if (cfg.provider === "kimi") {
+      if (cfg.provider === "openai") {
+        result = await callOpenAICompatibleBrain({ endpoint:"https://api.openai.com/v1/chat/completions", apiKey:cfg.key, model:cfg.model, messages, extraBody:{max_completion_tokens:320}, strictTools:true });
+      } else if (cfg.provider === "kimi") {
         result = await callOpenAICompatibleBrain({ endpoint:"https://api.moonshot.ai/v1/chat/completions", apiKey:cfg.key, model:cfg.model, messages, extraBody:{thinking:{type:"disabled"},temperature:0.6,top_p:0.95,max_tokens:384}, strictTools:false });
       } else {
         result = await callOpenAICompatibleBrain({ endpoint:"https://api.deepseek.com/chat/completions", apiKey:cfg.key, model:cfg.model, messages, extraBody:{thinking:{type:"disabled"}} });

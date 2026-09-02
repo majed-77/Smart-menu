@@ -155,6 +155,33 @@ async function initializeSchema() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
+
+    -- restaurant_settings existed in older Smart Menu releases with fewer columns.
+    -- CREATE TABLE IF NOT EXISTS does not add new fields to an existing table, so
+    -- explicitly migrate every editable branding field before the dashboard uses it.
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS name_ar TEXT NOT NULL DEFAULT 'كافيه فيكتور هوغو';
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS name_en TEXT NOT NULL DEFAULT 'Café Victor Hugo';
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS name_fr TEXT NOT NULL DEFAULT 'Café Victor Hugo';
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS subtitle_ar TEXT NOT NULL DEFAULT 'مقهى ومطعم';
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS subtitle_en TEXT NOT NULL DEFAULT 'Café & Restaurant';
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS subtitle_fr TEXT NOT NULL DEFAULT 'Café & Restaurant';
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS hero_eyebrow_ar TEXT NOT NULL DEFAULT 'منيو ذكي • سارة';
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS hero_eyebrow_en TEXT NOT NULL DEFAULT 'Smart Menu • Sara';
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS hero_eyebrow_fr TEXT NOT NULL DEFAULT 'Menu intelligent • Sara';
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS hero_title_ar TEXT NOT NULL DEFAULT 'حياكم الله';
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS hero_title_en TEXT NOT NULL DEFAULT 'Welcome';
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS hero_title_fr TEXT NOT NULL DEFAULT 'Bienvenue';
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS hero_text_ar TEXT NOT NULL DEFAULT 'اطلب، احجز، أو اسأل سارة عن المنيو.';
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS hero_text_en TEXT NOT NULL DEFAULT 'Order, reserve a table, or ask Sara about the menu.';
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS hero_text_fr TEXT NOT NULL DEFAULT 'Commandez, réservez une table ou demandez conseil à Sara.';
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS announcement_ar TEXT NOT NULL DEFAULT '';
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS announcement_en TEXT NOT NULL DEFAULT '';
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS announcement_fr TEXT NOT NULL DEFAULT '';
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS announcement_visible BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS logo_url TEXT NOT NULL DEFAULT 'https://digitalmenu.tn/storage/logos/cafe-victor-hugo-la-marsa-177633909869e21c70f3bb8-logo.jpg';
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS banner_url TEXT NOT NULL DEFAULT '';
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
     INSERT INTO restaurant_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
   `);
 

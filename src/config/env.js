@@ -21,6 +21,11 @@ const env = Object.freeze({
   databaseUrl: readString("DATABASE_URL"),
 
   openaiApiKey: readString("OPENAI_API_KEY"),
+  openaiLlmModel: readString("OPENAI_LLM_MODEL", "gpt-5.4-mini"),
+  deepgramApiKey: readString("DEEPGRAM_API_KEY"),
+  deepgramTtsModelEn: readString("DEEPGRAM_TTS_MODEL_EN", "aura-2-thalia-en"),
+  deepgramTtsModelFr: readString("DEEPGRAM_TTS_MODEL_FR", "aura-2-agathe-fr"),
+  deepgramTtsModelAr: readString("DEEPGRAM_TTS_MODEL_AR"),
   deepseekApiKey: readString("DEEPSEEK_API_KEY"),
   anthropicApiKey: readString("ANTHROPIC_API_KEY"),
   anthropicWorkspaceId: readString("ANTHROPIC_WORKSPACE_ID"),
