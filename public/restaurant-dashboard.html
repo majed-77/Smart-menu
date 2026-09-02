@@ -1,0 +1,484 @@
+<!doctype html>
+<html dir="rtl" lang="ar">
+ <head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width,initial-scale=1" name="viewport"/>
+  <title>
+   لوحة المطعم — Café Victor Hugo
+  </title>
+  <link href="/assets/css/dashboard.css" rel="stylesheet"/>
+ </head>
+ <body>
+  <div class="login hidden" id="login">
+   <h2>
+    دخول لوحة المطعم
+   </h2>
+   <p style="color:var(--muted)">
+    الطلبات والحجوزات والمنيو
+   </p>
+   <form id="loginForm">
+    <input autocomplete="current-password" id="password" placeholder="كلمة المرور" required="" type="password"/>
+    <button class="btn">
+     دخول
+    </button>
+    <p class="error" id="loginError">
+    </p>
+   </form>
+  </div>
+  <div class="wrap hidden" id="app">
+   <div class="top">
+    <div class="brand">
+     <h1 id="dashboardRestaurantName">
+      اسم المطعم
+     </h1>
+     <p>
+      لوحة تشغيل المطعم
+     </p>
+    </div>
+    <button class="logout" id="logout">
+     تسجيل الخروج
+    </button>
+   </div>
+   <div class="stats">
+    <div class="stat">
+     <b id="sTableNew">
+      0
+     </b>
+     <span>
+      طلبات جديدة
+     </span>
+    </div>
+    <div class="stat">
+     <b id="sToday">
+      0
+     </b>
+     <span>
+      حجوزات اليوم
+     </span>
+    </div>
+    <div class="stat">
+     <b id="sGuests">
+      0
+     </b>
+     <span>
+      ضيوف اليوم
+     </span>
+    </div>
+    <div class="stat">
+     <b id="sSales">
+      0 ر.س
+     </b>
+     <span>
+      طلبات نشطة
+     </span>
+    </div>
+   </div>
+   <div class="toolbar">
+    <div class="tabs">
+     <button class="tab active" data-view="tables">
+      🧾 الطلبات
+     </button>
+     <button class="tab" data-view="today">
+      📅 حجوزات اليوم
+     </button>
+     <button class="tab" data-view="upcoming">
+      القادمة
+     </button>
+     <button class="tab" data-view="archive">
+      الأرشيف
+     </button>
+     <button class="tab" data-view="menu">
+      🍽️ إدارة المنيو
+     </button>
+     <button class="tab" data-view="qr">
+      QR الطاولات
+     </button>
+     <button class="tab" data-view="settings">
+      ⚙️ إعدادات المطعم
+     </button>
+    </div>
+    <input class="search" id="search" placeholder="بحث..."/>
+   </div>
+   <div class="grid" id="grid">
+   </div>
+   <div class="menuPanel hidden" id="menuPanel">
+    <div class="menuTools">
+     <button class="btn" id="addCategory">
+      + إضافة قسم
+     </button>
+     <button class="btn" id="addMenu">
+      + إضافة صنف
+     </button>
+     <span class="menuCount" id="menuCount">
+     </span>
+     <span class="menuCount">
+      اسحب ☰ لترتيب الأقسام والأصناف
+     </span>
+    </div>
+    <div class="menuTree" id="menuList">
+    </div>
+    <div class="hidden" id="categoryList">
+    </div>
+   </div>
+   <div class="settingsPanel hidden" id="settingsPanel">
+    <h2>
+     إعدادات هوية المطعم
+    </h2>
+    <p class="meta">
+     العربية هي اللغة الأساسية. الإنجليزية والفرنسية ترجمات اختيارية.
+    </p>
+    <form id="settingsForm">
+     <div class="formGrid">
+      <div class="divider">
+       اسم وهوية المطعم
+      </div>
+      <div class="field">
+       <label>
+        اسم المطعم بالعربية — الأساسي *
+       </label>
+       <input id="sNameAr" required=""/>
+      </div>
+      <div class="field">
+       <label>
+        الاسم بالإنجليزية
+       </label>
+       <input id="sNameEn"/>
+      </div>
+      <div class="field">
+       <label>
+        الاسم بالفرنسية
+       </label>
+       <input id="sNameFr"/>
+      </div>
+      <div class="field">
+       <label>
+        الوصف المختصر بالعربية
+       </label>
+       <input id="sSubtitleAr" placeholder="مثال: مقهى ومطعم"/>
+      </div>
+      <div class="field">
+       <label>
+        الوصف المختصر بالإنجليزية
+       </label>
+       <input id="sSubtitleEn"/>
+      </div>
+      <div class="field">
+       <label>
+        الوصف المختصر بالفرنسية
+       </label>
+       <input id="sSubtitleFr"/>
+      </div>
+      <div class="field">
+       <label>
+        الشعار — رفع مباشر
+       </label>
+       <input accept="image/jpeg,image/png,image/webp" id="sLogoFile" type="file"/>
+       <input id="sLogoUrl" type="hidden"/>
+       <small class="uploadHint" id="sLogoStatus">
+       </small>
+      </div>
+      <div class="field">
+       <label>
+        صورة البنر — رفع مباشر
+       </label>
+       <input accept="image/jpeg,image/png,image/webp" id="sBannerFile" type="file"/>
+       <input id="sBannerUrl" type="hidden"/>
+       <small class="uploadHint" id="sBannerStatus">
+       </small>
+      </div>
+      <div class="divider">
+       البنر الرئيسي
+      </div>
+      <div class="field">
+       <label>
+        النص الصغير بالعربية
+       </label>
+       <input id="sEyebrowAr"/>
+      </div>
+      <div class="field">
+       <label>
+        بالإنجليزية
+       </label>
+       <input id="sEyebrowEn"/>
+      </div>
+      <div class="field">
+       <label>
+        بالفرنسية
+       </label>
+       <input id="sEyebrowFr"/>
+      </div>
+      <div class="field">
+       <label>
+        عنوان البنر بالعربية
+       </label>
+       <input id="sHeroTitleAr"/>
+      </div>
+      <div class="field">
+       <label>
+        بالإنجليزية
+       </label>
+       <input id="sHeroTitleEn"/>
+      </div>
+      <div class="field">
+       <label>
+        بالفرنسية
+       </label>
+       <input id="sHeroTitleFr"/>
+      </div>
+      <div class="field full">
+       <label>
+        نص البنر بالعربية
+       </label>
+       <textarea id="sHeroTextAr" rows="3"></textarea>
+      </div>
+      <div class="field full">
+       <label>
+        نص البنر بالإنجليزية
+       </label>
+       <textarea id="sHeroTextEn" rows="3"></textarea>
+      </div>
+      <div class="field full">
+       <label>
+        نص البنر بالفرنسية
+       </label>
+       <textarea id="sHeroTextFr" rows="3"></textarea>
+      </div>
+      <div class="divider">
+       الإعلان أعلى المنيو
+      </div>
+      <div class="field full">
+       <label>
+        الإعلان بالعربية
+       </label>
+       <textarea id="sAnnouncementAr" placeholder="مثال: خصم 20% اليوم" rows="2"></textarea>
+      </div>
+      <div class="field full">
+       <label>
+        الإعلان بالإنجليزية
+       </label>
+       <textarea id="sAnnouncementEn" rows="2"></textarea>
+      </div>
+      <div class="field full">
+       <label>
+        الإعلان بالفرنسية
+       </label>
+       <textarea id="sAnnouncementFr" rows="2"></textarea>
+      </div>
+      <div class="field full checks">
+       <label>
+        <input id="sAnnouncementVisible" type="checkbox"/>
+        إظهار الإعلان للعملاء
+       </label>
+      </div>
+     </div>
+     <div class="formActions">
+      <button class="btn" type="submit">
+       حفظ إعدادات المطعم
+      </button>
+     </div>
+    </form>
+   </div>
+   <div class="qrPanel hidden" id="qrPanel">
+    <div class="qrTools">
+     <input id="tableCount" max="100" min="1" type="number" value="20"/>
+     <button class="btn" id="makeQr">
+      إنشاء QR
+     </button>
+     <button class="ghost" id="printQr">
+      طباعة
+     </button>
+    </div>
+    <div class="qrGrid" id="qrGrid">
+    </div>
+   </div>
+  </div>
+  <div class="drawer" id="drawer">
+   <aside class="drawerPanel">
+    <div class="drawerHead">
+     <h2 id="dTitle">
+     </h2>
+     <button class="close" id="close">
+      ×
+     </button>
+    </div>
+    <div id="detail">
+    </div>
+   </aside>
+  </div>
+  <div class="modal" id="categoryModal">
+   <div class="modalBox">
+    <div class="row">
+     <h2 id="categoryModalTitle">
+      إضافة قسم
+     </h2>
+     <button class="close" id="categoryModalClose">
+      ×
+     </button>
+    </div>
+    <form id="categoryForm">
+     <input id="cId" type="hidden"/>
+     <div class="formGrid">
+      <div class="field">
+       <label>
+        اسم القسم بالعربية *
+       </label>
+       <input id="cNameAr" required=""/>
+      </div>
+      <div class="field">
+       <label>
+        الاسم بالإنجليزية
+       </label>
+       <input id="cNameEn"/>
+      </div>
+      <div class="field">
+       <label>
+        الاسم بالفرنسية
+       </label>
+       <input id="cNameFr"/>
+      </div>
+      <div class="field full checks">
+       <label>
+        <input checked="" id="cVisible" type="checkbox"/>
+        ظاهر للعملاء
+       </label>
+      </div>
+     </div>
+     <div class="formActions">
+      <button class="ghost" id="categoryCancel" type="button">
+       إلغاء
+      </button>
+      <button class="btn" type="submit">
+       حفظ القسم
+      </button>
+     </div>
+    </form>
+   </div>
+  </div>
+  <div class="modal" id="menuModal">
+   <div class="modalBox">
+    <div class="row">
+     <h2 id="menuModalTitle">
+      تعديل الصنف
+     </h2>
+     <button class="close" id="menuModalClose">
+      ×
+     </button>
+    </div>
+    <form id="menuForm">
+     <input id="mKey" type="hidden"/>
+     <input id="mCustom" type="hidden"/>
+     <div class="formGrid">
+      <div class="field">
+       <label>
+        القسم
+       </label>
+       <select id="mCategory" required="">
+       </select>
+      </div>
+      <div class="field">
+       <label>
+        السعر الأساسي (ريال سعودي)
+       </label>
+       <input id="mPrice" inputmode="decimal" placeholder="مثال: 28.00" required=""/>
+      </div>
+      <div class="field">
+       <label>
+        السعرات الحرارية (kcal)
+       </label>
+       <input id="mCalories" max="10000" min="0" placeholder="مثال: 450" type="number"/>
+      </div>
+      <div class="field">
+       <label>
+        صورة الصنف (رفع مباشر)
+       </label>
+       <input accept="image/jpeg,image/png,image/webp" id="mImageFile" type="file"/>
+       <input id="mImage" type="hidden"/>
+       <small id="mImageStatus">
+       </small>
+      </div>
+      <div class="field">
+       <label>
+        اسم الصنف بالعربية — الأساسي *
+       </label>
+       <input id="mNameAr" required=""/>
+      </div>
+      <div class="field">
+       <label>
+        الاسم بالإنجليزية — اختياري
+       </label>
+       <input id="mNameEn"/>
+      </div>
+      <div class="field">
+       <label>
+        الاسم بالفرنسية — اختياري
+       </label>
+       <input id="mNameFr"/>
+      </div>
+      <div>
+      </div>
+      <div class="field full">
+       <label>
+        الوصف بالعربية — الأساسي
+       </label>
+       <textarea id="mDescAr" rows="2"></textarea>
+      </div>
+      <div class="field full">
+       <label>
+        الوصف بالإنجليزية — اختياري
+       </label>
+       <textarea id="mDescEn" rows="2"></textarea>
+      </div>
+      <div class="field full">
+       <label>
+        الوصف بالفرنسية — اختياري
+       </label>
+       <textarea id="mDescFr" rows="2"></textarea>
+      </div>
+      <div class="field full">
+       <label>
+        الإضافات المدفوعة — كل سطر: الاسم | السعر (مثال: جبن إضافي | 3.00 ر.س)
+       </label>
+       <textarea id="mAddons" placeholder="جبن إضافي | 3.00 ر.س
+صوص إضافي | 2.00 ر.س" rows="4"></textarea>
+      </div>
+      <div class="field full">
+       <label>
+        الخيارات والتعديلات — كل سطر: الاسم | السعر الاختياري (مثال: بدون مايونيز | 0)
+       </label>
+       <textarea id="mOptions" placeholder="بدون مايونيز | 0
+بدون بصل | 0
+حجم كبير | 4.00 ر.س" rows="4"></textarea>
+      </div>
+      <div class="field full checks">
+       <label>
+        <input checked="" id="mActive" type="checkbox"/>
+        متوفر للطلب
+       </label>
+       <label>
+        <input checked="" id="mVisible" type="checkbox"/>
+        ظاهر في المنيو
+       </label>
+       <label>
+        <input id="mSignature" type="checkbox"/>
+        ⭐ صنف مميز
+       </label>
+      </div>
+     </div>
+     <div class="formActions">
+      <button class="ghost" id="menuCancel" type="button">
+       إلغاء
+      </button>
+      <button class="btn">
+       حفظ الصنف
+      </button>
+     </div>
+    </form>
+   </div>
+  </div>
+  <div class="toast" id="toast">
+  </div>
+  <script defer="" src="/assets/js/dashboard-app.js">
+  </script>
+ </body>
+</html>
+

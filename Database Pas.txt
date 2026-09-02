@@ -1,0 +1,16 @@
+Hostname: dpg-da83bjp5efls73f42lug-a
+
+Port: 5432
+
+Database: smart_menu_db_18yc
+
+Username:smart_menu_db_18yc_user
+
+ Password: HGgukI2NAWFd5iu7Q5pBxS1Q0kqgH7Zv
+
+Internal Database URL:  postgresql://smart_menu_db_18yc_user:HGgukI2NAWFd5iu7Q5pBxS1Q0kqgH7Zv@dpg-da83bjp5efls73f42lug-a/smart_menu_db_18yc
+
+External Database URL:  postgresql://smart_menu_db_18yc_user:HGgukI2NAWFd5iu7Q5pBxS1Q0kqgH7Zv@dpg-da83bjp5efls73f42lug-a.ohio-postgres.render.com/smart_menu_db_18yc
+
+
+PSQL Command:  PGPASSWORD=HGgukI2NAWFd5iu7Q5pBxS1Q0kqgH7Zv psql -h dpg-da83bjp5efls73f42lug-a.ohio-postgres.render.com -U smart_menu_db_18yc_user smart_menu_db_18yc

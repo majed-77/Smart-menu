@@ -1,0 +1,61 @@
+"use strict";
+
+const fs = require("fs");
+const path = require("path");
+const { BASE_CATEGORIES, BASE_MENU_ITEMS } = require("../src/data/base-menu");
+
+const root = path.join(__dirname, "..");
+const customerHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
+const dashboardHtml = fs.readFileSync(path.join(root, "public", "restaurant-dashboard.html"), "utf8");
+const customerJs = fs.readFileSync(path.join(root, "public", "assets", "js", "customer-app.js"), "utf8");
+const dashboardJs = fs.readFileSync(path.join(root, "public", "assets", "js", "dashboard-app.js"), "utf8");
+const routeSources = [
+  "src/app.js",
+  "src/features/menu/menu-routes.js",
+  "src/features/restaurant/restaurant-routes.js",
+  "src/features/orders/orders-routes.js",
+  "src/features/sara/sara-routes.js"
+].map((file) => fs.readFileSync(path.join(root, file), "utf8")).join("\n");
+
+const checks = [];
+function check(name, condition) {
+  checks.push({ name, ok: Boolean(condition) });
+}
+
+check("16 menu categories", BASE_CATEGORIES.length === 16);
+check("138 base menu items", BASE_MENU_ITEMS.length === 138);
+check("Arabic is canonical for all base item names", BASE_MENU_ITEMS.every((item) => /[\u0600-\u06FF]/.test(item.nameAr)));
+check("Arabic description exists for all base items", BASE_MENU_ITEMS.every((item) => String(item.descriptionAr || "").trim().length > 0));
+check("Base prices no longer contain DT/TND", BASE_MENU_ITEMS.every((item) => !/(?:\bDT\b|TND)/i.test(String(item.priceText))));
+check("Unique base item keys", new Set(BASE_MENU_ITEMS.map((item) => item.itemKey)).size === BASE_MENU_ITEMS.length);
+check("Customer page loads external JS", /\/assets\/js\/customer-app\.js/.test(customerHtml));
+check("Dashboard loads external JS", /\/assets\/js\/dashboard-app\.js/.test(dashboardHtml));
+check("Customer JS has one API menu source", !/let\s+menu\s*=\s*\[\s*\{cat:/.test(customerJs));
+check("Dashboard Arabic item editor", dashboardHtml.includes("اسم الصنف بالعربية — الأساسي"));
+check("Dashboard SAR price field", dashboardHtml.includes("السعر الأساسي (ريال سعودي)"));
+check("Dashboard supports image upload", dashboardHtml.includes('id="mImageFile"'));
+check("Customer supports 1.1s DeepSeek silence", customerJs.includes("isHybrid3?1100:600"));
+check("Booking idempotency preserved", fs.readFileSync(path.join(root, "src/features/orders/orders-service.js"), "utf8").includes("INTERVAL '10 minutes'"));
+check("Security headers enabled", fs.readFileSync(path.join(root, "src/app.js"), "utf8").includes("helmet("));
+check("Rate limiting enabled", fs.readFileSync(path.join(root, "src/app.js"), "utf8").includes("rateLimit("));
+
+const customerEndpoints = [...new Set([...customerJs.matchAll(/["'`]\/api\/([A-Za-z0-9_\-/]+)/g)].map((m) => m[1]))];
+const dashboardEndpoints = [...new Set([...dashboardJs.matchAll(/["'`]\/api\/([A-Za-z0-9_\-/]+)/g)].map((m) => m[1]))];
+const allEndpoints = [...customerEndpoints, ...dashboardEndpoints];
+const endpointCoverage = allEndpoints.filter((endpoint) => {
+  const suffix = endpoint.split("/").filter(Boolean).pop();
+  return routeSources.includes(suffix) || routeSources.includes(`/${suffix}`);
+});
+check("Frontend API endpoints have route coverage", endpointCoverage.length >= Math.max(1, allEndpoints.length - 3));
+
+let failed = 0;
+for (const result of checks) {
+  console.log(`${result.ok ? "✓" : "✗"} ${result.name}`);
+  if (!result.ok) failed += 1;
+}
+
+if (failed) {
+  console.error(`\n${failed} smoke check(s) failed.`);
+  process.exit(1);
+}
+console.log(`\n✓ ${checks.length} smoke checks passed.`);
