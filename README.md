@@ -1,3 +1,10 @@
+## v6.0.16 — deterministic booking flow
+
+- Booking name/phone/party/date/time steps continue locally from bookingState without requiring an OpenAI answer.
+- Accepts Arabic name replies such as `اسم ماجد`, `ماجد`, and `أنا ماجد` when Sara is asking for the booking name.
+- If the OpenAI chat request fails during an active booking, Sara keeps the stored booking state and asks only for the next missing field.
+- iPhone Hybrid microphone no longer forces voiceIsolation, reducing clipped first syllables in short Arabic names.
+
 # Smart Menu AI — v6.0.7
 
 نسخة معاد هيكلتها باحترافية لنظام المنيو الذكي. **العربية هي المصدر الأساسي للبيانات** والأسعار مخزنة وتعرض مباشرة بالريال السعودي (SAR). الإنجليزية والفرنسية ترجمات اختيارية.
