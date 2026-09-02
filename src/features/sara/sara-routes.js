@@ -735,7 +735,7 @@ router.post("/cartesia-tts", async (req, res) => {
     // infer Arabic preserves the voice's own locale/accent conditioning, which
     // is closer to Playground behavior for this Saudi-sounding voice.
     const cartesiaLanguage = language === "ar" ? "ar" : language === "fr" ? "fr" : "en";
-    const response = await fetch("https://api.cartesia.ai/tts/bytes", {
+    const makeCartesiaRequest = (useKhaleejiAccent) => fetch("https://api.cartesia.ai/tts/bytes", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${env.cartesiaApiKey}`,
@@ -748,9 +748,20 @@ router.post("/cartesia-tts", async (req, res) => {
         voice: { mode: "id", id: env.cartesiaVoiceId },
         output_format: { container: "wav", encoding: "pcm_s16le", sample_rate: 44100 },
         language: cartesiaLanguage,
-        generation_config: { volume: 1, speed: 1 }
+        ...(language === "ar" && useKhaleejiAccent ? { accent: "khaleeji" } : {}),
+        generation_config: { volume: 1, speed: language === "ar" ? 0.97 : 1 }
       })
     });
+
+    // Arabic is explicitly requested as Khaleeji. If this specific voice/model
+    // rejects accent conditioning, retry the same Fatima voice without accent
+    // rather than falling back to an OpenAI Arabic voice.
+    let response = await makeCartesiaRequest(language === "ar");
+    if (!response.ok && language === "ar") {
+      const firstDetail = await response.text().catch(() => "");
+      console.warn("Cartesia khaleeji accent rejected; retrying Fatima without accent:", response.status, firstDetail.slice(0, 300));
+      response = await makeCartesiaRequest(false);
+    }
 
     if (!response.ok) {
       const detail = await response.text().catch(() => "");

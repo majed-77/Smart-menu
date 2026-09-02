@@ -1729,7 +1729,7 @@ async function speakAI(text){
       speechSource=null;
     }
 
-    const ttsEndpoint=saraEngine==='openai-deepgram-cartesia'?'/api/cartesia-tts':'/api/tts';
+    const ttsEndpoint=waiterLanguage==='ar'?'/api/cartesia-tts':(saraEngine==='openai-deepgram-cartesia'?'/api/cartesia-tts':'/api/tts');
     const r=await fetch(ttsEndpoint,{
       method:'POST',
       headers:{'Content-Type':'application/json'},

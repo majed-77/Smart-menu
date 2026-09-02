@@ -99,10 +99,11 @@ console.log(`\n✓ ${checks.length} smoke checks passed.`);
   if (!envFile.includes('731ace69-ee17-41bc-8c6f-665c9f1db95c')) throw new Error('Cartesia voice id missing');
   if (!sara.includes('function prepareCartesiaTranscript')) throw new Error('Cartesia transcript parity helper missing');
   if (!sara.includes('transcript: prepareCartesiaTranscript(cleanText)')) throw new Error('Exact Cartesia transcript is not wired');
-  if (!sara.includes('generation_config: { volume: 1, speed: 1 }')) throw new Error('Cartesia neutral generation config missing');
+  if (!sara.includes('accent: "khaleeji"')) throw new Error('Cartesia Khaleeji accent conditioning missing');
+  if (!sara.includes('speed: language === "ar" ? 0.97 : 1')) throw new Error('Cartesia Arabic speaking speed missing');
   if (sara.includes('prepareSaudiCartesiaTTS(cleanText)')) throw new Error('Legacy Cartesia dialect rewriting is still active');
   if (sara.includes('speed: language === \"ar\" ? 0.96 : 1')) throw new Error('Legacy Arabic Cartesia slowdown is still active');
-  console.log('✓ v6.0.10 Cartesia playground-parity checks passed');
+  console.log('✓ Cartesia Fatima + Khaleeji checks passed');
 }
 
 // v6.0.11 adaptive VAD + native Cartesia Arabic voice conditioning
