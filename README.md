@@ -1,3 +1,12 @@
+## v6.0.18 — AI-first Sara with booking memory guard
+
+- Sara is AI-first again: she answers normal menu, recommendation, ingredient, price, and restaurant questions even during an active booking.
+- bookingState is memory and validation, not a rigid questionnaire.
+- Known booking fields are never requested again; the guard only intervenes if the AI contradicts stored facts or if the AI provider fails.
+- Guests may provide booking details in any order or all in one sentence, interrupt with another question, then continue naturally.
+- Final booking confirmation always includes name, exact mobile/WhatsApp number, date/day, exact HH:MM time, and party size before approval.
+- Brain context increased to the last 12 turns for more natural multi-turn conversation.
+
 ## v6.0.16 — deterministic booking flow
 
 - Booking name/phone/party/date/time steps continue locally from bookingState without requiring an OpenAI answer.

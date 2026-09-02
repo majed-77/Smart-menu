@@ -998,7 +998,7 @@ function exp3MergeToolArgs(args){
 async function askAltSara(question,{greeting=false}={}){
   return altFetchJSON('/api/sara-alt-chat',{
     method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question,menu:compactMenu(),history:conversationHistory.slice(isBrainSaraEngine()?-4:-10),language:waiterLanguage,greeting,tableNumber:saraTableNumber,bookingState:isBrainSaraEngine()&&!saraTableNumber?altBookingState:null,provider:isBrainSaraEngine()?saraBrainProvider():'deepseek'})
+    body:JSON.stringify({question,menu:compactMenu(),history:conversationHistory.slice(isBrainSaraEngine()?-12:-10),language:waiterLanguage,greeting,tableNumber:saraTableNumber,bookingState:isBrainSaraEngine()&&!saraTableNumber?altBookingState:null,provider:isBrainSaraEngine()?saraBrainProvider():'deepseek'})
   },60000);
 }
 
@@ -1367,6 +1367,24 @@ function exp3DeterministicBookingReply(q){
   }
   return exp3BookingMissingReply();
 }
+function exp3AssistantAsksKnownBookingField(answer){
+  const t=String(answer||'').replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا').toLowerCase();
+  if(altBookingState.name && /(وش الاسم|ايش الاسم|اسم الحجز|الاسم اللي اسجل)/.test(t))return true;
+  if(altBookingState.phone && /(رقم الجوال|رقم الواتساب|عطيني رقم|وش رقم)/.test(t))return true;
+  if(altBookingState.partySize && /(?:الحجز|حجز).{0,20}(كم|لكم).{0,12}(شخص|اشخاص)|(?:كم|لكم).{0,12}(شخص|اشخاص)/.test(t))return true;
+  if(altBookingState.date && /(اي يوم|أي يوم|وش اليوم|تاريخ الحجز)/.test(t))return true;
+  if(altBookingState.time && /(الساعة كم|الساعه كم|وش الوقت|وقت الحجز)/.test(t))return true;
+  return false;
+}
+function exp3ApplyBookingMemoryGuard(question,answer){
+  const out=String(answer||'').trim();
+  if(!isBrainSaraEngine() || saraTableNumber || !exp3BookingContextActive())return out;
+  if(exp3AssistantAsksKnownBookingField(out)){
+    if(exp3CanConfirmBookingNow())return exp3BookingSummaryReply();
+    return exp3BookingMissingReply() || out;
+  }
+  return out;
+}
 async function exp3AskWithBookingFallback(q){
   try{
     return await askAltSara(q);
@@ -1413,15 +1431,12 @@ async function processAltVoice(blob,mime){
     addBubble('user',q); conversationHistory.push({role:'user',content:q});
     status.textContent=isExplicitBookingConfirmation(q)&&waiterLanguage==='ar'?'تمام، أعتمد الحجز…':TEXT[waiterLanguage].thinking;
     let answer='';
-    if(isBrainSaraEngine() && wasPhoneCorrection && altBookingState.phone){
-      answer=exp3PhoneReplyAfterCorrection();
-    }else if(isBrainSaraEngine() && !saraTableNumber && altAwaitingBookingApproval() && isExplicitBookingConfirmation(q) && exp3CanConfirmBookingNow()){
+    if(isBrainSaraEngine() && !saraTableNumber && altAwaitingBookingApproval() && isExplicitBookingConfirmation(q) && exp3CanConfirmBookingNow()){
       answer=await exp3ConfirmBookingDirectly();
-    }else if(isBrainSaraEngine() && !saraTableNumber && exp3DeterministicBookingReply(q)){
-      answer=exp3DeterministicBookingReply(q);
     }else{
       const data=await exp3AskWithBookingFallback(q);
       if(data.toolCall?.name==='confirm_table_order') answer=await handleAltTableOrderTool(data.toolCall); else if(data.toolCall?.name==='confirm_booking_order') answer=await handleAltBookingTool(data.toolCall); else answer=String(data.answer||'').trim();
+      if(isBrainSaraEngine()&&!saraTableNumber)answer=exp3ApplyBookingMemoryGuard(q,answer);
     }
     if(!answer)throw new Error('No answer');
     if(isBrainSaraEngine()&&!saraTableNumber)exp3UpdateBookingState(answer,'assistant');
@@ -1445,15 +1460,12 @@ async function submitAltQuestion(q){
   stopAltSpeechForBargeIn(); addBubble('user',q);conversationHistory.push({role:'user',content:q});input.value='';altBusy=true;status.textContent=TEXT[waiterLanguage].thinking;
   try{
     let answer='';
-    if(isBrainSaraEngine() && wasPhoneCorrection && altBookingState.phone){
-      answer=exp3PhoneReplyAfterCorrection();
-    }else if(isBrainSaraEngine() && !saraTableNumber && altAwaitingBookingApproval() && isExplicitBookingConfirmation(q) && exp3CanConfirmBookingNow()){
+    if(isBrainSaraEngine() && !saraTableNumber && altAwaitingBookingApproval() && isExplicitBookingConfirmation(q) && exp3CanConfirmBookingNow()){
       answer=await exp3ConfirmBookingDirectly();
-    }else if(isBrainSaraEngine() && !saraTableNumber && exp3DeterministicBookingReply(q)){
-      answer=exp3DeterministicBookingReply(q);
     }else{
       const data=await exp3AskWithBookingFallback(q);
       if(data.toolCall?.name==='confirm_table_order')answer=await handleAltTableOrderTool(data.toolCall);else if(data.toolCall?.name==='confirm_booking_order')answer=await handleAltBookingTool(data.toolCall);else answer=String(data.answer||'').trim();
+      if(isBrainSaraEngine()&&!saraTableNumber)answer=exp3ApplyBookingMemoryGuard(q,answer);
     }
     if(!answer)throw new Error('No answer'); if(isBrainSaraEngine()&&!saraTableNumber)exp3UpdateBookingState(answer,'assistant'); addBubble('assistant',answer);conversationHistory.push({role:'assistant',content:answer});status.textContent=TEXT[waiterLanguage].ready;if(isBrainSaraEngine())await speakAI(answer);else await speakAltSara(answer,{waitForEnd:false});altBusy=false;
   }catch(e){altBusy=false;status.textContent=e.message||TEXT[waiterLanguage].serverError;showDiagnostic(status.textContent,false);}
