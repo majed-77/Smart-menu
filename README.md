@@ -94,3 +94,12 @@ The experimental `openai-deepgram` engine now uses the requested direction:
 - Strengthens Sara's LLM instruction to avoid formal Arabic phrasing that pulls generic Arabic voices away from a Saudi feel.
 - Uses a slightly calmer Arabic Cartesia speed (0.96) for more natural conversational delivery.
 - Important: Cartesia's current public TTS language parameter is `ar`, not `ar-SA`; Cartesia Voice Localization currently exposes Modern Standard Arabic as the Arabic accent option, so code alone cannot guarantee a native Saudi phonetic accent for a generic Arabic voice.
+
+
+## v6.0.10 — Cartesia Playground parity fix
+- Keeps the selected Cartesia voice ID `731ace69-ee17-41bc-8c6f-665c9f1db95c`.
+- Sends Sara's final reply to Cartesia without Saudi lexical rewrites or added pronunciation diacritics.
+- Restores Cartesia generation speed to `1.0` instead of forcing Arabic to `0.96`.
+- Keeps `language: ar`, `sonic-3.5`, and API version `2026-03-01`, matching Cartesia's documented TTS request shape.
+- Saudi dialect wording remains controlled by Sara's LLM prompt; the TTS layer no longer rewrites the spoken text.
+- Goal: make API playback match the behavior heard from the same voice/text in Cartesia Playground as closely as possible.
