@@ -1,0 +1,25 @@
+{
+  "name": "smart-menu-ai",
+  "version": "6.0.7",
+  "private": true,
+  "description": "Arabic-first AI smart menu, ordering and restaurant operations platform.",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node scripts/check.js",
+    "test": "node scripts/check.js && node scripts/smoke-test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "express-rate-limit": "^7.5.0",
+    "helmet": "^8.1.0",
+    "luxon": "^3.5.0",
+    "multer": "^2.0.2",
+    "openai": "^6.0.1",
+    "pg": "^8.13.1"
+  }
+}
