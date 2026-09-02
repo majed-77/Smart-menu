@@ -48,7 +48,7 @@ check("Deepgram engine sends Deepgram STT mode", customerJs.includes("form.appen
 check("Deepgram key is server-side env only", fs.readFileSync(path.join(root, "src/config/env.js"), "utf8").includes('DEEPGRAM_API_KEY') && !customerJs.includes('DEEPGRAM_API_KEY'));
 check("Deepgram STT key is server-side env only", fs.readFileSync(path.join(root, "src/config/env.js"), "utf8").includes('DEEPGRAM_API_KEY') && !customerJs.includes('DEEPGRAM_API_KEY'));
 check("Settings form is not auto-refreshed while editing", dashboardJs.includes("if(!['menu','settings'].includes(view))load()"));
-check("Customer assets are version-busted", customerHtml.includes("customer.css?v=6.0.15") && customerHtml.includes("customer-app.js?v=6.0.15"));
+check("Customer assets are version-busted", customerHtml.includes("customer.css?v=6.0.17") && customerHtml.includes("customer-app.js?v=6.0.17"));
 check("Dashboard assets are version-busted", dashboardHtml.includes("dashboard.css?v=6.0.15") && dashboardHtml.includes("dashboard-app.js?v=6.0.15"));
 check("Static assets revalidate instead of one-day cache", fs.readFileSync(path.join(root, "src/app.js"), "utf8").includes('Cache-Control", "no-cache, max-age=0, must-revalidate') && !fs.readFileSync(path.join(root, "src/app.js"), "utf8").includes('maxAge: env.nodeEnv === "production" ? "1d" : 0'));
 check("HTML routes disable stale cache", fs.readFileSync(path.join(root, "src/app.js"), "utf8").includes('no-store, no-cache, must-revalidate, proxy-revalidate'));
@@ -124,3 +124,10 @@ check("Booking summary renders phone numerically on screen", customerJs.includes
 check("Arabic TTS formats time separately from display", customerJs.includes("exp3PrepareSpeechText") && customerJs.includes("الساعة ${exp3TimeForSpeech(t)}"));
 check("Booking summary is deterministic after final missing field", customerJs.includes("exp3BookingSummaryReply") && customerJs.includes("exp3LastAssistantAskedBookingField"));
 check("Server forbids reinterpretation of stored booking time", routeSources.includes("preserve that exact HH:MM value"));
+
+
+// v6.0.17 booking memory / confirmation regression checks
+const customerJsV617 = fs.readFileSync(path.join(root, 'public/assets/js/customer-app.js'), 'utf8');
+check('Booking parser preserves الساعة عشرة/العشرة from the first turn', customerJsV617.includes("'العشرة':10"));
+check('Booking confirmation repeats phone and time before approval', customerJsV617.includes('رقم الجوال ${phone}، الحجز ${date} الساعة ${time}'));
+

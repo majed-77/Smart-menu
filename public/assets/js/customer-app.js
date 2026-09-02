@@ -961,14 +961,28 @@ function exp3UpdateBookingState(text,role='user'){
     if(isAm&&h===12)h=0;
     altBookingState.time=String(h).padStart(2,'0')+':'+String(min).padStart(2,'0');
   }
-  const hourWords={'واحدة':1,'وحدة':1,'اثنتين':2,'ثنتين':2,'ثلاثة':3,'ثلاثه':3,'أربعة':4,'اربعة':4,'خمسة':5,'خمسه':5,'ستة':6,'سته':6,'سبعة':7,'سبعه':7,'ثمانية':8,'ثمانيه':8,'تسعة':9,'تسعه':9,'عشرة':10,'عشره':10,'احدعش':11,'إحدى عشرة':11};
+  const hourWords={'واحدة':1,'وحدة':1,'الواحدة':1,'الواحده':1,'اثنتين':2,'ثنتين':2,'اثنين':2,'الاثنتين':2,'الثنتين':2,'ثلاثة':3,'ثلاثه':3,'الثلاثة':3,'الثلاثه':3,'أربعة':4,'اربعة':4,'الأربعة':4,'الاربعة':4,'خمسة':5,'خمسه':5,'الخمسة':5,'الخمسه':5,'ستة':6,'سته':6,'الستة':6,'السته':6,'سبعة':7,'سبعه':7,'السبعة':7,'السبعه':7,'ثمانية':8,'ثمانيه':8,'الثمانية':8,'الثمانيه':8,'تسعة':9,'تسعه':9,'التسعة':9,'التسعه':9,'عشرة':10,'عشره':10,'العشرة':10,'العشره':10,'احدعش':11,'احد عشر':11,'إحدى عشرة':11,'احدى عشرة':11,'الحادية عشرة':11,'الحاديه عشره':11,'اثنتا عشرة':12,'اثنا عشر':12,'الثانية عشرة':12,'الثانيه عشره':12};
   for(const [w,h0] of Object.entries(hourWords)){
-    const hm=raw.match(new RegExp(`الساعة\\s+${w}(?:\\s+(?:و?نص(?:ف)?|و?نصف))?`));
+    const hm=raw.match(new RegExp(`(?:الساعة|الساعه)\\s+${w}(?:\\s+(?:و?نص(?:ف)?|و?نصف))?`));
     if(hm){
       let h=h0,min=/(?:و?نص(?:ف)?|و?نصف)/.test(hm[0])?30:0;
-      if(/(?:مساء|بالليل|ليل|المغرب)/.test(raw)&&h<12)h+=12;
+      if(/(?:مساء|المسا|بالليل|ليل|المغرب)/.test(raw)&&h<12)h+=12;
       if(/صباح/.test(raw)&&h===12)h=0;
       altBookingState.time=String(h).padStart(2,'0')+':'+String(min).padStart(2,'0');
+      break;
+    }
+  }
+  // Safety net for numeric Saudi booking phrases such as "الساعة 10 مساء".
+  // Once the guest gives the time, persist it in bookingState so later steps
+  // (name/phone) can never cause Sara to ask for the time again.
+  if(role==='user' && !altBookingState.time && /(?:الساعة|الساعه)/.test(raw)){
+    const normalizedHourText=raw.replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا');
+    const hm=normalizedHourText.match(/(?:الساعة|الساعه)\s*(\d{1,2})(?::(\d{1,2}))?/);
+    if(hm){
+      let h=Number(hm[1]),min=Number(hm[2]||0);
+      if(/(?:مساء|المسا|بالليل|ليل|المغرب)/.test(normalizedHourText)&&h<12)h+=12;
+      if(/صباح/.test(normalizedHourText)&&h===12)h=0;
+      if(h>=0&&h<=23&&min>=0&&min<=59) altBookingState.time=String(h).padStart(2,'0')+':'+String(min).padStart(2,'0');
     }
   }
 }
@@ -1297,8 +1311,9 @@ function exp3BookingSummaryReply(){
   const time=exp3BookingTimeDisplay(a.time);
   const party=Number(a.party_size)||0;
   const partyText=party===1?'لشخص واحد':party===2?'لشخصين':`لـ${party} أشخاص`;
+  const phone=exp3PhoneDisplay(a.phone);
   const orderText=Array.isArray(a.order_items)&&a.order_items.length?'ومع طلب مسبق':'وبدون طلب مسبق';
-  return `تمام ${name}، حجزك ${date} الساعة ${time} ${partyText}، ${orderText}. أعتمد الحجز؟`;
+  return `تمام ${name}، أتأكد معك قبل الاعتماد: رقم الجوال ${phone}، الحجز ${date} الساعة ${time} ${partyText}، ${orderText}. البيانات صحيحة وأعتمد الحجز؟`;
 }
 function exp3LastAssistantAskedBookingField(){
   const last=[...conversationHistory].reverse().find(m=>m?.role==='assistant');
