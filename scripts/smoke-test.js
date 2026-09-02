@@ -48,8 +48,8 @@ check("Deepgram engine sends Deepgram STT mode", customerJs.includes("form.appen
 check("Deepgram key is server-side env only", fs.readFileSync(path.join(root, "src/config/env.js"), "utf8").includes('DEEPGRAM_API_KEY') && !customerJs.includes('DEEPGRAM_API_KEY'));
 check("Deepgram STT key is server-side env only", fs.readFileSync(path.join(root, "src/config/env.js"), "utf8").includes('DEEPGRAM_API_KEY') && !customerJs.includes('DEEPGRAM_API_KEY'));
 check("Settings form is not auto-refreshed while editing", dashboardJs.includes("if(!['menu','settings'].includes(view))load()"));
-check("Customer assets are version-busted", customerHtml.includes("customer.css?v=6.0.12") && customerHtml.includes("customer-app.js?v=6.0.12"));
-check("Dashboard assets are version-busted", dashboardHtml.includes("dashboard.css?v=6.0.12") && dashboardHtml.includes("dashboard-app.js?v=6.0.12"));
+check("Customer assets are version-busted", customerHtml.includes("customer.css?v=6.0.13") && customerHtml.includes("customer-app.js?v=6.0.13"));
+check("Dashboard assets are version-busted", dashboardHtml.includes("dashboard.css?v=6.0.13") && dashboardHtml.includes("dashboard-app.js?v=6.0.13"));
 check("Static assets revalidate instead of one-day cache", fs.readFileSync(path.join(root, "src/app.js"), "utf8").includes('Cache-Control", "no-cache, max-age=0, must-revalidate') && !fs.readFileSync(path.join(root, "src/app.js"), "utf8").includes('maxAge: env.nodeEnv === "production" ? "1d" : 0'));
 check("HTML routes disable stale cache", fs.readFileSync(path.join(root, "src/app.js"), "utf8").includes('no-store, no-cache, must-revalidate, proxy-revalidate'));
 
@@ -61,6 +61,10 @@ const endpointCoverage = allEndpoints.filter((endpoint) => {
   return routeSources.includes(suffix) || routeSources.includes(`/${suffix}`);
 });
 check("Frontend API endpoints have route coverage", endpointCoverage.length >= Math.max(1, allEndpoints.length - 3));
+
+check("Booking parser accepts colloquial ثلاث أشخاص", customerJs.includes("'ثلاث':3") && customerJs.includes("exp3AwaitingPartySize"));
+check("Voice processing has an in-flight lock", customerJs.includes("altVoiceProcessInFlight") && customerJs.includes("exp3IsDuplicateTurn") && customerJs.includes("altCapturing || altVoiceProcessInFlight"));
+check("Server booking memory treats stored partySize as authoritative", routeSources.includes("Treat partySize as already answered whenever it is a positive number"));
 
 let failed = 0;
 for (const result of checks) {

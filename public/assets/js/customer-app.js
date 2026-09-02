@@ -801,7 +801,7 @@ function handleRealtimeEvent(event){
 }
 
 function closeAltSara(){
-  altStarted=false; altBusy=false; altSpeaking=false; altCapturing=false; altBookingState={name:'',phone:'',partySize:null,date:'',time:'',notes:'',orderItems:[]}; altBookingActive=false; altLastConfirmedBooking={signature:'',code:'',at:0}; altBookingSaveInFlight=false; altBargeCandidateAt=0; altCaptureStartedDuringSara=false; altLastSpokenText=''; altSpeechStoppedAt=0;
+  altStarted=false; altBusy=false; altSpeaking=false; altCapturing=false; altBookingState={name:'',phone:'',partySize:null,date:'',time:'',notes:'',orderItems:[]}; altBookingActive=false; altLastConfirmedBooking={signature:'',code:'',at:0}; altBookingSaveInFlight=false; altBargeCandidateAt=0; altCaptureStartedDuringSara=false; altLastSpokenText=''; altSpeechStoppedAt=0; altVoiceProcessInFlight=false; altLastTurnFingerprint=''; altLastTurnAt=0;
   if(altVadFrame){cancelAnimationFrame(altVadFrame);altVadFrame=null;}
   try{if(altRecorder && altRecorder.state!=="inactive")altRecorder.stop();}catch(e){}
   altRecorder=null; altChunks=[];
@@ -832,6 +832,21 @@ let altTtsEndedAt=0;
 let altLastSpokenText='';
 let altCaptureStartedDuringSara=false;
 let altSpeechStoppedAt=0;
+// One voice turn must produce exactly one transcript/AI reply. iOS Safari can
+// fire VAD/MediaRecorder transitions very close together, so keep an explicit
+// processing lock and a short transcript de-duplication window.
+let altVoiceProcessInFlight=false;
+let altLastTurnFingerprint='';
+let altLastTurnAt=0;
+function exp3TurnFingerprint(text){
+  return String(text||'').toLowerCase().replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا').replace(/[^\u0600-\u06FF0-9a-z+ ]/gi,' ').replace(/\s+/g,' ').trim();
+}
+function exp3IsDuplicateTurn(text){
+  const fp=exp3TurnFingerprint(text), now=Date.now();
+  if(!fp)return false;
+  if(fp===altLastTurnFingerprint && now-altLastTurnAt<4500)return true;
+  altLastTurnFingerprint=fp; altLastTurnAt=now; return false;
+}
 function normalizeArabicDigitsExp3(v){return String(v||'').replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[۰-۹]/g,d=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(d));}
 function exp3TodayISO(){try{const parts=new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Riyadh',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());const get=t=>parts.find(p=>p.type===t)?.value||'';return `${get('year')}-${get('month')}-${get('day')}`;}catch(e){return new Date(Date.now()+3*3600000).toISOString().slice(0,10)}}
 function exp3PhoneDigitsFromSpeech(raw){
@@ -857,6 +872,11 @@ function exp3PhoneDigitsFromSpeech(raw){
   if(cur.length>best.length)best=cur;
   return best.length>=8&&best.length<=15?best:'';
 }
+function exp3AwaitingPartySize(){
+  const last=[...conversationHistory].reverse().find(m=>m?.role==='assistant');
+  const t=String(last?.content||'').replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا').toLowerCase();
+  return /(الحجز|حجز).{0,18}(كم|لكم).{0,12}(شخص|اشخاص)|(?:كم|لكم).{0,12}(شخص|اشخاص)/.test(t);
+}
 function exp3UpdateBookingState(text,role='user'){
   let raw=normalizeArabicDigitsExp3(String(text||'')).replace(/\s+/g,' ').trim(); if(!raw)return;
   if(role==='user' && /(?:احجز|أحجز|حجز|الحجز|حجزت|حجزي|طاولة)/.test(raw)) altBookingActive=true;
@@ -876,9 +896,19 @@ function exp3UpdateBookingState(text,role='user'){
   }
   m=raw.match(/(?:ل|لـ)?(\d{1,2})\s*(?:اشخاص|أشخاص|شخص)/); if(m)altBookingState.partySize=Math.max(1,Math.min(30,Number(m[1])));
   if(/(?:ل|لـ)?شخصين/.test(raw)) altBookingState.partySize=2;
-  const partyWords={'واحد':1,'واحدة':1,'اثنين':2,'إثنين':2,'ثنين':2,'ثنتين':2,'ثلاثة':3,'ثلاثه':3,'اربعة':4,'أربعة':4,'اربعه':4,'خمسة':5,'خمسه':5,'ستة':6,'سته':6,'سبعة':7,'سبعه':7,'ثمانية':8,'ثمانيه':8,'تسعة':9,'تسعه':9,'عشرة':10,'عشره':10};
+  // Saudi speech often uses the cardinal stem with "أشخاص" (e.g. "ثلاث
+  // أشخاص", "أربع أشخاص") rather than the form expected by formal Arabic.
+  // Accept both forms so a correctly transcribed answer is never discarded.
+  const partyWords={'واحد':1,'واحدة':1,'اثنين':2,'إثنين':2,'ثنين':2,'ثنتين':2,'ثلاث':3,'ثلاثة':3,'ثلاثه':3,'اربع':4,'أربع':4,'اربعة':4,'أربعة':4,'اربعه':4,'خمس':5,'خمسة':5,'خمسه':5,'ست':6,'ستة':6,'سته':6,'سبع':7,'سبعة':7,'سبعه':7,'ثمان':8,'ثمانية':8,'ثمانيه':8,'تسع':9,'تسعة':9,'تسعه':9,'عشر':10,'عشرة':10,'عشره':10};
   for(const [w,n] of Object.entries(partyWords)){
-    if(new RegExp(`(?:ل|لـ)?${w}\\s+(?:اشخاص|أشخاص|اشخاصًا|أشخاصًا)`).test(raw)){altBookingState.partySize=n;break;}
+    if(new RegExp(`(?:ل|لـ)?${w}\\s+(?:اشخاص|أشخاص|اشخاصًا|أشخاصًا|شخص)`).test(raw)){altBookingState.partySize=n;break;}
+  }
+  // If Sara has explicitly just asked "الحجز لكم شخص؟", a short answer like
+  // "ثلاث" or "3" is unambiguously the party size and should be stored.
+  if(role==='user' && !altBookingState.partySize && exp3AwaitingPartySize()){
+    const compact=raw.replace(/[،,.!?؟]/g,'').trim();
+    if(/^\d{1,2}$/.test(compact)) altBookingState.partySize=Math.max(1,Math.min(30,Number(compact)));
+    else if(partyWords[compact]) altBookingState.partySize=partyWords[compact];
   }
   if(/(?:^|\s|[،,.!?؟])اليوم(?=$|\s|[،,.!?؟])/.test(raw))altBookingState.date=exp3TodayISO();
   const iso=(raw.match(/\b20\d{2}-\d{2}-\d{2}\b/)||[])[0]; if(iso)altBookingState.date=iso;
@@ -1021,7 +1051,7 @@ async function speakAltSara(text,{waitForEnd=false}={}){
 }
 
 function startAltCapture({duringSara=false}={}){
-  if(!altStream || altCapturing || (altBusy && !(isBrainSaraEngine() && (altSpeaking||duringSara))))return;
+  if(!altStream || altCapturing || altVoiceProcessInFlight || (altBusy && !(isBrainSaraEngine() && (altSpeaking||duringSara))))return;
   altCaptureStartedDuringSara=Boolean(duringSara);
   const mime=bestMime(); altChunks=[];
   try{altRecorder=new MediaRecorder(altStream,mime?{mimeType:mime}:undefined);}catch(e){return;}
@@ -1029,7 +1059,7 @@ function startAltCapture({duringSara=false}={}){
   altRecorder.onstop=async()=>{
     const rec=altRecorder; altRecorder=null; altCapturing=false;
     const type=rec?.mimeType||mime||'audio/webm'; const blob=new Blob(altChunks,{type}); altChunks=[];
-    if(blob.size<700){altBusy=false;return;}
+    if(blob.size<700){altVoiceProcessInFlight=false;altBusy=false;return;}
     await processAltVoice(blob,type);
   };
   altRecorder.start(100); altCapturing=true; altSpeechStartedAt=performance.now(); altSilenceAt=0;
@@ -1038,8 +1068,12 @@ function startAltCapture({duringSara=false}={}){
 
 function stopAltCapture(){
   if(!altCapturing)return;
+  // Lock before MediaRecorder's asynchronous `stop` event. Without this tiny
+  // guard, VAD can start a second recorder in the gap and submit the same turn
+  // twice on Safari/iOS.
+  altVoiceProcessInFlight=true;
   micBtn.classList.remove('recording'); micBtn.textContent='🎤';
-  try{if(altRecorder&&altRecorder.state!=='inactive')altRecorder.stop();}catch(e){altCapturing=false;}
+  try{if(altRecorder&&altRecorder.state!=='inactive')altRecorder.stop();else altVoiceProcessInFlight=false;}catch(e){altCapturing=false;altVoiceProcessInFlight=false;}
 }
 
 function runAltVAD(){
@@ -1211,6 +1245,7 @@ function exp3LooksLikeSaraEcho(transcript){
   return coverage>=0.72 && common>=3;
 }
 async function processAltVoice(blob,mime){
+  altVoiceProcessInFlight=true;
   altBusy=true;
   try{
     status.textContent=TEXT[waiterLanguage].transcribing;
@@ -1221,6 +1256,11 @@ async function processAltVoice(blob,mime){
     if(!r.ok||!d.text)throw new Error(d.message||'Transcription failed');
     let q=String(d.text).trim(); if(!q)return;
     q=normalizeAltBookingApprovalTranscript(q);
+    if(exp3IsDuplicateTurn(q)){
+      console.info('Sara: ignored duplicate voice turn',q);
+      status.textContent=TEXT[waiterLanguage].ready;
+      return;
+    }
     if(exp3LooksLikeSaraEcho(q)){
       console.info('Experimental 3: ignored probable Sara echo',q);
       altCaptureStartedDuringSara=false;
@@ -1249,15 +1289,18 @@ async function processAltVoice(blob,mime){
     if(isBrainSaraEngine()&&!saraTableNumber)exp3UpdateBookingState(answer,'assistant');
     addBubble('assistant',answer); conversationHistory.push({role:'assistant',content:answer}); status.textContent=TEXT[waiterLanguage].ready;
     if(isBrainSaraEngine()) await speakAI(answer); else await speakAltSara(answer,{waitForEnd:false});
-    altBusy=false;
   }catch(e){
-    console.error('Alt Sara voice error',e); altBusy=false; status.textContent=e.message||TEXT[waiterLanguage].serverError; showDiagnostic(status.textContent,false);
+    console.error('Alt Sara voice error',e); status.textContent=e.message||TEXT[waiterLanguage].serverError; showDiagnostic(status.textContent,false);
+  }finally{
+    altBusy=false;
+    altVoiceProcessInFlight=false;
   }
 }
 
 async function submitAltQuestion(q){
-  q=String(q||'').trim();if(!q)return;
+  q=String(q||'').trim();if(!q||altBusy||altVoiceProcessInFlight)return;
   q=normalizeAltBookingApprovalTranscript(q);
+  if(exp3IsDuplicateTurn(q)){console.info('Sara: ignored duplicate typed turn',q);return;}
   const wasPhoneCorrection=isBrainSaraEngine() && !saraTableNumber && exp3IsPhoneCorrection(q);
   if(isBrainSaraEngine()&&!saraTableNumber)exp3UpdateBookingState(q,'user');
   stopAltSpeechForBargeIn(); addBubble('user',q);conversationHistory.push({role:'user',content:q});input.value='';altBusy=true;status.textContent=TEXT[waiterLanguage].thinking;

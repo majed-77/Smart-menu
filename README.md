@@ -112,6 +112,15 @@ The experimental `openai-deepgram` engine now uses the requested direction:
 - For Arabic Cartesia TTS, omits the generic language override so the selected voice/model can preserve its native locale/accent conditioning. English/French still send explicit language codes.
 - Removes generation speed/volume overrides for Cartesia parity.
 
+
+## v6.0.13 booking memory + duplicate-turn fix
+
+- Prevents Safari/VAD from submitting the same recorded turn twice while a previous voice turn is still being processed.
+- De-duplicates identical transcripts received within a short safety window.
+- Recognizes colloquial Saudi party-size answers such as `ثلاث أشخاص`, `أربع أشخاص`, and short answers like `ثلاث` when Sara has just asked for the party size.
+- Treats the client booking state as authoritative and never asks again for a booking field that already has a stored value.
+- Bumps customer/dashboard asset cache keys so phones receive the fixed JavaScript immediately after deploy.
+
 ## v6.0.12 microphone + Cartesia voice parity
 - iPhone microphone capture now enables AGC and no longer forces voiceIsolation, which can gate quiet Arabic consonants.
 - Deepgram VAD starts after only 25 ms of confirmed speech with lower adaptive start/release thresholds, reducing clipped first words.
