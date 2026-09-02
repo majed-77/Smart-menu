@@ -128,3 +128,10 @@ The experimental `openai-deepgram` engine now uses the requested direction:
 - Fatima voice ID remains unchanged.
 - Cartesia Arabic explicitly sends `language: ar`, speed 1, volume 1.
 - Default Cartesia model for this specific Fatima voice is pinned to `sonic-3` for parity testing with the voice's known integration profile; override with CARTESIA_TTS_MODEL if your Playground test uses another model.
+
+
+## v6.0.14 — Arabic microphone accuracy fix
+- Arabic voice turns now use OpenAI `gpt-4o-transcribe` even when Sara uses Cartesia TTS.
+- Deepgram STT remains available for French/English experimental flows.
+- Lower adaptive VAD start threshold on mobile so the first word is less likely to be clipped.
+- Keep the long silence hangover so natural pauses do not prematurely end the guest's sentence.

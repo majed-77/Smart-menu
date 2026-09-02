@@ -1096,13 +1096,13 @@ function runAltVAD(){
       const capped=Math.min(rms,altNoiseFloor*2.2+0.006);
       altNoiseFloor=altNoiseFloor*0.985+capped*0.015;
     }
-    const adaptiveStart=isDeepgramEngine?Math.min(0.032,Math.max(0.010,altNoiseFloor*1.65+0.0025)):0;
-    const adaptiveKeep=isDeepgramEngine?Math.min(0.014,Math.max(0.0045,altNoiseFloor*1.08+0.0008)):0;
+    const adaptiveStart=isDeepgramEngine?Math.min(0.024,Math.max(0.007,altNoiseFloor*1.38+0.0015)):0;
+    const adaptiveKeep=isDeepgramEngine?Math.min(0.012,Math.max(0.0038,altNoiseFloor*1.02+0.0006)):0;
     const startThreshold=isDeepgramEngine?adaptiveStart:(isHybrid3?0.024:0.055);
     const keepThreshold=isDeepgramEngine?adaptiveKeep:(isHybrid3?0.018:0.040);
     const minSpeechMs=isDeepgramEngine?260:(isHybrid3?280:220);
     const endSilenceMs=isDeepgramEngine?1800:(isHybrid3?1100:600);
-    const startHoldMs=isDeepgramEngine?25:0;
+    const startHoldMs=isDeepgramEngine?0:0;
     const canStart=!altBusy || (isHybrid3 && altSpeaking);
 
     if(canStart && !altCapturing){
@@ -1250,7 +1250,12 @@ async function processAltVoice(blob,mime){
   try{
     status.textContent=TEXT[waiterLanguage].transcribing;
     const ext=mime.includes('mp4')?'m4a':mime.includes('ogg')?'ogg':'webm';
-    const form=new FormData(); form.append('audio',blob,'voice.'+ext); form.append('language',waiterLanguage); if(saraEngine==='openai-deepgram'||saraEngine==='openai-deepgram-cartesia')form.append('mode','deepgram-stt'); else if(isBrainSaraEngine())form.append('mode','hybrid3');
+    const form=new FormData(); form.append('audio',blob,'voice.'+ext); form.append('language',waiterLanguage);
+    // Arabic accuracy fix: keep Cartesia for Sara's voice, but use OpenAI's
+    // gpt-4o-transcribe for Saudi Arabic. Deepgram remains available for FR/EN.
+    // This separation prevents the TTS engine choice from lowering STT accuracy.
+    if((saraEngine==='openai-deepgram'||saraEngine==='openai-deepgram-cartesia') && waiterLanguage!=='ar') form.append('mode','deepgram-stt');
+    else if(isBrainSaraEngine()) form.append('mode','hybrid3');
     const sttUrl=isBrainSaraEngine()?'/api/transcribe':'/api/sara-alt-transcribe';
     const r=await fetch(sttUrl,{method:'POST',body:form}); const d=await r.json().catch(()=>({}));
     if(!r.ok||!d.text)throw new Error(d.message||'Transcription failed');
