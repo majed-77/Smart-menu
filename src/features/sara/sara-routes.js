@@ -893,18 +893,23 @@ ${tableNumber ? `- The guest opened the menu from the QR code for TABLE ${tableN
 - Only after explicit confirmation, call confirm_table_order with order_mode="table". The table number is already known by the website.
 - Keep every modification attached to the exact item in special_request, e.g. Burger Classique (بدون مايونيز). Never move it to general notes.
 - Do not use confirm_booking_order for a seated-table order unless the guest separately asks to make a future reservation.` : `- No table QR is active. The guest came through the normal menu link.
-- The guest has THREE distinct choices: (1) order food/drinks to EAT OR DRINK INSIDE THE RESTAURANT, (2) order for EXTERNAL PICKUP/TAKEAWAY, or (3) RESERVE A TABLE only.
-- If the guest starts ordering food/drinks and has not said which service they want, ask ONE short question in Arabic mode: "تبيه هنا بالمطعم ولا استلام خارجي؟"
-- If they choose to eat/drink inside the restaurant: use order_mode="dinein". Collect items, quantities, item-specific modifications, and customer name for identification. Phone is optional. Do NOT ask for a booking date/time or party size unless they separately ask to reserve a table.
-- If they choose pickup/takeaway: use order_mode="external". Collect items, quantities, item-specific modifications, customer name, and mobile/WhatsApp number.
-- If they explicitly ask only to reserve a table: do not create a food order unless they also ask for a pre-order; use the booking flow below.
+- The guest has THREE distinct choices when there is NO active reservation context: (1) order food/drinks to EAT OR DRINK INSIDE THE RESTAURANT, (2) order for EXTERNAL PICKUP/TAKEAWAY, or (3) RESERVE A TABLE.
+- ACTIVE BOOKING OVERRIDES SERVICE SELECTION: if the website bookingState or recent conversation shows an unfinished reservation, that reservation is the primary context. Any food/drink the guest adds defaults to a PRE-ORDER ATTACHED TO THAT SAME RESERVATION.
+- While a reservation is active, NEVER ask "تبيه هنا بالمطعم ولا استلام خارجي؟" just because the guest mentions food or drinks. Ask service type only when there is no active reservation context.
+- Treat a food/drink request during an active reservation as a separate dine-in/pickup order ONLY if the guest explicitly says it is separate, pickup, takeaway, not with the booking, or equivalent wording such as "طلب منفصل", "هذا استلام", "مو مع الحجز", or "غير الحجز".
+- If a reservation is active and the guest adds/removes/changes food or drinks, use update_booking_preorder to persist the COMPLETE latest pre-order item list in booking memory. Do not call confirm_table_order for those items.
+- If they choose to eat/drink inside the restaurant when no reservation is active: use order_mode="dinein". Collect items, quantities, item-specific modifications, and customer name for identification. Phone is optional. Do NOT ask for a booking date/time or party size unless they separately ask to reserve a table.
+- If they choose pickup/takeaway when no reservation is active: use order_mode="external". Collect items, quantities, item-specific modifications, customer name, and mobile/WhatsApp number.
+- If they explicitly ask only to reserve a table: use the booking flow below. Food/drink they later add while that reservation remains active becomes its optional pre-order by default.
 - Before any food/drink order is sent, summarize it briefly and ask for explicit confirmation. Only after approval call confirm_table_order.
 - Keep every addition/removal/modification attached to the exact item in special_request, e.g. Burger Classique (بدون مايونيز), Latte (حليب شوفان). Never put item-specific changes in general notes.`}
 
 BOOKING + OPTIONAL PRE-ORDER:
 - You can collect name, WhatsApp phone, party size, date, time, notes, and optional menu items/quantities/modifications.
 - Preserve phone digit order exactly. Saudi local 05xxxxxxxx may be normalized to +9665xxxxxxxx.
-- bookingState is memory, not a dialogue script. Never force the guest through a fixed sequence. The guest may ask about food, prices, ingredients, recommendations, availability, or change a booking detail at any point; answer naturally, then continue from the remembered booking context when appropriate.
+- bookingState is memory, not a dialogue script. Never force the guest through a fixed sequence. The guest may ask about food, prices, ingredients, recommendations, availability, add/remove pre-order items, or change a booking detail at any point; answer naturally, then continue from the remembered booking context when appropriate.
+- ACTIVE CONTEXT PRIORITY: once a reservation has started and is not yet confirmed/cancelled, preserve that context across topic switches. A menu question does not end the reservation. A food/drink addition becomes a pre-order on that reservation unless the guest explicitly requests a separate order.
+- When the guest adds/removes/modifies pre-order items, persist the complete latest list with update_booking_preorder so it survives later turns. Never silently forget earlier pre-order items.
 - Never ask again for information already known. If booking details are missing, ask for only one useful missing detail when it is natural to continue the reservation.
 - Before saving, summarize the booking/order and ask for explicit confirmation.
 - IMPORTANT VOICE STYLE FOR BOOKING CONFIRMATION: speak the summary as one short natural sentence, never as a form, checklist, table, or Markdown list. Do not use Markdown symbols such as **, #, -, bullets, or labels like "الاسم:" and "رقم الواتساب:" in spoken replies.
@@ -952,6 +957,36 @@ const confirmBookingOrderTool = {
         }
       },
       required: ["name", "phone", "party_size", "date", "time", "notes", "order_items"]
+    }
+  }
+};
+
+const updateBookingPreorderTool = {
+  type: "function",
+  function: {
+    name: "update_booking_preorder",
+    description: "Update the draft food/drink pre-order attached to an ACTIVE unfinished table reservation. Use this instead of asking dine-in vs pickup when the guest adds/removes/modifies food during a reservation. Send the COMPLETE latest pre-order list after applying the guest's change, plus the short natural sentence Sara should say.",
+    strict: true,
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        order_items: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              item_name: { type: "string" },
+              quantity: { type: "integer", minimum: 1, maximum: 20 },
+              special_request: { type: "string", description: "Modification for this exact item only, e.g. بدون خس" }
+            },
+            required: ["item_name", "quantity", "special_request"]
+          }
+        },
+        response_message: { type: "string", description: "A short natural reply Sara should say after saving the draft pre-order. Do not ask dine-in/pickup while the booking is active." }
+      },
+      required: ["order_items", "response_message"]
     }
   }
 };
@@ -1059,7 +1094,7 @@ function brainToolResult(call) {
 }
 
 async function callOpenAICompatibleBrain({ endpoint, apiKey, model, messages, extraBody = {}, strictTools = true }) {
-  const baseBody = { model, messages, tools:[confirmBookingOrderTool,confirmTableOrderTool].map(t=>strictTools?t:{...t,function:{...t.function,strict:undefined}}), tool_choice:"auto" };
+  const baseBody = { model, messages, tools:[confirmBookingOrderTool,confirmTableOrderTool,updateBookingPreorderTool].map(t=>strictTools?t:{...t,function:{...t.function,strict:undefined}}), tool_choice:"auto" };
   if (!Object.prototype.hasOwnProperty.call(extraBody, "max_completion_tokens")) baseBody.max_tokens = 160;
   if (!/api\.openai\.com/.test(endpoint)) baseBody.temperature = 0.25;
   const response = await fetch(endpoint, {
@@ -1070,13 +1105,13 @@ async function callOpenAICompatibleBrain({ endpoint, apiKey, model, messages, ex
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data?.error?.message || data?.message || `AI HTTP ${response.status}`);
   const message = data?.choices?.[0]?.message || {};
-  const call = Array.isArray(message.tool_calls) ? message.tool_calls.find(x => ["confirm_booking_order","confirm_table_order"].includes(x?.function?.name)) : null;
+  const call = Array.isArray(message.tool_calls) ? message.tool_calls.find(x => ["confirm_booking_order","confirm_table_order","update_booking_preorder"].includes(x?.function?.name)) : null;
   if (call) return { toolCall:brainToolResult({ id:call.id, name:call.function?.name, arguments:call.function?.arguments }) };
   return { answer:String(message.content || "").trim() };
 }
 
 async function callClaudeBrain({ apiKey, model, system, history, userText }) {
-  const tools = [confirmBookingOrderTool,confirmTableOrderTool].map(t=>({name:t.function.name,description:t.function.description,input_schema:t.function.parameters}));
+  const tools = [confirmBookingOrderTool,confirmTableOrderTool,updateBookingPreorderTool].map(t=>({name:t.function.name,description:t.function.description,input_schema:t.function.parameters}));
   const messages = [...history, { role:"user", content:userText }];
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method:"POST",
@@ -1091,7 +1126,7 @@ async function callClaudeBrain({ apiKey, model, system, history, userText }) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data?.error?.message || data?.message || `Claude HTTP ${response.status}`);
   const blocks = Array.isArray(data?.content) ? data.content : [];
-  const tool = blocks.find(x => x?.type === "tool_use" && ["confirm_booking_order","confirm_table_order"].includes(x?.name));
+  const tool = blocks.find(x => x?.type === "tool_use" && ["confirm_booking_order","confirm_table_order","update_booking_preorder"].includes(x?.name));
   if (tool) return { toolCall:brainToolResult({ id:tool.id, name:tool.name, arguments:tool.input }) };
   return { answer:blocks.filter(x => x?.type === "text").map(x => x.text).join(" ").trim() };
 }
@@ -1108,7 +1143,7 @@ function geminiSafeSchema(value) {
 }
 
 async function callGeminiBrain({ apiKey, model, system, history, userText }) {
-  const declarations = [confirmBookingOrderTool,confirmTableOrderTool].map(t=>({name:t.function.name,description:t.function.description,parameters:geminiSafeSchema(t.function.parameters)}));
+  const declarations = [confirmBookingOrderTool,confirmTableOrderTool,updateBookingPreorderTool].map(t=>({name:t.function.name,description:t.function.description,parameters:geminiSafeSchema(t.function.parameters)}));
   const contents = history.map(m => ({ role:m.role === "assistant" ? "model" : "user", parts:[{text:m.content}] }));
   contents.push({ role:"user", parts:[{text:userText}] });
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
@@ -1133,7 +1168,7 @@ router.post("/sara-alt-chat", async (req, res) => {
     const q = String(question || "").trim();
     if (!q && !greeting) return res.status(400).json({ ok:false, code:"EMPTY_MESSAGE", message:"لا يوجد كلام لإرساله إلى سارة." });
 
-    const cleanHistory = Array.isArray(history) ? history.slice(-4).map(m => ({
+    const cleanHistory = Array.isArray(history) ? history.slice(-12).map(m => ({
       role: m?.role === "assistant" ? "assistant" : "user",
       content: String(m?.content || m?.text || "").trim()
     })).filter(m => m.content) : [];
@@ -1141,6 +1176,9 @@ router.post("/sara-alt-chat", async (req, res) => {
     const restaurantNameForSara = language === 'fr' ? (restaurantProfile.nameFr || restaurantProfile.nameAr) : language === 'en' ? (restaurantProfile.nameEn || restaurantProfile.nameAr) : restaurantProfile.nameAr;
     const system = altSaraInstructions({ language, menu, tableNumber:String(tableNumber||""), restaurantName:restaurantNameForSara }) + (bookingState && typeof bookingState === "object" ? `\n\nKNOWN BOOKING STATE FROM THE WEBSITE (authoritative):\n${JSON.stringify(bookingState)}\nBOOKING MEMORY / AI BEHAVIOR RULES:
 - This state is authoritative memory, NOT a mandatory conversation flow. Use it to remember facts and prevent repetition, while still answering the guest's actual question naturally.
+- If this state contains any booking fact (name, phone, partySize, date, time) or the conversation has started a reservation, treat the reservation as ACTIVE until it is confirmed or explicitly cancelled.
+- While ACTIVE, food/drink additions belong to bookingState.orderItems as a pre-order by default. Never ask dine-in vs pickup unless the guest explicitly says the food order is separate from the reservation.
+- If orderItems already contains items, preserve them when adding another item; update_booking_preorder must send the COMPLETE latest list, not only the newest item.
 - Never ask again for any field that already has a non-empty value in this state. This is a hard memory rule, even if recent chat history contains an older question for that field.
 - Treat partySize as already answered whenever it is a positive number. Do not ask "الحجز لكم شخص؟" again when partySize is present.
 - The guest can interrupt a booking with any normal restaurant/menu question. Answer that question fully first. You may then briefly continue the reservation from the remembered state if appropriate.

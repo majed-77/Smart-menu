@@ -987,6 +987,20 @@ function exp3UpdateBookingState(text,role='user'){
   }
 }
 function exp3BookingArgsFromState(){return {name:altBookingState.name||'',phone:altBookingState.phone||'',party_size:Number(altBookingState.partySize)||0,date:altBookingState.date||'',time:altBookingState.time||'',notes:altBookingState.notes||'',order_items:Array.isArray(altBookingState.orderItems)?altBookingState.orderItems:[]};}
+function exp3ApplyPreorderTool(args){
+  if(typeof args==='string'){try{args=JSON.parse(args)}catch(e){args={}}}
+  if(!args||typeof args!=='object')args={};
+  const items=Array.isArray(args.order_items)?args.order_items:[];
+  altBookingState.orderItems=items.map(x=>({
+    item_name:String(x?.item_name||'').trim(),
+    quantity:Math.max(1,Math.min(20,Number(x?.quantity)||1)),
+    special_request:String(x?.special_request||'').trim()
+  })).filter(x=>x.item_name);
+  altBookingActive=true;
+  const msg=String(args.response_message||'').trim();
+  if(msg)return msg;
+  return waiterLanguage==='ar'?'أبشر، حفظت طلبك المسبق على نفس الحجز.':waiterLanguage==='fr'?'C’est noté avec votre réservation.':'Got it — I saved that with your reservation.';
+}
 function exp3MergeToolArgs(args){
   const st=exp3BookingArgsFromState();
   // Booking state is authoritative for date/time because it was extracted from the
@@ -1312,7 +1326,7 @@ function exp3BookingSummaryReply(){
   const party=Number(a.party_size)||0;
   const partyText=party===1?'لشخص واحد':party===2?'لشخصين':`لـ${party} أشخاص`;
   const phone=exp3PhoneDisplay(a.phone);
-  const orderText=Array.isArray(a.order_items)&&a.order_items.length?'ومع طلب مسبق':'وبدون طلب مسبق';
+  const orderText=Array.isArray(a.order_items)&&a.order_items.length?`ومع طلب مسبق: ${a.order_items.map(x=>`${Number(x.quantity)||1} ${x.item_name}${x.special_request?` (${x.special_request})`:''}`).join('، ')}`:'وبدون طلب مسبق';
   return `تمام ${name}، أتأكد معك قبل الاعتماد: رقم الجوال ${phone}، الحجز ${date} الساعة ${time} ${partyText}، ${orderText}. البيانات صحيحة وأعتمد الحجز؟`;
 }
 function exp3LastAssistantAskedBookingField(){
@@ -1435,7 +1449,7 @@ async function processAltVoice(blob,mime){
       answer=await exp3ConfirmBookingDirectly();
     }else{
       const data=await exp3AskWithBookingFallback(q);
-      if(data.toolCall?.name==='confirm_table_order') answer=await handleAltTableOrderTool(data.toolCall); else if(data.toolCall?.name==='confirm_booking_order') answer=await handleAltBookingTool(data.toolCall); else answer=String(data.answer||'').trim();
+      if(data.toolCall?.name==='confirm_table_order') answer=await handleAltTableOrderTool(data.toolCall); else if(data.toolCall?.name==='confirm_booking_order') answer=await handleAltBookingTool(data.toolCall); else if(data.toolCall?.name==='update_booking_preorder') answer=exp3ApplyPreorderTool(data.toolCall.arguments||data.toolCall.args||{}); else answer=String(data.answer||'').trim();
       if(isBrainSaraEngine()&&!saraTableNumber)answer=exp3ApplyBookingMemoryGuard(q,answer);
     }
     if(!answer)throw new Error('No answer');
@@ -1464,7 +1478,7 @@ async function submitAltQuestion(q){
       answer=await exp3ConfirmBookingDirectly();
     }else{
       const data=await exp3AskWithBookingFallback(q);
-      if(data.toolCall?.name==='confirm_table_order')answer=await handleAltTableOrderTool(data.toolCall);else if(data.toolCall?.name==='confirm_booking_order')answer=await handleAltBookingTool(data.toolCall);else answer=String(data.answer||'').trim();
+      if(data.toolCall?.name==='confirm_table_order')answer=await handleAltTableOrderTool(data.toolCall);else if(data.toolCall?.name==='confirm_booking_order')answer=await handleAltBookingTool(data.toolCall);else if(data.toolCall?.name==='update_booking_preorder')answer=exp3ApplyPreorderTool(data.toolCall.arguments||data.toolCall.args||{});else answer=String(data.answer||'').trim();
       if(isBrainSaraEngine()&&!saraTableNumber)answer=exp3ApplyBookingMemoryGuard(q,answer);
     }
     if(!answer)throw new Error('No answer'); if(isBrainSaraEngine()&&!saraTableNumber)exp3UpdateBookingState(answer,'assistant'); addBubble('assistant',answer);conversationHistory.push({role:'assistant',content:answer});status.textContent=TEXT[waiterLanguage].ready;if(isBrainSaraEngine())await speakAI(answer);else await speakAltSara(answer,{waitForEnd:false});altBusy=false;

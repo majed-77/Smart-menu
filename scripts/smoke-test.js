@@ -48,7 +48,7 @@ check("Deepgram engine sends Deepgram STT mode", customerJs.includes("form.appen
 check("Deepgram key is server-side env only", fs.readFileSync(path.join(root, "src/config/env.js"), "utf8").includes('DEEPGRAM_API_KEY') && !customerJs.includes('DEEPGRAM_API_KEY'));
 check("Deepgram STT key is server-side env only", fs.readFileSync(path.join(root, "src/config/env.js"), "utf8").includes('DEEPGRAM_API_KEY') && !customerJs.includes('DEEPGRAM_API_KEY'));
 check("Settings form is not auto-refreshed while editing", dashboardJs.includes("if(!['menu','settings'].includes(view))load()"));
-check("Customer assets are version-busted", customerHtml.includes("customer.css?v=6.0.18") && customerHtml.includes("customer-app.js?v=6.0.18"));
+check("Customer assets are version-busted", customerHtml.includes("customer.css?v=6.0.19") && customerHtml.includes("customer-app.js?v=6.0.19"));
 check("Dashboard assets are version-busted", dashboardHtml.includes("dashboard.css?v=6.0.15") && dashboardHtml.includes("dashboard-app.js?v=6.0.15"));
 check("Static assets revalidate instead of one-day cache", fs.readFileSync(path.join(root, "src/app.js"), "utf8").includes('Cache-Control", "no-cache, max-age=0, must-revalidate') && !fs.readFileSync(path.join(root, "src/app.js"), "utf8").includes('maxAge: env.nodeEnv === "production" ? "1d" : 0'));
 check("HTML routes disable stale cache", fs.readFileSync(path.join(root, "src/app.js"), "utf8").includes('no-store, no-cache, must-revalidate, proxy-revalidate'));
@@ -131,3 +131,11 @@ const customerJsV617 = fs.readFileSync(path.join(root, 'public/assets/js/custome
 check('Booking parser preserves الساعة عشرة/العشرة from the first turn', customerJsV617.includes("'العشرة':10"));
 check('Booking confirmation repeats phone and time before approval', customerJsV617.includes('رقم الجوال ${phone}، الحجز ${date} الساعة ${time}'));
 
+
+// v6.0.19 active-booking context / attached preorder regression checks
+check("Active booking overrides service selection", routeSources.includes("ACTIVE BOOKING OVERRIDES SERVICE SELECTION"));
+check("Server forbids dinein/pickup question during active booking", routeSources.includes("NEVER ask \"تبيه هنا بالمطعم ولا استلام خارجي؟\""));
+check("Draft booking preorder tool exists", routeSources.includes("update_booking_preorder"));
+check("Booking preorder is stored in client memory", customerJs.includes("function exp3ApplyPreorderTool"));
+check("Final summary names preorder items", customerJs.includes("ومع طلب مسبق:"));
+check("Sara server keeps twelve history messages", routeSources.includes("history.slice(-12).map"));

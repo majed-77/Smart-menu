@@ -1,3 +1,12 @@
+# v6.0.19 — Active Booking Context + Attached Pre-order
+
+- An unfinished reservation remains the primary context across menu questions.
+- Food/drink added during an active reservation is attached as a pre-order to the same booking by default.
+- Sara no longer asks dine-in vs pickup while a reservation is active unless the guest explicitly requests a separate order.
+- Draft pre-order items are persisted in bookingState.orderItems via update_booking_preorder, so they survive later turns.
+- Final booking confirmation includes the saved pre-order items.
+- AI context window for Sara server-side increased to 12 recent messages.
+
 ## v6.0.18 — AI-first Sara with booking memory guard
 
 - Sara is AI-first again: she answers normal menu, recommendation, ingredient, price, and restaurant questions even during an active booking.
