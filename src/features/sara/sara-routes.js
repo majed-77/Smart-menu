@@ -151,8 +151,14 @@ router.post("/realtime-call", async (req, res) => {
             interrupt_response: false
           },
           transcription: {
-            model: "gpt-4o-mini-transcribe",
-            language: ["ar", "fr", "en"].includes(language) ? language : undefined
+            // Arabic uses the higher-accuracy model plus an orthography hint so
+            // Saudi speech is written in Arabic script instead of being translated
+            // or rendered phonetically in another language.
+            model: language === "ar" ? "gpt-4o-transcribe" : "gpt-4o-mini-transcribe",
+            language: ["ar", "fr", "en"].includes(language) ? language : undefined,
+            ...(language === "ar" ? {
+              prompt: "محادثة طبيعية باللهجة السعودية داخل مطعم. اكتب الكلام المسموع بالعربية وبالحروف العربية فقط. لا تترجم إلى أي لغة أخرى، ولا تكتب العربية بحروف لاتينية. اترك أسماء المنتجات الأجنبية فقط كما نطقها العميل."
+            } : {})
           }
         },
         output: {
@@ -377,16 +383,19 @@ STYLE:
 function looksLikeArabicSttHallucination(text) {
   const raw = String(text || "").trim();
   if (!raw) return false;
-  if (/[\u0600-\u06FF]/.test(raw)) return false;
+
+  const arabicLetters = (raw.match(/[\u0600-\u06FF]/g) || []).length;
+  const letterTokens = raw.match(/\p{L}+/gu) || [];
   const normalized = raw.toLowerCase().replace(/[.,!?;:'"()[\]{}]/g, " ").replace(/\s+/g, " ").trim();
-  const words = normalized.split(" ").filter(Boolean);
-  // Keep plausible single foreign menu/product names such as "cappuccino".
-  if (words.length <= 1) return false;
-  // Common short meta/assistant hallucinations produced from weak/noisy Arabic audio.
+
+  // Arabic mode may legitimately contain one foreign menu/product name, numbers,
+  // or a mixed Arabic sentence. A multi-word transcript with no Arabic letters is
+  // usually a translated/wrong-script STT result and must be retried before display.
+  if (arabicLetters === 0 && letterTokens.length >= 2) return true;
+  if (arabicLetters > 0) return false;
+
+  // Common meta/assistant hallucinations produced from weak/noisy Arabic audio.
   if (/\b(i should|i need|i would|i can|you should|we should|should ask|need to ask|thank you|thanks for|hello there)\b/.test(normalized)) return true;
-  // A short all-Latin sentence in Arabic-locked STT is suspicious; reject rather
-  // than displaying gibberish to the guest. Longer mixed requests pass through.
-  if (/^[a-z0-9\s\-]+$/.test(normalized) && words.length >= 2 && words.length <= 5 && normalized.length <= 42) return true;
   return false;
 }
 
@@ -512,7 +521,10 @@ router.post("/transcribe", upload.single("audio"), async (req, res) => {
     const isHybrid3 = req.body.mode === "hybrid3";
     const options = {
       file: audioFile,
-      model: isHybrid3 ? "gpt-4o-transcribe" : "gpt-4o-mini-transcribe"
+      model: isHybrid3 ? "gpt-4o-transcribe" : "gpt-4o-mini-transcribe",
+      ...(isHybrid3 && language === "ar" ? {
+        prompt: "محادثة طبيعية باللهجة السعودية داخل مطعم. اكتب الكلام المسموع بالعربية وبالحروف العربية فقط. لا تترجم إلى أي لغة أخرى، ولا تكتب العربية بحروف لاتينية. اترك أسماء المنتجات الأجنبية فقط كما نطقها العميل."
+      } : {})
     };
 
     if (["ar", "fr", "en"].includes(language)) {
