@@ -106,7 +106,7 @@ function createApp() {
     response.json({
       ok: true,
       service: "Smart Menu AI",
-      version: "6.0.21",
+      version: "6.0.22",
       primaryLanguage: "ar",
       currency: "SAR",
       databaseConfigured: Boolean(pool),

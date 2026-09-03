@@ -34,7 +34,7 @@ check("Unique base item keys", new Set(BASE_MENU_ITEMS.map((item) => item.itemKe
 
 check("Customer page loads external JS", /\/assets\/js\/customer-app\.js/.test(customerHtml));
 check("Dashboard loads external JS", /\/assets\/js\/dashboard-app\.js/.test(dashboardHtml));
-check("Customer assets are version 6.0.21", customerHtml.includes("customer.css?v=6.0.21") && customerHtml.includes("customer-app.js?v=6.0.21"));
+check("Customer assets are version 6.0.22", customerHtml.includes("customer.css?v=6.0.22") && customerHtml.includes("customer-app.js?v=6.0.22"));
 check("No AI engine picker remains", !customerHtml.includes("data-sara-engine") && !customerHtml.includes("enginePicker"));
 check("Only retained Sara client route is used", customerJs.includes("'/api/sara-chat'") && customerJs.includes("'/api/cartesia-tts'"));
 check("Deleted client engines are absent", !/(saraEngine|startRealtime|startAgent2|startAltSara|ElevenLabs|DeepSeek|Claude|Gemini|Kimi|Fish Audio)/i.test(customerJs));
@@ -56,6 +56,7 @@ check("Booking parser preserves Arabic party size", customerJs.includes("'ثلا
 check("Booking confirmation repeats phone and time", customerJs.includes("رقم الجوال ${phone}، الحجز ${date} الساعة ${time}"));
 check("Booking idempotency remains", orderSource.includes("INTERVAL '10 minutes'"));
 check("Voice capture has a 15-second watchdog", customerJs.includes("saraCaptureWatchdog") && customerJs.includes("15000"));
+check("Voice capture MIME selector exists", customerJs.includes("function bestMime()") && customerJs.includes("audio/mp4") && customerJs.includes("audio/webm;codecs=opus"));
 check("iPhone silence threshold clears idle noise", customerJs.includes("saraNoiseFloor*1.32+0.002") && customerJs.includes("endSilenceMs=1250"));
 check("Recording status advances to transcription", customerJs.includes("status.textContent=TEXT[waiterLanguage].transcribing"));
 

@@ -745,6 +745,12 @@ function stopSaraSpeechForBargeIn(){
   status.textContent=waiterLanguage==='ar'?'سمعتك، كمّل…':waiterLanguage==='fr'?'Je vous écoute…':'I’m listening…';
 }
 
+function bestMime(){
+  if(!window.MediaRecorder)return '';
+  const types=['audio/mp4','audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus'];
+  return types.find(type=>MediaRecorder.isTypeSupported?.(type))||'';
+}
+
 function startSaraCapture({duringSara=false}={}){
   if(!saraStream || saraCapturing || saraVoiceProcessInFlight || (saraBusy && !(saraSpeaking||duringSara)))return;
   saraCaptureStartedDuringSara=Boolean(duringSara);
@@ -1140,6 +1146,9 @@ async function submitSaraQuestion(q){
 async function startSara(){
   if(saraStarted)return;
   try{
+    if(!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder){
+      throw new Error(TEXT[waiterLanguage].micError);
+    }
     const supported=navigator.mediaDevices.getSupportedConstraints?.()||{};
     const constraints={echoCancellation:true,noiseSuppression:true,autoGainControl:true,channelCount:1};
     // Avoid iOS voiceIsolation: it can clip the first syllable of quiet Arabic names.
