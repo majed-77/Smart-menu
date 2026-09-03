@@ -34,7 +34,7 @@ check("Unique base item keys", new Set(BASE_MENU_ITEMS.map((item) => item.itemKe
 
 check("Customer page loads external JS", /\/assets\/js\/customer-app\.js/.test(customerHtml));
 check("Dashboard loads external JS", /\/assets\/js\/dashboard-app\.js/.test(dashboardHtml));
-check("Customer assets are version 6.0.22", customerHtml.includes("customer.css?v=6.0.22") && customerHtml.includes("customer-app.js?v=6.0.22"));
+check("Customer assets are version 6.0.23", customerHtml.includes("customer.css?v=6.0.23") && customerHtml.includes("customer-app.js?v=6.0.23"));
 check("No AI engine picker remains", !customerHtml.includes("data-sara-engine") && !customerHtml.includes("enginePicker"));
 check("Only retained Sara client route is used", customerJs.includes("'/api/sara-chat'") && customerJs.includes("'/api/cartesia-tts'"));
 check("Deleted client engines are absent", !/(saraEngine|startRealtime|startAgent2|startAltSara|ElevenLabs|DeepSeek|Claude|Gemini|Kimi|Fish Audio)/i.test(customerJs));
@@ -49,6 +49,11 @@ check("Deleted provider env keys are absent", !/(DEEPSEEK|ANTHROPIC|GEMINI|KIMI|
 
 check("Order intent locks to fulfillment question", saraRoutes.includes("ORDER INTENT LOCK") && saraRoutes.includes("تبي طلبك هنا بالمطعم ولا استلام خارجي؟"));
 check("Order flow does not re-offer booking", saraRoutes.includes("Do not offer table reservation again"));
+check("Order state is sent to Sara", customerJs.includes("orderState:saraOrderState") && saraRoutes.includes("KNOWN ORDER STATE FROM THE WEBSITE"));
+check("Incomplete orders are blocked before save", customerJs.includes("saraOrderMissingField") && customerJs.includes("saraOrderState.awaitingField=missing"));
+check("Dine-in name and pickup phone are required before approval", saraRoutes.includes("Dine-in requires customerName before approval") && saraRoutes.includes("External pickup requires customerName and phone before approval"));
+check("Arabic why cannot become a menu item", customerJs.includes("/^(ليش|ليه)$/") && saraRoutes.includes('Arabic "ليش" and "ليه"'));
+check("Vague second item requires clarification", customerJs.includes("وش الصنف الثاني اللي تبيه؟") && saraRoutes.includes('"شي ثاني"'));
 check("Active booking overrides order fulfillment", saraRoutes.includes("ACTIVE BOOKING OVERRIDES SERVICE SELECTION"));
 check("Draft preorder tool remains", saraRoutes.includes("update_booking_preorder"));
 check("Booking memory keeps twelve turns", saraRoutes.includes("history.slice(-12).map"));

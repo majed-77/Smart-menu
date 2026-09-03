@@ -459,7 +459,7 @@ async function saveSaraTableOrder(args={}){
 }
 function closeSara(){
   if(saraCaptureWatchdog){clearTimeout(saraCaptureWatchdog);saraCaptureWatchdog=null;}
-  saraStarted=false; saraBusy=false; saraSpeaking=false; saraCapturing=false; saraBookingState={name:'',phone:'',partySize:null,date:'',time:'',notes:'',orderItems:[]}; saraBookingActive=false; saraLastConfirmedBooking={signature:'',code:'',at:0}; saraBookingSaveInFlight=false; saraBargeCandidateAt=0; saraCaptureStartedDuringSara=false; saraLastSpokenText=''; saraSpeechStoppedAt=0; saraVoiceProcessInFlight=false; saraLastTurnFingerprint=''; saraLastTurnAt=0;
+  saraStarted=false; saraBusy=false; saraSpeaking=false; saraCapturing=false; saraBookingState={name:'',phone:'',partySize:null,date:'',time:'',notes:'',orderItems:[]}; saraOrderState=freshSaraOrderState(); saraBookingActive=false; saraLastConfirmedBooking={signature:'',code:'',at:0}; saraBookingSaveInFlight=false; saraBargeCandidateAt=0; saraCaptureStartedDuringSara=false; saraLastSpokenText=''; saraSpeechStoppedAt=0; saraVoiceProcessInFlight=false; saraLastTurnFingerprint=''; saraLastTurnAt=0;
   if(saraVadFrame){cancelAnimationFrame(saraVadFrame);saraVadFrame=null;}
   try{if(saraRecorder && saraRecorder.state!=="inactive")saraRecorder.stop();}catch(e){}
   saraRecorder=null; saraChunks=[];
@@ -496,8 +496,71 @@ let saraSpeechStoppedAt=0;
 let saraVoiceProcessInFlight=false;
 let saraLastTurnFingerprint='';
 let saraLastTurnAt=0;
+function freshSaraOrderState(){return {active:false,orderMode:saraTableNumber?'table':'',customerName:'',phone:'',notes:'',orderItems:[],awaitingField:'',confirmed:false};}
+let saraOrderState=freshSaraOrderState();
 function saraTurnFingerprint(text){
   return String(text||'').toLowerCase().replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا').replace(/[^\u0600-\u06FF0-9a-z+ ]/gi,' ').replace(/\s+/g,' ').trim();
+}
+function saraOrderText(text){return String(text||'').replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا').replace(/ى/g,'ي').toLowerCase().replace(/[؟?!،,.]/g,' ').replace(/\s+/g,' ').trim();}
+function saraOrderConfirmation(text){const t=saraOrderText(text);return /(^|\s)(اعتمد|اعتمدي|اكدي|اكد|نفذ|نفذي|ارسل|ارسلي)(ها|ه| الطلب)?(\s|$)/.test(t)||/(^|\s)(نعم|ايه|تمام|موافق|خلاص)(\s|$)/.test(t);}
+function saraOrderMissingField(state=saraOrderState){
+  const mode=saraTableNumber?'table':String(state.orderMode||'');
+  if(mode==='table')return '';
+  if(!mode)return 'orderMode';
+  if(!String(state.customerName||'').trim())return 'customerName';
+  if(mode==='external'&&!normalizeSaraPhone(state.phone))return 'phone';
+  return '';
+}
+function saraOrderMissingReply(field=saraOrderMissingField()){
+  if(waiterLanguage==='fr')return field==='orderMode'?`Votre commande est sur place ou à emporter ?`:field==='phone'?`Quel numéro de téléphone dois-je mettre sur la commande à emporter ?`:`Quel nom dois-je mettre sur la commande ?`;
+  if(waiterLanguage==='en')return field==='orderMode'?'Is this order for dine-in or pickup?':field==='phone'?'What mobile number should I put on the pickup order?':'What name should I put on the order?';
+  return field==='orderMode'?'أبشر، تبي طلبك هنا بالمطعم ولا استلام خارجي؟':field==='phone'?'تمام، وش رقم جوالك عشان أسجل طلب الاستلام؟':saraOrderState.orderMode==='external'?'تمام، وش الاسم اللي أسجل عليه طلب الاستلام؟':'تمام، وش الاسم اللي أسجل عليه الطلب داخل المطعم؟';
+}
+function saraLooksLikeOrderName(raw){
+  const t=String(raw||'').replace(/[،,.!?؟]+$/g,'').trim();
+  return /^[\u0600-\u06FFa-z][\u0600-\u06FFa-z '\-]{1,49}$/i.test(t)&&!/(اعتمد|تمام|نعم|ايه|ليش|ليه|طلب|استلام|مطعم|جوال|رقم|شي|شيء)/.test(saraOrderText(t));
+}
+function saraUpdateOrderState(text){
+  const raw=String(text||'').trim(),t=saraOrderText(raw); if(!t)return;
+  if(/(الغ الطلب|الغي الطلب|كنسل الطلب|ما ابي اطلب)/.test(t)){saraOrderState=freshSaraOrderState();return;}
+  if(saraOrderState.active&&!saraOrderConfirmation(t))saraOrderState.confirmed=false;
+  if(!saraTableNumber&&!saraBookingContextActive()&&/(ابي اطلب|ابغي اطلب|ودي اطلب|طلب اكل|طلب مشروب|اوردر)/.test(t))saraOrderState.active=true;
+  if(saraTableNumber)saraOrderState.active=true;
+  if(saraOrderState.active&&!saraTableNumber){
+    if(/(هنا بالمطعم|داخل المطعم|اكل هنا|محلي)/.test(t))saraOrderState.orderMode='dinein';
+    if(/(استلام خارجي|استلام|سفري|تيك اوي|اخذه معي)/.test(t))saraOrderState.orderMode='external';
+  }
+  if(saraOrderState.awaitingField==='customerName'&&saraLooksLikeOrderName(raw)){saraOrderState.customerName=raw.replace(/^(?:انا|اسمي|اسم)\s+/,'').trim();saraOrderState.awaitingField='';saraOrderState.confirmed=false;}
+  if(saraOrderState.awaitingField==='phone'){const phone=normalizeSaraPhone(raw);if(/^\+?\d{8,15}$/.test(phone)){saraOrderState.phone=phone;saraOrderState.awaitingField='';saraOrderState.confirmed=false;}}
+  if(saraOrderConfirmation(t))saraOrderState.confirmed=true;
+}
+function saraMergeOrderToolArgs(args={}){
+  if(!args||typeof args!=='object')args={};
+  const incomingItems=Array.isArray(args.order_items)?args.order_items:[];
+  saraOrderState.active=true;
+  saraOrderState.orderMode=saraTableNumber?'table':String(args.order_mode||saraOrderState.orderMode||'');
+  saraOrderState.customerName=String(args.customer_name||args.name||saraOrderState.customerName||'').trim();
+  saraOrderState.phone=normalizeSaraPhone(args.phone||saraOrderState.phone||'');
+  saraOrderState.notes=String(args.notes||saraOrderState.notes||'').trim();
+  if(incomingItems.length)saraOrderState.orderItems=incomingItems.map(x=>({item_name:String(x?.item_name||'').trim(),quantity:Math.max(1,Math.min(20,Number(x?.quantity)||1)),special_request:String(x?.special_request||'').trim()})).filter(x=>x.item_name);
+  return {order_mode:saraOrderState.orderMode,customer_name:saraOrderState.customerName,phone:saraOrderState.phone,notes:saraOrderState.notes,order_items:saraOrderState.orderItems};
+}
+function saraLastAssistantAskedOrderName(){const last=[...conversationHistory].reverse().find(m=>m?.role==='assistant');return /(وش الاسم|ايش الاسم|اسمك|الاسم اللي اسجل)/.test(saraOrderText(last?.content||''));}
+function saraDeterministicOrderReply(question){
+  const t=saraOrderText(question);
+  if(/^(ليش|ليه)$/.test(t)&&saraLastAssistantAskedOrderName())return waiterLanguage==='ar'?'عشان نميّز طلبك ونسلمه للشخص الصحيح. وش الاسم اللي أسجل عليه الطلب؟':'I need a name so the restaurant can identify your order. What name should I use?';
+  if(/^(شي ثاني|شيء ثاني|حاجه ثانيه|حاجة ثانية)$/.test(t))return waiterLanguage==='ar'?'أكيد، وش الصنف الثاني اللي تبيه؟':'Sure — which other item would you like?';
+  return '';
+}
+function saraApplyOrderMemoryGuard(answer){
+  const out=String(answer||'').trim(); if(!saraOrderState.active||saraTableNumber)return out;
+  const normalized=saraOrderText(out);
+  if(/(وش الاسم|ايش الاسم|اسمك|الاسم اللي اسجل)/.test(normalized))saraOrderState.awaitingField='customerName';
+  else if(/(رقم الجوال|رقم الواتساب|وش رقم|عطيني رقم)/.test(normalized))saraOrderState.awaitingField='phone';
+  else if(/(هنا بالمطعم|داخل المطعم).*(استلام خارجي)|(استلام خارجي).*(هنا بالمطعم|داخل المطعم)/.test(normalized))saraOrderState.awaitingField='orderMode';
+  const missing=saraOrderMissingField();
+  if(missing&&/(اعتمد|اكد|ارسل|صحيح|موافق)/.test(saraOrderText(out))){saraOrderState.awaitingField=missing;saraOrderState.confirmed=false;return saraOrderMissingReply(missing);}
+  return out;
 }
 function saraIsDuplicateTurn(text){
   const fp=saraTurnFingerprint(text), now=Date.now();
@@ -670,15 +733,20 @@ function saraMergeToolArgs(args){
 async function askSara(question,{greeting=false}={}){
   return saraFetchJSON('/api/sara-chat',{
     method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question,menu:compactMenu(),history:conversationHistory.slice(-12),language:waiterLanguage,greeting,tableNumber:saraTableNumber,bookingState:!saraTableNumber?saraBookingState:null})
+    body:JSON.stringify({question,menu:compactMenu(),history:conversationHistory.slice(-12),language:waiterLanguage,greeting,tableNumber:saraTableNumber,bookingState:!saraTableNumber?saraBookingState:null,orderState:saraOrderState})
   },60000);
 }
 
 
 async function handleSaraTableOrderTool(toolCall){
   let args={}; try{args=JSON.parse(toolCall?.arguments||'{}')}catch(e){}
+  args=saraMergeOrderToolArgs(args);
+  const missing=saraOrderMissingField();
+  if(missing){saraOrderState.awaitingField=missing;saraOrderState.confirmed=false;return saraOrderMissingReply(missing);}
+  if(!saraOrderState.confirmed)return waiterLanguage==='ar'?'تمام، أتأكد معك: أعتمد الطلب وأرسله للمطعم؟':'Please confirm: should I send this order to the restaurant?';
   status.textContent=waiterLanguage==='ar'?(saraTableNumber?`لحظة، أرسل طلب طاولة ${saraTableNumber}…`:'لحظة، أرسل طلبك للمطعم…'):'Sending your order…';
   const order=await saveSaraTableOrder(args);
+  saraOrderState=freshSaraOrderState();
   if(order.orderMode==='dinein') return waiterLanguage==='ar'?`تم، أرسلت طلبك للأكل داخل المطعم. رقم طلبك ${order.code}.`:waiterLanguage==='fr'?`C'est envoyé pour consommation sur place. Numéro ${order.code}.`:`Done. Your dine-in order was sent. Order number ${order.code}.`;
   if(order.orderMode==='external'||!saraTableNumber) return waiterLanguage==='ar'?`تم، أرسلت طلب الاستلام الخارجي للمطعم. رقم طلبك ${order.code}.`:waiterLanguage==='fr'?`C'est envoyé pour emporter. Numéro ${order.code}.`:`Done. Your pickup order was sent. Order number ${order.code}.`;
   return waiterLanguage==='ar'?`تم، أرسلت طلبك للمطعم لطاولة ${order.tableNumber}. رقم طلبك ${order.code}.`:waiterLanguage==='fr'?`C'est envoyé à la table ${order.tableNumber}. Numéro de commande ${order.code}.`:`Done. Your order was sent for table ${order.tableNumber}. Order number ${order.code}.`;
@@ -1100,15 +1168,19 @@ async function processSaraVoice(blob,mime){
     saraCaptureStartedDuringSara=false;
     const wasPhoneCorrection=!saraTableNumber && saraIsPhoneCorrection(q);
     if(!saraTableNumber)saraUpdateBookingState(q,'user');
+    saraUpdateOrderState(q);
     addBubble('user',q); conversationHistory.push({role:'user',content:q});
     status.textContent=isExplicitBookingConfirmation(q)&&waiterLanguage==='ar'?'تمام، أعتمد الحجز…':TEXT[waiterLanguage].thinking;
     let answer='';
     if(!saraTableNumber && saraAwaitingBookingApproval() && isExplicitBookingConfirmation(q) && saraCanConfirmBookingNow()){
       answer=await saraConfirmBookingDirectly();
+    }else if(saraDeterministicOrderReply(q)){
+      answer=saraDeterministicOrderReply(q);
     }else{
       const data=await saraAskWithBookingFallback(q);
       if(data.toolCall?.name==='confirm_table_order') answer=await handleSaraTableOrderTool(data.toolCall); else if(data.toolCall?.name==='confirm_booking_order') answer=await handleSaraBookingTool(data.toolCall); else if(data.toolCall?.name==='update_booking_preorder') answer=saraApplyPreorderTool(data.toolCall.arguments||data.toolCall.args||{}); else answer=String(data.answer||'').trim();
       if(!saraTableNumber)answer=saraApplyBookingMemoryGuard(q,answer);
+      answer=saraApplyOrderMemoryGuard(answer);
     }
     if(!answer)throw new Error('No answer');
     if(!saraTableNumber)saraUpdateBookingState(answer,'assistant');
@@ -1129,15 +1201,19 @@ async function submitSaraQuestion(q){
   if(saraIsDuplicateTurn(q)){console.info('Sara: ignored duplicate typed turn',q);return;}
   const wasPhoneCorrection=!saraTableNumber && saraIsPhoneCorrection(q);
   if(!saraTableNumber)saraUpdateBookingState(q,'user');
+  saraUpdateOrderState(q);
   stopSaraSpeechForBargeIn(); addBubble('user',q);conversationHistory.push({role:'user',content:q});input.value='';saraBusy=true;status.textContent=TEXT[waiterLanguage].thinking;
   try{
     let answer='';
     if(!saraTableNumber && saraAwaitingBookingApproval() && isExplicitBookingConfirmation(q) && saraCanConfirmBookingNow()){
       answer=await saraConfirmBookingDirectly();
+    }else if(saraDeterministicOrderReply(q)){
+      answer=saraDeterministicOrderReply(q);
     }else{
       const data=await saraAskWithBookingFallback(q);
       if(data.toolCall?.name==='confirm_table_order')answer=await handleSaraTableOrderTool(data.toolCall);else if(data.toolCall?.name==='confirm_booking_order')answer=await handleSaraBookingTool(data.toolCall);else if(data.toolCall?.name==='update_booking_preorder')answer=saraApplyPreorderTool(data.toolCall.arguments||data.toolCall.args||{});else answer=String(data.answer||'').trim();
       if(!saraTableNumber)answer=saraApplyBookingMemoryGuard(q,answer);
+      answer=saraApplyOrderMemoryGuard(answer);
     }
     if(!answer)throw new Error('No answer'); if(!saraTableNumber)saraUpdateBookingState(answer,'assistant'); addBubble('assistant',answer);conversationHistory.push({role:'assistant',content:answer});status.textContent=TEXT[waiterLanguage].ready;await speakAI(answer);saraBusy=false;
   }catch(e){saraBusy=false;status.textContent=e.message||TEXT[waiterLanguage].serverError;showDiagnostic(status.textContent,false);}

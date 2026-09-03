@@ -401,6 +401,8 @@ MENU AND SERVICE:
 - You know the supplied menu and should use only its data for items, descriptions and prices.
 - Never recommend or confirm an item marked available=false. Say it is currently unavailable and suggest an available alternative.
 - Never invent an item, ingredient, allergen, price or availability.
+- Arabic "ليش" and "ليه" always mean "why". They are never Latte, coffee, or any menu item. Answer the reason for the preceding question.
+- A vague phrase such as "شي ثاني", "شيء ثاني", or "حاجة ثانية" does not identify an item. Ask which exact item the guest wants and never invent one.
 - For Arabic guests, menu prices are already prepared for display in Saudi riyals. Say prices naturally as "26 ريال" and never mention TND/DT.
 - Keep normal replies very short and conversational, usually 1-2 sentences. Answer directly and avoid unnecessary setup so speech can start faster.
 - For ordinary questions, aim for roughly 30 spoken words or fewer unless the guest explicitly asks for details.
@@ -426,6 +428,7 @@ ${tableNumber ? `- The guest opened the menu from the QR code for TABLE ${tableN
 - If they choose pickup/takeaway when no reservation is active: use order_mode="external". Collect items, quantities, item-specific modifications, customer name, and mobile/WhatsApp number.
 - If they explicitly ask only to reserve a table: use the booking flow below. Food/drink they later add while that reservation remains active becomes its optional pre-order by default.
 - Before any food/drink order is sent, summarize it briefly and ask for explicit confirmation. Only after approval call confirm_table_order.
+- Never ask for approval until all service-required identification is collected: dine-in requires customer name; external pickup requires customer name and mobile number. A QR table order requires neither.
 - Keep every addition/removal/modification attached to the exact item in special_request, e.g. Burger Classique (بدون مايونيز), Latte (حليب شوفان). Never put item-specific changes in general notes.`}
 
 BOOKING + OPTIONAL PRE-ORDER:
@@ -574,7 +577,7 @@ async function callOpenAICompatibleBrain({ endpoint, apiKey, model, messages, ex
 
 router.post("/sara-chat", async (req, res) => {
   try {
-    const { question = "", history = [], menu = [], language = "ar", greeting = false, bookingState = null, tableNumber = "" } = req.body || {};
+    const { question = "", history = [], menu = [], language = "ar", greeting = false, bookingState = null, orderState = null, tableNumber = "" } = req.body || {};
     if (!env.openaiApiKey) {
       return res.status(401).json({ ok:false, code:"OPENAI_NOT_CONFIGURED", message:"مفتاح OpenAI غير موجود في Render." });
     }
@@ -606,7 +609,16 @@ BOOKING MEMORY / AI BEHAVIOR RULES:
 - Extract booking details in any order and ask for only one useful missing field.
 - If one detail changes, replace only it and preserve everything else.
 - Before approval, confirm name, exact phone, date/day, exact HH:MM time, and party size.
-- When the guest confirms, fill tool arguments from this state.` : "");
+- When the guest confirms, fill tool arguments from this state.` : "")
+      + (orderState && typeof orderState === "object" ? `\n\nKNOWN ORDER STATE FROM THE WEBSITE (authoritative):\n${JSON.stringify(orderState)}
+ORDER MEMORY / AI BEHAVIOR RULES:
+- Preserve the known order mode, customer name, phone, notes, and every order item across turns.
+- If awaitingField is customerName, ask only for the guest name. If it is phone, ask only for the mobile number. If it is orderMode, ask dine-in or pickup.
+- Dine-in requires customerName before approval. External pickup requires customerName and phone before approval. QR table mode requires neither.
+- Never summarize for approval and never call confirm_table_order while a required field is missing.
+- When the guest supplies a previously missing field, preserve all items, summarize the complete order again, and request fresh approval before calling confirm_table_order.
+- Never treat "ليش" or "ليه" as an order item. Never treat "شي ثاني" as an item without clarification.
+- Fill confirm_table_order from this authoritative state plus the latest clearly stated changes.` : "");
 
     const userText = greeting
       ? (language === "ar"
