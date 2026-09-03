@@ -459,7 +459,7 @@ async function saveSaraTableOrder(args={}){
 }
 function closeSara(){
   if(saraCaptureWatchdog){clearTimeout(saraCaptureWatchdog);saraCaptureWatchdog=null;}
-  saraStarted=false; saraBusy=false; saraSpeaking=false; saraCapturing=false; saraBookingState={name:'',phone:'',partySize:null,date:'',time:'',notes:'',orderItems:[]}; saraOrderState=freshSaraOrderState(); saraBookingActive=false; saraLastConfirmedBooking={signature:'',code:'',at:0}; saraBookingSaveInFlight=false; saraBargeCandidateAt=0; saraCaptureStartedDuringSara=false; saraLastSpokenText=''; saraSpeechStoppedAt=0; saraVoiceProcessInFlight=false; saraLastTurnFingerprint=''; saraLastTurnAt=0;
+  saraStarted=false; saraBusy=false; saraSpeaking=false; saraCapturing=false; saraBookingState={name:'',phone:'',partySize:null,date:'',time:'',notes:'',orderItems:[],preorderChoice:''}; saraOrderState=freshSaraOrderState(); saraBookingActive=false; saraLastConfirmedBooking={signature:'',code:'',at:0}; saraConfirmedBookingOrderAwaitingApproval=false; saraBookingSaveInFlight=false; saraBargeCandidateAt=0; saraCaptureStartedDuringSara=false; saraLastSpokenText=''; saraSpeechStoppedAt=0; saraVoiceProcessInFlight=false; saraLastTurnFingerprint=''; saraLastTurnAt=0;
   if(saraVadFrame){cancelAnimationFrame(saraVadFrame);saraVadFrame=null;}
   try{if(saraRecorder && saraRecorder.state!=="inactive")saraRecorder.stop();}catch(e){}
   saraRecorder=null; saraChunks=[];
@@ -480,9 +480,10 @@ async function saraFetchJSON(url, options, timeout=45000){
 }
 
 
-let saraBookingState={name:'',phone:'',partySize:null,date:'',time:'',notes:'',orderItems:[]};
+let saraBookingState={name:'',phone:'',partySize:null,date:'',time:'',notes:'',orderItems:[],preorderChoice:''};
 let saraBookingActive=false;
 let saraLastConfirmedBooking={signature:'',code:'',at:0};
+let saraConfirmedBookingOrderAwaitingApproval=false;
 let saraBookingSaveInFlight=false;
 let saraBargeCandidateAt=0;
 let saraTtsStartedAt=0;
@@ -615,6 +616,11 @@ function saraAwaitingBookingName(){
   const t=String(last?.content||'').replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا').toLowerCase();
   return /(وش الاسم|ايش الاسم|اسم الحجز|الاسم اللي اسجل|الاسم الذي اسجل)/.test(t);
 }
+function saraAwaitingPreorderChoice(){
+  const last=[...conversationHistory].reverse().find(m=>m?.role==='assistant');
+  const t=String(last?.content||'').replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا').toLowerCase();
+  return /(قبل.*اعتمد.*الحجز|قبل.*اكد.*الحجز).*(تضيف|تطلب|طلب مسبق)|(تضيف|تطلب).*(على الحجز|مع الحجز)|(طلب مسبق).*(ولا بدون|او بدون)/.test(t);
+}
 function saraBookingContextActive(){
   if(saraBookingActive)return true;
   const a=saraBookingArgsFromState();
@@ -637,6 +643,12 @@ function saraExtractBookingName(raw){
 function saraUpdateBookingState(text,role='user'){
   let raw=normalizeArabicDigitsSara(String(text||'')).replace(/\s+/g,' ').trim(); if(!raw)return;
   if(role==='user' && /(?:احجز|أحجز|حجز|الحجز|حجزت|حجزي|طاولة)/.test(raw)) saraBookingActive=true;
+  if(role==='user'&&saraAwaitingPreorderChoice()){
+    const choice=raw.replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا').replace(/[؟?!،,.]/g,' ').toLowerCase().trim();
+    if(/^(لا|بدون|لا بدون|ما ابي|ماني طالب|بدون طلب|بدون طلب مسبق)$/.test(choice))saraBookingState.preorderChoice='no';
+    else if(/^(اي|ايه|نعم|اكيد|تمام|ابي|ابغي|ودي)( |$)/.test(choice)||/(ابي اطلب|ابغي اطلب|ودي اطلب|اضيف طلب)/.test(choice))saraBookingState.preorderChoice='yes';
+  }
+  if(role==='user'&&saraBookingActive&&/(بدون طلب|خلاص بدون|ما ابي اطلب|ماني طالب)/.test(raw.replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا')))saraBookingState.preorderChoice='no';
   const phone=saraPhoneDigitsFromSpeech(raw);
   if(phone)saraBookingState.phone=phone;
   const rawForNames=raw.replace(/[،,.!?؟]+$/g,'').trim();
@@ -708,7 +720,7 @@ function saraUpdateBookingState(text,role='user'){
   }
 }
 function saraBookingArgsFromState(){return {name:saraBookingState.name||'',phone:saraBookingState.phone||'',party_size:Number(saraBookingState.partySize)||0,date:saraBookingState.date||'',time:saraBookingState.time||'',notes:saraBookingState.notes||'',order_items:Array.isArray(saraBookingState.orderItems)?saraBookingState.orderItems:[]};}
-function saraApplyPreorderTool(args){
+async function saraApplyPreorderTool(args){
   if(typeof args==='string'){try{args=JSON.parse(args)}catch(e){args={}}}
   if(!args||typeof args!=='object')args={};
   const items=Array.isArray(args.order_items)?args.order_items:[];
@@ -717,7 +729,31 @@ function saraApplyPreorderTool(args){
     quantity:Math.max(1,Math.min(20,Number(x?.quantity)||1)),
     special_request:String(x?.special_request||'').trim()
   })).filter(x=>x.item_name);
+  saraBookingState.preorderChoice=saraBookingState.orderItems.length?'yes':'no';
   saraBookingActive=true;
+  if(saraLastConfirmedBooking.code){
+    const latestUser=[...conversationHistory].reverse().find(m=>m?.role==='user');
+    if(!saraConfirmedBookingOrderAwaitingApproval||!saraOrderConfirmation(latestUser?.content||'')){
+      saraConfirmedBookingOrderAwaitingApproval=true;
+      const summary=saraBookingState.orderItems.length?saraBookingState.orderItems.map(x=>`${x.quantity} ${x.item_name}${x.special_request?` (${x.special_request})`:''}`).join('، '):'بدون طلب مسبق';
+      return waiterLanguage==='ar'?`تمام، بيصير الطلب على حجزك رقم ${saraLastConfirmedBooking.code}: ${summary}. أعتمد تحديث الطلب على الحجز؟`:`The revised order for reservation ${saraLastConfirmedBooking.code} is: ${summary}. Should I confirm the update?`;
+    }
+    const resolved=[];
+    for(const item of saraBookingState.orderItems){
+      const found=resolveSaraOrderItem(item.item_name);
+      if(!found)return waiterLanguage==='ar'?`ما لقيت الصنف «${item.item_name}» بالمنيو بشكل واضح. وش الصنف اللي تقصده؟`:`I couldn't clearly match “${item.item_name}” to the menu.`;
+      if(found.available===false)return waiterLanguage==='ar'?`الصنف «${found.name}» غير متوفر حاليًا. ودك ببديل؟`:`“${found.name}” is currently unavailable.`;
+      const extra=saraModifierExtraSar(found,item.special_request);
+      resolved.push({name:found.canonicalName,quantity:item.quantity,specialRequest:item.special_request,unitPriceSar:found.unitPriceSar==null?null:Math.round((found.unitPriceSar+extra)*100)/100});
+    }
+    status.textContent=waiterLanguage==='ar'?'لحظة، أضيف الطلب على حجزك…':'Updating your reservation…';
+    const r=await fetch(`/api/reservations/${encodeURIComponent(saraLastConfirmedBooking.code)}/order`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone:saraBookingState.phone,orderItems:resolved})});
+    const data=await r.json().catch(()=>({}));
+    if(!r.ok||!data.reservation)throw new Error(data.message||'تعذر تحديث طلب الحجز');
+    saraLastConfirmedBooking={signature:saraBookingSignature(saraBookingArgsFromState()),code:String(data.reservation.code),at:Date.now()};
+    saraConfirmedBookingOrderAwaitingApproval=false;
+    return waiterLanguage==='ar'?`تم، أضفت الطلب على حجزك رقم ${data.reservation.code}.`:waiterLanguage==='fr'?`C'est fait, la commande a été ajoutée à votre réservation ${data.reservation.code}.`:`Done. I added the order to reservation ${data.reservation.code}.`;
+  }
   const msg=String(args.response_message||'').trim();
   if(msg)return msg;
   return waiterLanguage==='ar'?'أبشر، حفظت طلبك المسبق على نفس الحجز.':waiterLanguage==='fr'?'C’est noté avec votre réservation.':'Got it — I saved that with your reservation.';
@@ -733,7 +769,7 @@ function saraMergeToolArgs(args){
 async function askSara(question,{greeting=false}={}){
   return saraFetchJSON('/api/sara-chat',{
     method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question,menu:compactMenu(),history:conversationHistory.slice(-12),language:waiterLanguage,greeting,tableNumber:saraTableNumber,bookingState:!saraTableNumber?saraBookingState:null,orderState:saraOrderState})
+    body:JSON.stringify({question,menu:compactMenu(),history:conversationHistory.slice(-12),language:waiterLanguage,greeting,tableNumber:saraTableNumber,bookingState:!saraTableNumber?{...saraBookingState,confirmationCode:saraLastConfirmedBooking.code||'',confirmed:Boolean(saraLastConfirmedBooking.code)}:null,orderState:saraOrderState})
   },60000);
 }
 
@@ -771,6 +807,11 @@ function saraBookingSignature(args){
 async function handleSaraBookingTool(toolCall){
   let args={}; try{args=JSON.parse(toolCall?.arguments||'{}');}catch(e){}
   args=saraMergeToolArgs(args);
+  if(Array.isArray(args.order_items)&&args.order_items.length&&!saraBookingState.orderItems.length){
+    saraBookingState.orderItems=args.order_items.map(x=>({item_name:String(x?.item_name||'').trim(),quantity:Math.max(1,Math.min(20,Number(x?.quantity)||1)),special_request:String(x?.special_request||'').trim()})).filter(x=>x.item_name);
+    saraBookingState.preorderChoice='yes';
+  }
+  if(!saraCanConfirmBookingNow())return saraBookingPreorderQuestion()||saraBookingMissingReply();
   const signature=saraBookingSignature(args);
   if(saraBookingSaveInFlight){
     return waiterLanguage==='ar'?'لحظة، الحجز قاعد ينحفظ الآن.':waiterLanguage==='fr'?`Un instant, la réservation est en cours d’enregistrement.`:`One moment, the booking is being saved.`;
@@ -778,6 +819,7 @@ async function handleSaraBookingTool(toolCall){
   if(saraLastConfirmedBooking.signature===signature && saraLastConfirmedBooking.code && (Date.now()-saraLastConfirmedBooking.at)<30*60*1000){
     return waiterLanguage==='ar'?`حجزك معتمد مسبقًا. رقم حجزك ${saraLastConfirmedBooking.code}.`:waiterLanguage==='fr'?`Votre réservation est déjà confirmée sous le numéro ${saraLastConfirmedBooking.code}.`:`Your booking is already confirmed. Your booking number is ${saraLastConfirmedBooking.code}.`;
   }
+  if(saraLastConfirmedBooking.code)return saraApplyPreorderTool({order_items:args.order_items,response_message:''});
   saraBookingSaveInFlight=true;
   status.textContent=saraToolMessage('saving');
   const resolved=[];
@@ -933,6 +975,8 @@ function runSaraVAD(){
 }
 function saraAwaitingBookingApproval(){
   const last=[...conversationHistory].reverse().find(m=>m?.role==='assistant');
+  if(/(تم.*اعتمدت الحجز|حجزك معتمد مسبق|رقم حجزك\s*\d+)/.test(String(last?.content||'')))return false;
+  if(saraAwaitingPreorderChoice())return false;
   const t=String(last?.content||'').replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا').toLowerCase();
   return /(اعتمد الحجز|اعتمد\?|اثبت الحجز|اكد الحجز|أعتمد الحجز|أعتمد\؟)/.test(String(last?.content||'')) ||
          (/(حجز|الحجز)/.test(t) && /(اعتمد|اكد|ثبت)/.test(t));
@@ -975,7 +1019,8 @@ function normalizeSaraBookingApprovalTranscript(text){
 }
 function saraCanConfirmBookingNow(){
   const a=saraBookingArgsFromState();
-  return Boolean(a.name && a.phone && Number(a.party_size)>0 && a.date && a.time);
+  const hasChoice=saraBookingState.preorderChoice==='no'||(saraBookingState.preorderChoice==='yes'&&a.order_items.length>0);
+  return Boolean(a.name && a.phone && Number(a.party_size)>0 && a.date && a.time && hasChoice);
 }
 async function saraConfirmBookingDirectly(){
   const args=saraBookingArgsFromState();
@@ -1043,6 +1088,12 @@ function saraBookingMissingFields(){
   if(!a.name)miss.push('الاسم'); if(!a.phone)miss.push('رقم الواتساب'); if(!a.party_size)miss.push('عدد الأشخاص'); if(!a.date)miss.push('التاريخ'); if(!a.time)miss.push('الوقت');
   return miss;
 }
+function saraBookingPreorderQuestion(){
+  if(saraBookingMissingFields().length)return '';
+  if(saraBookingState.preorderChoice==='yes'&&!saraBookingState.orderItems.length)return waiterLanguage==='ar'?'أبشر، وش ودك تضيف من المنيو على الحجز؟':waiterLanguage==='fr'?`Bien sûr, que souhaitez-vous ajouter du menu à la réservation ?`:`Sure — what would you like to add from the menu to the reservation?`;
+  if(!saraBookingState.preorderChoice)return waiterLanguage==='ar'?'قبل أعتمد الحجز، ودك تضيف طلب مسبق من المنيو ولا بدون طلب؟':waiterLanguage==='fr'?`Avant de confirmer, souhaitez-vous ajouter une précommande du menu ?`:`Before I confirm, would you like to add a menu pre-order?`;
+  return '';
+}
 function saraBookingSummaryReply(){
   if(!saraBookingContextActive() || saraTableNumber || !saraCanConfirmBookingNow())return '';
   const a=saraBookingArgsFromState();
@@ -1063,7 +1114,7 @@ function saraLastAssistantAskedBookingField(){
 function saraBookingMissingReply(){
   if(!saraBookingContextActive() || saraTableNumber)return '';
   const miss=saraBookingMissingFields();
-  if(!miss.length)return '';
+  if(!miss.length)return saraBookingPreorderQuestion();
   const field=miss[0];
   if(waiterLanguage==='ar'){
     if(field==='الاسم')return 'تمام، وش الاسم اللي أسجل عليه الحجز؟';
@@ -1102,6 +1153,11 @@ function saraDeterministicBookingReply(q){
   if(saraIsRepeatPhoneRequest(q) && saraBookingState.phone){
     return `رقم الواتساب المسجل عندي ${saraPhoneDisplay(saraBookingState.phone)}.`;
   }
+  if(saraAwaitingPreorderChoice()){
+    if(saraBookingState.preorderChoice==='no')return saraBookingSummaryReply();
+    if(saraBookingState.preorderChoice==='yes'&&!saraBookingState.orderItems.length)return saraBookingPreorderQuestion();
+  }
+  if(saraLastAssistantAskedBookingField() && !saraBookingMissingFields().length && !saraCanConfirmBookingNow())return saraBookingPreorderQuestion();
   if(saraCanConfirmBookingNow() && saraLastAssistantAskedBookingField()){
     return saraBookingSummaryReply();
   }
@@ -1119,6 +1175,8 @@ function saraAssistantAsksKnownBookingField(answer){
 function saraApplyBookingMemoryGuard(question,answer){
   const out=String(answer||'').trim();
   if(saraTableNumber || !saraBookingContextActive())return out;
+  const normalized=out.replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا').toLowerCase();
+  if(!saraBookingMissingFields().length&&!saraCanConfirmBookingNow()&&/(اعتمد|اكد|ثبت).*(حجز|الحجز)|(حجز|الحجز).*(اعتمد|اكد|ثبت)/.test(normalized))return saraBookingPreorderQuestion();
   if(saraAssistantAsksKnownBookingField(out)){
     if(saraCanConfirmBookingNow())return saraBookingSummaryReply();
     return saraBookingMissingReply() || out;
@@ -1178,7 +1236,7 @@ async function processSaraVoice(blob,mime){
       answer=saraDeterministicOrderReply(q);
     }else{
       const data=await saraAskWithBookingFallback(q);
-      if(data.toolCall?.name==='confirm_table_order') answer=await handleSaraTableOrderTool(data.toolCall); else if(data.toolCall?.name==='confirm_booking_order') answer=await handleSaraBookingTool(data.toolCall); else if(data.toolCall?.name==='update_booking_preorder') answer=saraApplyPreorderTool(data.toolCall.arguments||data.toolCall.args||{}); else answer=String(data.answer||'').trim();
+      if(data.toolCall?.name==='confirm_table_order') answer=await handleSaraTableOrderTool(data.toolCall); else if(data.toolCall?.name==='confirm_booking_order') answer=await handleSaraBookingTool(data.toolCall); else if(data.toolCall?.name==='update_booking_preorder') answer=await saraApplyPreorderTool(data.toolCall.arguments||data.toolCall.args||{}); else answer=String(data.answer||'').trim();
       if(!saraTableNumber)answer=saraApplyBookingMemoryGuard(q,answer);
       answer=saraApplyOrderMemoryGuard(answer);
     }
@@ -1211,7 +1269,7 @@ async function submitSaraQuestion(q){
       answer=saraDeterministicOrderReply(q);
     }else{
       const data=await saraAskWithBookingFallback(q);
-      if(data.toolCall?.name==='confirm_table_order')answer=await handleSaraTableOrderTool(data.toolCall);else if(data.toolCall?.name==='confirm_booking_order')answer=await handleSaraBookingTool(data.toolCall);else if(data.toolCall?.name==='update_booking_preorder')answer=saraApplyPreorderTool(data.toolCall.arguments||data.toolCall.args||{});else answer=String(data.answer||'').trim();
+      if(data.toolCall?.name==='confirm_table_order')answer=await handleSaraTableOrderTool(data.toolCall);else if(data.toolCall?.name==='confirm_booking_order')answer=await handleSaraBookingTool(data.toolCall);else if(data.toolCall?.name==='update_booking_preorder')answer=await saraApplyPreorderTool(data.toolCall.arguments||data.toolCall.args||{});else answer=String(data.answer||'').trim();
       if(!saraTableNumber)answer=saraApplyBookingMemoryGuard(q,answer);
       answer=saraApplyOrderMemoryGuard(answer);
     }

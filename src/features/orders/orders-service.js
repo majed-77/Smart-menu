@@ -131,7 +131,7 @@ function reminderCopy(reservation) {
   return `هلا ${name} 👋 تذكير بحجزك ${dateAr} الساعة ${timeAr}، لعدد ${party} ${party === 1 ? "شخص" : "أشخاص"}. ننتظرك 🌷`;
 }
 
-function restaurantOrderCopy(reservation) {
+function restaurantOrderCopy(reservation, { update = false } = {}) {
   const local = DateTime.fromJSDate(new Date(reservation.reservation_at), { zone: "utc" }).setZone(
     env.restaurantTimezone
   );
@@ -155,7 +155,7 @@ function restaurantOrderCopy(reservation) {
   const notes = cleanText(reservation.notes, 500);
 
   return [
-    `🔔 حجز/طلب جديد — رقم ${reservation.confirmation_code}`,
+    `${update ? "🔄 تحديث طلب الحجز" : "🔔 حجز/طلب جديد"} — رقم ${reservation.confirmation_code}`,
     `الاسم: ${reservation.customer_name}`,
     `الجوال: ${reservation.phone}`,
     `التاريخ: ${local.toFormat("dd/LL/yyyy")}`,
@@ -212,7 +212,7 @@ async function sendTwilioWhatsApp({ to, body, forceFrom = false }) {
   return twilioRequest(params);
 }
 
-async function sendRestaurantWhatsApp(reservation) {
+async function sendRestaurantWhatsApp(reservation, options = {}) {
   if (!env.restaurantWhatsAppTo) throw new Error("RESTAURANT_WHATSAPP_TO is not configured.");
   if (!env.twilioAccountSid || !env.twilioAuthToken || !env.twilioWhatsAppFrom) {
     throw new Error("Twilio WhatsApp credentials are not configured.");
@@ -233,7 +233,7 @@ async function sendRestaurantWhatsApp(reservation) {
 
   return sendTwilioWhatsApp({
     to: env.restaurantWhatsAppTo,
-    body: restaurantOrderCopy(reservation),
+    body: restaurantOrderCopy(reservation, options),
     forceFrom: true
   });
 }
@@ -443,6 +443,40 @@ async function createReservation(body = {}) {
   };
 }
 
+async function updateReservationOrder(codeValue, body = {}) {
+  if (!pool) throw Object.assign(new Error("نظام الحجز يحتاج DATABASE_URL في Render."), { status: 503, code: "DATABASE_NOT_CONFIGURED" });
+  if (!(await ensureSchemaReady())) throw Object.assign(new Error("قاعدة الحجوزات غير جاهزة الآن."), { status: 503, code: "DATABASE_NOT_READY" });
+
+  const code = cleanText(codeValue, 40);
+  const phone = normalizeWhatsAppPhone(body.phone);
+  if (!code || !phone) throw Object.assign(new Error("تعذر التحقق من الحجز لتحديث الطلب."), { status: 400, code: "INVALID_RESERVATION_UPDATE" });
+  if (!Array.isArray(body.orderItems)) throw Object.assign(new Error("أرسل قائمة الطلب كاملة."), { status: 400, code: "INVALID_ORDER_ITEMS" });
+
+  const items = normalizeOrderItems(body.orderItems);
+  const total = calculateOrderTotal(items);
+  const updated = await pool.query(
+    `UPDATE reservations
+     SET order_items=$1::jsonb, order_total_sar=$2, updated_at=NOW()
+     WHERE confirmation_code=$3 AND phone=$4 AND status IN ('new','confirmed','arrived')
+     RETURNING *`,
+    [JSON.stringify(items), total, code, phone]
+  );
+  if (!updated.rowCount) throw Object.assign(new Error("ما لقيت حجزًا نشطًا مطابقًا لهذا الرقم والجوال."), { status: 404, code: "RESERVATION_NOT_FOUND" });
+
+  const row = updated.rows[0];
+  let restaurantWhatsApp = { configured: Boolean(env.restaurantWhatsAppTo), sent: false };
+  if (env.restaurantWhatsAppTo) {
+    try {
+      const sid = await sendRestaurantWhatsApp(row, { update: true });
+      restaurantWhatsApp = { configured: true, sent: true, sid };
+    } catch (error) {
+      restaurantWhatsApp = { configured: true, sent: false, error: cleanText(error?.message || error, 300) };
+      console.error(`Restaurant WhatsApp failed for booking update ${row.confirmation_code}:`, error?.message || error);
+    }
+  }
+  return { reservation: reservationToPublic(row), restaurantWhatsApp };
+}
+
 async function createTableOrder(body = {}) {
   if (!pool || !(await ensureSchemaReady())) {
     throw Object.assign(new Error("قاعدة الطلبات غير جاهزة."), { status: 503 });
@@ -621,6 +655,7 @@ module.exports = {
   processDueReservationReminders,
   updateOrderNotes,
   updateOrderStatus,
+  updateReservationOrder,
   updateReservationNotes,
   updateReservationStatus
 };

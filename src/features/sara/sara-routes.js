@@ -437,8 +437,10 @@ BOOKING + OPTIONAL PRE-ORDER:
 - bookingState is memory, not a dialogue script. Never force the guest through a fixed sequence. The guest may ask about food, prices, ingredients, recommendations, availability, add/remove pre-order items, or change a booking detail at any point; answer naturally, then continue from the remembered booking context when appropriate.
 - ACTIVE CONTEXT PRIORITY: once a reservation has started and is not yet confirmed/cancelled, preserve that context across topic switches. A menu question does not end the reservation. A food/drink addition becomes a pre-order on that reservation unless the guest explicitly requests a separate order.
 - When the guest adds/removes/modifies pre-order items, persist the complete latest list with update_booking_preorder so it survives later turns. Never silently forget earlier pre-order items.
+- A confirmed reservation remains active in this conversation. If bookingState.confirmed is true and the guest asks to add, remove, or modify an order, keep the same confirmationCode; never create a new reservation and never ask for booking details again. Once the guest gives an exact item/change, call update_booking_preorder with the COMPLETE revised list so the website can stage it and ask for approval. The website enforces final approval before saving.
 - Never ask again for information already known. If booking details are missing, ask for only one useful missing detail when it is natural to continue the reservation.
 - Before saving, summarize the booking/order and ask for explicit confirmation.
+- MANDATORY PRE-ORDER CHOICE: after name, phone, party size, date, and time are complete, but BEFORE the final booking summary or approval question, ask once whether the guest wants to add a menu pre-order to the reservation. If yes, collect the exact items first. If no, continue with a "without pre-order" summary. Never call confirm_booking_order while preorderChoice is empty, or while it is yes but orderItems is empty.
 - IMPORTANT VOICE STYLE FOR BOOKING CONFIRMATION: speak the summary as one short natural sentence, never as a form, checklist, table, or Markdown list. Do not use Markdown symbols such as **, #, -, bullets, or labels like "الاسم:" and "رقم الواتساب:" in spoken replies.
 - In Arabic, the final confirmation MUST include the guest name, WhatsApp/mobile number, booking date/day, exact time, and party size so the guest can verify them. Example: "تمام محمد، أتأكد معك: رقم الجوال 05xxxxxxxx، حجزك اليوم الساعة 22:00 لشخصين، وبدون طلب مسبق. البيانات صحيحة وأعتمد الحجز؟"
 - Always read the WhatsApp/mobile number back in the final confirmation. Preserve every digit exactly; never invent, regroup, or omit digits.
@@ -492,7 +494,7 @@ const updateBookingPreorderTool = {
   type: "function",
   function: {
     name: "update_booking_preorder",
-    description: "Update the draft food/drink pre-order attached to an ACTIVE unfinished table reservation. Use this instead of asking dine-in vs pickup when the guest adds/removes/modifies food during a reservation. Send the COMPLETE latest pre-order list after applying the guest's change, plus the short natural sentence Sara should say.",
+    description: "Stage or update the complete food/drink pre-order attached to the current reservation, whether draft or confirmed. For a confirmed reservation, call as soon as the guest specifies the exact change; the website will stage it, request approval, and save only after approval. Never create a second reservation. Send the COMPLETE latest item list.",
     strict: true,
     parameters: {
       type: "object",
@@ -609,6 +611,8 @@ BOOKING MEMORY / AI BEHAVIOR RULES:
 - Extract booking details in any order and ask for only one useful missing field.
 - If one detail changes, replace only it and preserve everything else.
 - Before approval, confirm name, exact phone, date/day, exact HH:MM time, and party size.
+- Before the first booking approval, preorderChoice is mandatory. If it is empty, ask whether the guest wants a menu pre-order. If it is yes with no orderItems, ask what they want. Only summarize for approval when it is no or when yes has concrete items.
+- If confirmed is true, the reservation already exists under confirmationCode. Never call confirm_booking_order again. The guest may add or change a pre-order on that same reservation through update_booking_preorder after approving the revised complete order.
 - When the guest confirms, fill tool arguments from this state.` : "")
       + (orderState && typeof orderState === "object" ? `\n\nKNOWN ORDER STATE FROM THE WEBSITE (authoritative):\n${JSON.stringify(orderState)}
 ORDER MEMORY / AI BEHAVIOR RULES:

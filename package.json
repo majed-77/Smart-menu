@@ -1,6 +1,6 @@
 {
   "name": "smart-menu-ai",
-  "version": "6.0.23",
+  "version": "6.0.24",
   "private": true,
   "description": "Arabic-first AI smart menu, ordering and restaurant operations platform.",
   "main": "server.js",
@@ -8,7 +8,7 @@
   "scripts": {
     "start": "node server.js",
     "check": "node scripts/check.js",
-    "test": "node scripts/check.js && node scripts/smoke-test.js && node scripts/order-flow-test.js"
+    "test": "node scripts/check.js && node scripts/smoke-test.js && node scripts/order-flow-test.js && node scripts/booking-preorder-test.js && node scripts/confirmed-booking-order-test.js"
   },
   "engines": {
     "node": ">=20"

@@ -7,7 +7,8 @@ const {
   createReservation,
   createTableOrder,
   lookupReservation,
-  processDueReservationReminders
+  processDueReservationReminders,
+  updateReservationOrder
 } = require("./orders-service");
 
 function sendServiceError(response, error, fallbackCode, fallbackMessage) {
@@ -88,6 +89,15 @@ function createOrdersRouter() {
       response.json({ ok: true, reservation: await lookupReservation(request.params.code) });
     } catch (error) {
       sendServiceError(response, error, "RESERVATION_LOOKUP_ERROR", "تعذر البحث عن الحجز.");
+    }
+  });
+
+  router.patch("/reservations/:code/order", async (request, response) => {
+    try {
+      const result = await updateReservationOrder(request.params.code, request.body || {});
+      response.json({ ok: true, ...result });
+    } catch (error) {
+      sendServiceError(response, error, "RESERVATION_ORDER_UPDATE_ERROR", "تعذر تحديث طلب الحجز.");
     }
   });
 
