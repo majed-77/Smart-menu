@@ -135,6 +135,7 @@ let conversationHistory=[];
 let currentAudio=null;
 let saraStream=null, saraAnalyser=null, saraAudioContext=null, saraVadFrame=null, saraRecorder=null, saraChunks=[];
 let saraCapturing=false, saraSpeechStartedAt=0, saraSilenceAt=0, saraBusy=false, saraSpeaking=false, saraStarted=false;
+let saraCaptureWatchdog=null;
 let saraNoiseFloor=0.012, saraNoiseReadyAt=0, saraNoiseLastUpdate=0, saraVoiceCandidateAt=0;
 
 const welcomeOverlay=document.querySelector('#welcomeOverlay');
@@ -457,6 +458,7 @@ async function saveSaraTableOrder(args={}){
   return data.order;
 }
 function closeSara(){
+  if(saraCaptureWatchdog){clearTimeout(saraCaptureWatchdog);saraCaptureWatchdog=null;}
   saraStarted=false; saraBusy=false; saraSpeaking=false; saraCapturing=false; saraBookingState={name:'',phone:'',partySize:null,date:'',time:'',notes:'',orderItems:[]}; saraBookingActive=false; saraLastConfirmedBooking={signature:'',code:'',at:0}; saraBookingSaveInFlight=false; saraBargeCandidateAt=0; saraCaptureStartedDuringSara=false; saraLastSpokenText=''; saraSpeechStoppedAt=0; saraVoiceProcessInFlight=false; saraLastTurnFingerprint=''; saraLastTurnAt=0;
   if(saraVadFrame){cancelAnimationFrame(saraVadFrame);saraVadFrame=null;}
   try{if(saraRecorder && saraRecorder.state!=="inactive")saraRecorder.stop();}catch(e){}
@@ -747,26 +749,47 @@ function startSaraCapture({duringSara=false}={}){
   if(!saraStream || saraCapturing || saraVoiceProcessInFlight || (saraBusy && !(saraSpeaking||duringSara)))return;
   saraCaptureStartedDuringSara=Boolean(duringSara);
   const mime=bestMime(); saraChunks=[];
-  try{saraRecorder=new MediaRecorder(saraStream,mime?{mimeType:mime}:undefined);}catch(e){return;}
+  try{saraRecorder=new MediaRecorder(saraStream,mime?{mimeType:mime}:undefined);}catch(e){
+    status.textContent=TEXT[waiterLanguage].micError;
+    return;
+  }
   saraRecorder.ondataavailable=e=>{if(e.data?.size)saraChunks.push(e.data)};
   saraRecorder.onstop=async()=>{
+    if(saraCaptureWatchdog){clearTimeout(saraCaptureWatchdog);saraCaptureWatchdog=null;}
     const rec=saraRecorder; saraRecorder=null; saraCapturing=false;
     const type=rec?.mimeType||mime||'audio/webm'; const blob=new Blob(saraChunks,{type}); saraChunks=[];
-    if(blob.size<700){saraVoiceProcessInFlight=false;saraBusy=false;return;}
+    if(blob.size<700){
+      saraVoiceProcessInFlight=false;saraBusy=false;
+      status.textContent=TEXT[waiterLanguage].ready;
+      return;
+    }
     await processSaraVoice(blob,type);
   };
   saraRecorder.start(100); saraCapturing=true; saraSpeechStartedAt=performance.now(); saraSilenceAt=0;
+  status.textContent=TEXT[waiterLanguage].recording;
   micBtn.classList.add('recording'); micBtn.textContent='⏹';
+  // iOS can keep a non-zero audio floor after speaker playback. Never allow one
+  // capture to remain open forever if silence detection is fooled by that floor.
+  if(saraCaptureWatchdog)clearTimeout(saraCaptureWatchdog);
+  saraCaptureWatchdog=setTimeout(()=>{if(saraCapturing)stopSaraCapture();},15000);
 }
 
 function stopSaraCapture(){
   if(!saraCapturing)return;
+  if(saraCaptureWatchdog){clearTimeout(saraCaptureWatchdog);saraCaptureWatchdog=null;}
   // Lock before MediaRecorder's asynchronous `stop` event. Without this tiny
   // guard, VAD can start a second recorder in the gap and submit the same turn
   // twice on Safari/iOS.
   saraVoiceProcessInFlight=true;
+  status.textContent=TEXT[waiterLanguage].transcribing;
   micBtn.classList.remove('recording'); micBtn.textContent='🎤';
-  try{if(saraRecorder&&saraRecorder.state!=='inactive')saraRecorder.stop();else saraVoiceProcessInFlight=false;}catch(e){saraCapturing=false;saraVoiceProcessInFlight=false;}
+  try{
+    if(saraRecorder&&saraRecorder.state!=='inactive')saraRecorder.stop();
+    else {saraCapturing=false;saraVoiceProcessInFlight=false;status.textContent=TEXT[waiterLanguage].ready;}
+  }catch(e){
+    saraCapturing=false;saraVoiceProcessInFlight=false;
+    status.textContent=TEXT[waiterLanguage].ready;
+  }
 }
 
 function runSaraVAD(){
@@ -790,12 +813,15 @@ function runSaraVAD(){
       saraNoiseFloor=saraNoiseFloor*0.985+capped*0.015;
     }
     const adaptiveStart=Math.min(0.024,Math.max(0.007,saraNoiseFloor*1.38+0.0015));
-    const adaptiveKeep=Math.min(0.012,Math.max(0.0038,saraNoiseFloor*1.02+0.0006));
+    // The release threshold must sit clearly above the learned idle floor.
+    // The old 1.02 multiplier was too close to iPhone's post-speaker noise and
+    // could keep a recording open forever.
+    const adaptiveKeep=Math.min(0.026,Math.max(0.008,saraNoiseFloor*1.32+0.002));
     const startThreshold=adaptiveStart;
     const keepThreshold=adaptiveKeep;
-    const minSpeechMs=260;
-    const endSilenceMs=1800;
-    const startHoldMs=0;
+    const minSpeechMs=300;
+    const endSilenceMs=1250;
+    const startHoldMs=70;
     const canStart=!saraBusy || saraSpeaking;
 
     if(canStart && !saraCapturing){
