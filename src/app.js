@@ -81,14 +81,9 @@ function createApp() {
   app.use("/api/restaurant/login", loginLimiter);
   app.use(
     [
-      "/api/realtime-call",
-      "/api/ai",
       "/api/transcribe",
-      "/api/tts",
       "/api/cartesia-tts",
-      "/api/sara-alt-transcribe",
-      "/api/sara-alt-chat",
-      "/api/sara-alt-tts"
+      "/api/sara-chat"
     ],
     aiLimiter
   );
@@ -111,12 +106,11 @@ function createApp() {
     response.json({
       ok: true,
       service: "Smart Menu AI",
-      version: "6.0.13",
+      version: "6.0.20",
       primaryLanguage: "ar",
       currency: "SAR",
       databaseConfigured: Boolean(pool),
       openaiConfigured: Boolean(env.openaiApiKey),
-      deepseekConfigured: Boolean(env.deepseekApiKey),
       cartesiaConfigured: Boolean(env.cartesiaApiKey && env.cartesiaVoiceId),
       timestamp: new Date().toISOString()
     });

@@ -130,34 +130,12 @@ function applyRestaurantProfile(){const name=restaurantName(),sub=profileText('s
 async function loadRestaurantProfile(){try{const r=await fetch('/api/restaurant-profile',{cache:'no-store'}),j=await r.json();if(j?.profile)restaurantProfile={...restaurantProfile,...j.profile}}catch(e){console.warn('تعذر تحميل هوية المطعم',e)}applyRestaurantProfile()}
 loadRestaurantProfile();
 let waiterLanguage='ar';
-let saraEngine='openai';
-const SARA_BRAIN_ENGINES=new Set(['hybrid3','claude','gemini','kimi','openai-deepgram','openai-deepgram-cartesia']);
-function isBrainSaraEngine(engine=saraEngine){return SARA_BRAIN_ENGINES.has(engine);}
-function saraBrainProvider(){return (saraEngine==='openai-deepgram'||saraEngine==='openai-deepgram-cartesia')?'openai':saraEngine==='claude'?'claude':saraEngine==='gemini'?'gemini':saraEngine==='kimi'?'kimi':'deepseek';}
-function saraBrainLabel(){return (saraEngine==='openai-deepgram'||saraEngine==='openai-deepgram-cartesia')?'سارة':saraEngine==='claude'?'Claude':saraEngine==='gemini'?'Gemini':saraEngine==='kimi'?'Kimi':'DeepSeek';}
 let currentDish=null;
-let realtimePC=null;
-let realtimeDC=null;
-let realtimeMicStream=null;
-let realtimeRemoteAudio=null;
-let realtimeConnected=false;
-let realtimeStarting=false;
-let realtimeAssistantBuffer='';
-let realtimeAssistantSpeaking=false;
-let realtimeAwaitingTranscript=false;
-let realtimeMicResumeTimer=null;
-let realtimeTranscriptSafetyTimer=null;
-let realtimeProcessedToolCalls=new Set();
 let conversationHistory=[];
-let recorder=null, stream=null, chunks=[], recording=false, currentAudio=null;
-let audioContext=null, analyser=null, vadFrame=null;
-let altStream=null, altAnalyser=null, altAudioContext=null, altVadFrame=null, altRecorder=null, altChunks=[];
-let altCapturing=false, altSpeechStartedAt=0, altSilenceAt=0, altBusy=false, altSpeaking=false, altStarted=false;
-let altNoiseFloor=0.012, altNoiseReadyAt=0, altNoiseLastUpdate=0, altVoiceCandidateAt=0;
-let agent2Loaded=false, agent2Element=null, agent2Conversation=null, agent2MicMuted=false, agent2LastMessages=new Set();
-const ELEVEN_AGENT_ID='agent_8501m14m18cae8ysg6cghjveg0mn';
-let speechStarted=false, speechStartAt=0, silenceStartAt=0;
-const SILENCE_MS=1500, MIN_SPEECH_MS=300, SPEECH_THRESHOLD=0.035;
+let currentAudio=null;
+let saraStream=null, saraAnalyser=null, saraAudioContext=null, saraVadFrame=null, saraRecorder=null, saraChunks=[];
+let saraCapturing=false, saraSpeechStartedAt=0, saraSilenceAt=0, saraBusy=false, saraSpeaking=false, saraStarted=false;
+let saraNoiseFloor=0.012, saraNoiseReadyAt=0, saraNoiseLastUpdate=0, saraVoiceCandidateAt=0;
 
 const welcomeOverlay=document.querySelector('#welcomeOverlay');
 const nav=document.querySelector('#nav'), root=document.querySelector('#menu');
@@ -165,7 +143,6 @@ const modal=document.querySelector('#modal'), waiterLangStep=document.querySelec
 const title=document.querySelector('#modalDish'), orb=document.querySelector('#orb'), status=document.querySelector('#status');
 const transcript=document.querySelector('#transcript'), input=document.querySelector('#askInput'), micBtn=document.querySelector('#micBtn');
 const endBtn=document.querySelector('#end'), cancelWaiter=document.querySelector('#cancelWaiter'), permissionHelp=document.querySelector('#permissionHelp');
-const agent2Wrap=document.querySelector('#agent2Wrap');
 
 
 const EXACT_MENU_I18N = Object.create(null);
@@ -382,114 +359,6 @@ async function loadManagedCustomerMenu(){
 loadManagedCustomerMenu();
 
 
-function closeRealtime(){
-  realtimeConnected=false;
-  realtimeStarting=false;
-  realtimeAssistantSpeaking=false;
-  realtimeAwaitingTranscript=false;
-  clearRealtimeTimers();
-  try{if(realtimeDC)realtimeDC.close();}catch(e){}
-  try{if(realtimePC)realtimePC.close();}catch(e){}
-  if(realtimeMicStream){
-    try{realtimeMicStream.getTracks().forEach(t=>t.stop());}catch(e){}
-  }
-  if(realtimeRemoteAudio){
-    try{realtimeRemoteAudio.pause();realtimeRemoteAudio.srcObject=null;}catch(e){}
-    try{realtimeRemoteAudio.remove();}catch(e){}
-  }
-  realtimeDC=null;
-  realtimePC=null;
-  realtimeMicStream=null;
-  realtimeRemoteAudio=null;
-  realtimeProcessedToolCalls=new Set();
-  orb.classList.remove('speaking');
-}
-
-function realtimeInstructions(){
-  const lang=waiterLanguage;
-  const fullMenu=compactMenu();
-
-  const languageRule=
-    lang==='ar'
-      ?`تكلمي بلهجة سعودية بيضاء طبيعية تميل لنجد، وبنفس اللهجة من أول المحادثة لآخرها. استخدمي كلام يومي مثل: هلا، أبشري/أبشر، وش ودك، تبي، ودك، تمام، من عيوني، خلاص. لا تغيّرين اللهجة بين الردود. تجنبي الفصحى الرسمية واللهجات المصرية والشامية والتونسية وألفاظ مثل شو، عايز، وايد، شلون، برشا.`
-      :lang==='fr'
-      ?`Parle uniquement en français naturel, chaleureux et conversationnel.`
-      :`Speak only in natural, warm conversational English.`;
-
-  return `اسمك سارة. أنت النادلة الصوتية العامة لمطعم ${restaurantName('ar')}.
-${languageRule}
-عرّفي نفسك دائمًا باسم سارة عند الترحيب الأول فقط. أنت مسؤولة عن المنيو كامل، ولست مرتبطة بصنف محدد.
-افهمي كل الأصناف والأقسام والأسعار والمكونات الموجودة في بيانات المنيو أدناه.
-إذا سأل العميل عن اقتراح، قارني بين الأصناف المناسبة حسب ذوقه وميزانيته وعدد الأشخاص.
-إذا سأل عن سعر غير مدرج بعلامة — فقولي إن السعر غير مدرج.
-لا تخترعي مكونات أو حساسية أو أسعار أو توفر غير موجود في المنيو.
-${lang==='ar'?'للعميل العربي: لا تشرحي أن الأسعار محوّلة ولا تقولي عبارة «بالريال السعودي». إذا احتجتِ ذكر سعر صنف فقولي السعر طبيعي داخل الجملة، مثل: «سعره حوالي 26 ريال» أو عند تعداد الأصناف: «برغر كلاسيك، 28 ريال». لا تذكري الدينار التونسي أو DT أو TND نهائيًا. وإذا كان السعر غير مدرج فقولي فقط: السعر غير مدرج.':''}
-
-${saraTableNumber?`طلب من داخل المطعم عبر QR:
-- العميل على الطاولة رقم ${saraTableNumber} الآن.
-- إذا طلب أكل أو مشروبات، لا تسألين عن الاسم أو الجوال أو التاريخ أو الوقت.
-- اجمعي الأصناف والكميات وأي تعديل على كل صنف، واحفظي التعديل مع نفس الصنف في special_request مثل: برجر (بدون مايونيز).
-- لخصي الطلب واسألي «أعتمد الطلب؟». بعد تأكيد واضح فقط استدعي confirm_table_order مع order_mode="table".
-- إذا طلب العميل حجزًا مستقبليًا بشكل منفصل استخدمي مسار الحجز.`:`العميل داخل من رابط المنيو العادي بدون QR:
-- عنده 3 خيارات مستقلة: يطلب ويأكل/يشرب داخل المطعم، أو يطلب استلام خارجي، أو يحجز طاولة فقط.
-- إذا بدأ يطلب أكل أو مشروبات وما حدد الطريقة، اسأليه مرة واحدة فقط: «تبيه هنا بالمطعم ولا استلام خارجي؟».
-- إذا قال هنا/بالمطعم/باكل عندكم: اجمعي الأصناف والكميات والتعديلات والاسم فقط للتعريف، ثم استدعي confirm_table_order مع order_mode="dinein" بعد التأكيد. الجوال اختياري.
-- إذا قال استلام/سفري/خارجي: اجمعي الأصناف والكميات والتعديلات والاسم والجوال، ثم استدعي confirm_table_order مع order_mode="external" بعد التأكيد.
-- إذا قال إنه يريد حجز طاولة فقط: استخدمي confirm_booking_order ولا تنشئين طلب أكل إلا إذا طلب طلبًا مسبقًا.
-- أي إضافة أو حذف تخص صنفًا لازم تبقى داخل special_request للصنف نفسه، مثل «بدون مايونيز» أو «جبن إضافي»، ولا تحطيها كملاحظة عامة.`}
-
-الحجز والطلب:
-- تقدرين تسوين حجز طاولة مع طلب مسبق من المنيو داخل نفس المحادثة.
-- إذا قال العميل إنه يبي يحجز، اجمعي: الاسم، رقم واتساب، عدد الأشخاص، التاريخ، والوقت. إذا أعطاك رقمًا محليًا ولم تعرفي الدولة، اسأليه عن الدولة قبل الحفظ. وإذا كان سعوديًا وأعطى رقمًا يبدأ بـ05 فحوّليه لصيغة +9665 بعد حذف الصفر الأول.
-- رقم الجوال حساس جدًا: حافظي على ترتيب الأرقام كما قالها العميل حرفيًا ولا تبدّلين أو تعكسين أي رقم. قبل الاعتماد أعيدي الرقم مرة واحدة فقط للتأكيد. عند نطق الرقم قولي الأرقام رقمًا رقمًا وبنفس الترتيب، مثل: زائد، تسعة، ستة، ستة، خمسة... ولا تنطقيه كعدد كبير.
-- عند كتابة رقم الجوال اكتبيه بصيغة دولية متصلة تبدأ بعلامة + ومن دون مسافات، مثل +9665XXXXXXXX.
-- الطلب المسبق اختياري. إذا طلب أصناف، اجمعي اسم كل صنف والكمية وأي تعديل يطلبه. لا تضيفي صنفًا غير موجود في المنيو.
-- إذا نقصت معلومة اسألي عنها فقط، ولا تطلبي كل المعلومات مرة وحدة إذا كان بعضها معروف.
-- قبل الحفظ لازم تلخصين الحجز والطلب كاملًا بوضوح، ثم تسألين سؤال تأكيد صريح مثل: «أعتمد الحجز والطلب؟».
-- ممنوع تستدعين أداة confirm_booking_order قبل ما يؤكد العميل بوضوح بكلمة مثل نعم، إيه، تمام اعتمد، أو ما يعادلها.
-- مهم جدًا: إذا قاطعك العميل وأنتِ تقرئين ملخص الحجز أو الطلب وقال بوضوح «تمام اعتمدي»، «اعتمدي الحجز»، «نعم اعتمدي»، «إيه اعتمدي» أو أي تأكيد واضح مشابه، اعتبري كلامه تأكيدًا نهائيًا فورًا. لا تعيدي الملخص، ولا تكملي قراءة التفاصيل، ولا تسألي «أعتمد؟» مرة ثانية؛ استدعي confirm_booking_order مباشرة باستخدام آخر تفاصيل متفق عليها.
-- إذا قاطعك العميل بتعديل بدل التأكيد، مثل تغيير الوقت أو العدد أو حذف صنف، طبقي التعديل ثم أعيدي فقط الجزء المتغير أو ملخصًا مختصرًا واسألي التأكيد مرة ثانية.
-- إذا عدّل العميل أي شيء بعد الملخص، حدّثي الملخص واسألي التأكيد مرة ثانية.
-- بعد نجاح الحفظ اذكري رقم الحجز باختصار، وقولي إن الحجز والطلب تم تسجيلهما. لا تدّعي أن رسالة واتساب أُرسلت الآن إلا إذا النظام أكد ذلك.
-
-تكلمي كإنسانة حقيقية وليس كمساعد آلي.
-خلي الرد غالبًا جملة أو جملتين، واسألي سؤال متابعة قصير إذا احتجت.
-مهم جدًا: كمّلي كل جملة للنهاية ولا تتوقفي في منتصف الكلمة أو الجملة. لا تختصري الرد بسبب طول الصوت. أصوات الخلفية والضوضاء لا تعني أن العميل قاطعك؛ النظام سيفتح الميكروفون للعميل بعد انتهاء ردك.
-
-بيانات المنيو كاملة:
-${JSON.stringify(fullMenu)}`;
-}
-
-function setRealtimeMicEnabled(enabled){
-  if(!realtimeMicStream) return;
-  const track=realtimeMicStream.getAudioTracks()[0];
-  if(!track) return;
-  track.enabled=!!enabled;
-  micBtn.textContent=enabled?'🎤':'🔇';
-}
-
-function clearRealtimeTimers(){
-  if(realtimeMicResumeTimer){clearTimeout(realtimeMicResumeTimer);realtimeMicResumeTimer=null;}
-  if(realtimeTranscriptSafetyTimer){clearTimeout(realtimeTranscriptSafetyTimer);realtimeTranscriptSafetyTimer=null;}
-}
-
-function resumeRealtimeMicAfter(ms=1200){
-  if(realtimeMicResumeTimer) clearTimeout(realtimeMicResumeTimer);
-  realtimeMicResumeTimer=setTimeout(()=>{
-    realtimeAssistantSpeaking=false;
-    realtimeAwaitingTranscript=false;
-    setRealtimeMicEnabled(true);
-    status.textContent=TEXT[waiterLanguage].ready;
-  },ms);
-}
-
-function createRealtimeResponse(){
-  if(!realtimeDC || realtimeDC.readyState!=='open') return;
-  realtimeAssistantSpeaking=true;
-  setRealtimeMicEnabled(false);
-  realtimeDC.send(JSON.stringify({type:'response.create'}));
-}
-
 function normalizeMenuLookupText(v){
   return String(v||'').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/[^\p{L}\p{N}]+/gu,' ').trim();
 }
@@ -557,18 +426,8 @@ function isExplicitBookingConfirmation(text){
   const hasApprove=/(اعتمد|اعتمدي|اكدي|اكد|ثبت|ثبتي|نفذ|نفذي|سجل|سجلي)/.test(t);
   const hasYes=/(^|\s)(نعم|ايه|اي|تمام|اوكي|موافق|خلاص|صح)(\s|$)/.test(t);
   const bookingWord=/(الحجز|الطلب)/.test(t);
-  return hasApprove || (hasYes && (bookingWord || altAwaitingBookingApproval()));
+  return hasApprove || (hasYes && (bookingWord || saraAwaitingBookingApproval()));
 }
-function cancelRealtimeAssistantForBargeIn(){
-  if(!realtimeDC || realtimeDC.readyState!=='open') return;
-  try{realtimeDC.send(JSON.stringify({type:'response.cancel'}));}catch(e){}
-  // Ask the server to drop any queued audio if supported. Older clients may
-  // ignore this event, so response.cancel remains the primary mechanism.
-  try{realtimeDC.send(JSON.stringify({type:'output_audio_buffer.clear'}));}catch(e){}
-  realtimeAssistantSpeaking=false;
-  orb.classList.remove('speaking');
-}
-
 function saraToolMessage(kind,data={}){
   const lang=waiterLanguage||'ar';
   if(kind==='saving') return lang==='ar'?'لحظة، أعتمد الحجز والطلب…':lang==='fr'?'Un instant, je confirme votre réservation…':'One moment, I’m confirming your booking…';
@@ -597,221 +456,18 @@ async function saveSaraTableOrder(args={}){
   if(!r.ok||!data.order) throw new Error(data.message||'تعذر حفظ طلب الطاولة');
   return data.order;
 }
-async function handleSaraTableOrderTool(callId,argsText){
-  if(!callId || realtimeProcessedToolCalls.has(callId)) return;
-  realtimeProcessedToolCalls.add(callId);
-  realtimeAssistantSpeaking=true; setRealtimeMicEnabled(false);
-  status.textContent=waiterLanguage==='ar'?`لحظة، أرسل طلب طاولة ${saraTableNumber}…`:'Sending your table order…';
-  let args={}; try{args=JSON.parse(argsText||'{}')}catch(e){}
-  try{
-    const order=await saveSaraTableOrder(args);
-    const modeLabel=order.orderMode==='dinein'?'للأكل داخل المطعم':order.orderMode==='external'?'للاستلام الخارجي':`لطاولة ${order.tableNumber}`;
-    const output={ok:true,message:`تم إرسال الطلب ${modeLabel}. رقم الطلب ${order.code}.`,order};
-    realtimeDC.send(JSON.stringify({type:'conversation.item.create',item:{type:'function_call_output',call_id:callId,output:JSON.stringify(output)}}));
-    realtimeDC.send(JSON.stringify({type:'response.create',response:{instructions:waiterLanguage==='ar'?`قولي باختصار: تم إرسال طلبك ${modeLabel}، ورقم الطلب ${order.code}.`:`Briefly confirm the order was sent. Order number ${order.code}.`}}));
-  }catch(err){
-    const output={ok:false,message:String(err.message||'تعذر إرسال الطلب')};
-    try{realtimeDC.send(JSON.stringify({type:'conversation.item.create',item:{type:'function_call_output',call_id:callId,output:JSON.stringify(output)}}));realtimeDC.send(JSON.stringify({type:'response.create',response:{instructions:`اعتذري باختصار: ${output.message}`}}));}catch(e){}
-  }
-}
-async function handleSaraBookingTool(callId,argsText){
-  if(!callId || realtimeProcessedToolCalls.has(callId)) return;
-  realtimeProcessedToolCalls.add(callId);
-  realtimeAssistantSpeaking=true;
-  setRealtimeMicEnabled(false);
-  status.textContent=saraToolMessage('saving');
-  let args={};
-  try{args=JSON.parse(argsText||'{}');}catch(e){}
-  try{
-    const resolved=[];
-    for(const item of (Array.isArray(args.order_items)?args.order_items:[])){
-      const found=resolveSaraOrderItem(item?.item_name);
-      if(!found){
-        const output={ok:false,code:'MENU_ITEM_NOT_FOUND',message:saraToolMessage('notFound',{name:item?.item_name})};
-        realtimeDC.send(JSON.stringify({type:'conversation.item.create',item:{type:'function_call_output',call_id:callId,output:JSON.stringify(output)}}));
-        realtimeDC.send(JSON.stringify({type:'response.create'}));
-        return;
-      }
-      if(found.available===false){
-        const output={ok:false,code:'MENU_ITEM_UNAVAILABLE',message:`الصنف «${found.name}» غير متوفر حاليًا.`};
-        realtimeDC.send(JSON.stringify({type:'conversation.item.create',item:{type:'function_call_output',call_id:callId,output:JSON.stringify(output)}}));realtimeDC.send(JSON.stringify({type:'response.create'}));return;
-      }
-      const specialRequest=String(item?.special_request||'').trim(); const extra=saraModifierExtraSar(found,specialRequest);
-      resolved.push({name:found.canonicalName,displayName:found.name,quantity:Math.max(1,Math.min(20,Number(item?.quantity)||1)),specialRequest,unitPriceSar:found.unitPriceSar==null?null:Math.round((found.unitPriceSar+extra)*100)/100});
-    }
-    const payload={
-      name:String(args.name||'').trim(),phone:normalizeSaraPhone(args.phone),partySize:Number(args.party_size),date:String(args.date||''),time:String(args.time||''),notes:String(args.notes||'').trim(),language:waiterLanguage,source:'sara_voice',
-      orderItems:resolved.map(x=>({name:x.canonicalName,quantity:x.quantity,specialRequest:x.specialRequest,unitPriceSar:x.unitPriceSar}))
-    };
-    const r=await fetch('/api/reservations',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-    const data=await r.json().catch(()=>({}));
-    if(!r.ok||!data.reservation){
-      const err=new Error(data.message||'Booking save failed');
-      err.bookingCode=data.code||'BOOKING_SAVE_ERROR';
-      err.httpStatus=r.status;
-      throw err;
-    }
-    const output={ok:true,message:saraToolMessage('success',{code:data.reservation.code}),reservation:data.reservation};
-    realtimeDC.send(JSON.stringify({type:'conversation.item.create',item:{type:'function_call_output',call_id:callId,output:JSON.stringify(output)}}));
-    realtimeDC.send(JSON.stringify({type:'response.create',response:{instructions:waiterLanguage==='ar'?`قولي للعميل باختصار إن الحجز${resolved.length?' والطلب':''} تم تسجيله بنجاح، واذكري رقم الحجز ${data.reservation.code}. لا تعيدي كل التفاصيل إلا إذا طلب.`:waiterLanguage==='fr'?`Confirme brièvement que la réservation${resolved.length?' et la commande':''} est enregistrée et donne le numéro ${data.reservation.code}.`:`Briefly confirm the booking${resolved.length?' and order':''} was saved and give confirmation code ${data.reservation.code}.`}}));
-  }catch(err){
-    console.error('Sara booking tool failed',err);
-    const reason=String(err.message||saraToolMessage('error'));
-    const code=String(err.bookingCode||'BOOKING_SAVE_ERROR');
-    const output={ok:false,code,message:reason};
-    showDiagnostic(`الحجز لم يُحفظ: ${reason} [${code}]`,false);
-    try{
-      realtimeDC.send(JSON.stringify({type:'conversation.item.create',item:{type:'function_call_output',call_id:callId,output:JSON.stringify(output)}}));
-      realtimeDC.send(JSON.stringify({
-        type:'response.create',
-        response:{instructions:waiterLanguage==='ar'
-          ?`الحجز لم يُحفظ. السبب: ${reason}. اشرحي السبب للعميل بشكل بسيط ومباشر واطلبي فقط المعلومة التي تحتاج تصحيحها. إذا كان السبب عطل قاعدة بيانات، اعتذري واطلبي إعادة المحاولة. لا تقولي فقط مشكلة تقنية إذا كان السبب واضحًا.`
-          :waiterLanguage==='fr'
-          ?`La réservation n'a pas été enregistrée. Raison : ${reason}. Explique brièvement la raison et demande uniquement l'information à corriger.`
-          :`The booking was not saved. Reason: ${reason}. Briefly explain the reason and ask only for the information that needs correction.`}
-      }));
-    }catch(e){}
-  }
-}
-
-function handleRealtimeEvent(event){
-  let e;
-  try{e=JSON.parse(event.data);}catch(err){return;}
-
-  if(e.type==='response.function_call_arguments.done' && e.name==='confirm_table_order'){
-    handleSaraTableOrderTool(e.call_id,e.arguments);
-    return;
-  }
-  if(e.type==='response.function_call_arguments.done' && e.name==='confirm_booking_order'){
-    handleSaraBookingTool(e.call_id,e.arguments);
-    return;
-  }
-  if(e.type==='response.output_item.done' && e.item?.type==='function_call' && e.item?.name==='confirm_table_order'){
-    handleSaraTableOrderTool(e.item.call_id,e.item.arguments);
-    return;
-  }
-  if(e.type==='response.output_item.done' && e.item?.type==='function_call' && e.item?.name==='confirm_booking_order'){
-    handleSaraBookingTool(e.item.call_id,e.item.arguments);
-    return;
-  }
-
-  if(e.type==='input_audio_buffer.speech_started'){
-    // Keep listening while Sara is talking so the guest can naturally barge in.
-    // We do NOT cancel on VAD alone; cancellation waits for a real transcript,
-    // which avoids café noise cutting Sara off.
-    status.textContent=
-      waiterLanguage==='ar'?(realtimeAssistantSpeaking?'سمعتك، لحظة…':'أسمعك…'):
-      waiterLanguage==='fr'?(realtimeAssistantSpeaking?'Je vous ai entendu…':"Je vous écoute…"):
-      (realtimeAssistantSpeaking?'I heard you…':"I'm listening…");
-  }
-
-  if(e.type==='input_audio_buffer.speech_stopped'){
-    // Freeze the mic while the server finishes transcription. This prevents
-    // café noise from opening a second turn before we know what was said.
-    realtimeAwaitingTranscript=true;
-    setRealtimeMicEnabled(false);
-    status.textContent=
-      waiterLanguage==='ar'?'لحظة أفهم كلامك…':
-      waiterLanguage==='fr'?'Je comprends votre message…':
-      'Understanding your voice…';
-
-    if(realtimeTranscriptSafetyTimer) clearTimeout(realtimeTranscriptSafetyTimer);
-    realtimeTranscriptSafetyTimer=setTimeout(()=>{
-      if(realtimeAwaitingTranscript && !realtimeAssistantSpeaking){
-        realtimeAwaitingTranscript=false;
-        setRealtimeMicEnabled(true);
-        status.textContent=TEXT[waiterLanguage].ready;
-      }
-    },3000);
-  }
-
-  if(e.type==='response.audio.delta' || e.type==='response.output_audio.delta'){
-    realtimeAssistantSpeaking=true;
-    // Allow true user speech to be transcribed while Sara is talking. Server VAD
-    // stays conservative, and we only cancel after a meaningful transcript.
-    setRealtimeMicEnabled(true);
-    orb.classList.add('speaking');
-  }
-
-  if(e.type==='response.audio.done' || e.type==='response.output_audio.done'){
-    orb.classList.remove('speaking');
-    // Do not reopen the microphone immediately. The phone speaker can still
-    // be playing the tail of the buffered audio for a short moment.
-    resumeRealtimeMicAfter(1400);
-  }
-
-  if(e.type==='response.done'){
-    orb.classList.remove('speaking');
-    // Fallback for clients that do not emit a separate audio.done event.
-    if(!realtimeMicResumeTimer) resumeRealtimeMicAfter(1600);
-  }
-
-  if(e.type==='response.audio_transcript.delta' || e.type==='response.output_audio_transcript.delta'){
-    realtimeAssistantBuffer += e.delta || '';
-  }
-
-  if(e.type==='response.audio_transcript.done' || e.type==='response.output_audio_transcript.done'){
-    const text=(e.transcript || realtimeAssistantBuffer || '').trim();
-    if(text){
-      addBubble('assistant',text);
-      conversationHistory.push({role:'assistant',content:text});
-    }
-    realtimeAssistantBuffer='';
-  }
-
-  if(e.type==='conversation.item.input_audio_transcription.completed'){
-    if(realtimeTranscriptSafetyTimer){clearTimeout(realtimeTranscriptSafetyTimer);realtimeTranscriptSafetyTimer=null;}
-    const text=(e.transcript||'').trim();
-    realtimeAwaitingTranscript=false;
-
-    // Ignore tiny/empty background-noise transcriptions instead of creating
-    // an AI turn from them.
-    const meaningful = text.replace(/[\s\p{P}\p{S}]/gu,'').length >= 2;
-    if(text && meaningful){
-      const interruptedSara=realtimeAssistantSpeaking;
-      const explicitBookingConfirm=isExplicitBookingConfirmation(text);
-      addBubble('user',text);
-      conversationHistory.push({role:'user',content:text});
-
-      if(interruptedSara){
-        // Only now, after actual words were transcribed, stop Sara. This gives
-        // natural barge-in without letting background noise truncate responses.
-        cancelRealtimeAssistantForBargeIn();
-      }
-
-      status.textContent=explicitBookingConfirm && waiterLanguage==='ar'
-        ?'تمام، أعتمد الحجز…'
-        :TEXT[waiterLanguage].thinking;
-      createRealtimeResponse();
-    }else if(!realtimeAssistantSpeaking){
-      setRealtimeMicEnabled(true);
-      status.textContent=TEXT[waiterLanguage].ready;
-    }
-  }
-
-  if(e.type==='error'){
-    console.error('Realtime error',e);
-    const msg=e.error?.message || 'Realtime voice error';
-    showDiagnostic(msg,false);
-    status.textContent=msg;
-    realtimeAssistantSpeaking=false;
-    realtimeAwaitingTranscript=false;
-    setRealtimeMicEnabled(true);
-  }
-}
-
-function closeAltSara(){
-  altStarted=false; altBusy=false; altSpeaking=false; altCapturing=false; altBookingState={name:'',phone:'',partySize:null,date:'',time:'',notes:'',orderItems:[]}; altBookingActive=false; altLastConfirmedBooking={signature:'',code:'',at:0}; altBookingSaveInFlight=false; altBargeCandidateAt=0; altCaptureStartedDuringSara=false; altLastSpokenText=''; altSpeechStoppedAt=0; altVoiceProcessInFlight=false; altLastTurnFingerprint=''; altLastTurnAt=0;
-  if(altVadFrame){cancelAnimationFrame(altVadFrame);altVadFrame=null;}
-  try{if(altRecorder && altRecorder.state!=="inactive")altRecorder.stop();}catch(e){}
-  altRecorder=null; altChunks=[];
-  if(altStream){try{altStream.getTracks().forEach(t=>t.stop());}catch(e){} altStream=null;}
-  if(altAudioContext){try{altAudioContext.close();}catch(e){} altAudioContext=null;}
-  altAnalyser=null;
+function closeSara(){
+  saraStarted=false; saraBusy=false; saraSpeaking=false; saraCapturing=false; saraBookingState={name:'',phone:'',partySize:null,date:'',time:'',notes:'',orderItems:[]}; saraBookingActive=false; saraLastConfirmedBooking={signature:'',code:'',at:0}; saraBookingSaveInFlight=false; saraBargeCandidateAt=0; saraCaptureStartedDuringSara=false; saraLastSpokenText=''; saraSpeechStoppedAt=0; saraVoiceProcessInFlight=false; saraLastTurnFingerprint=''; saraLastTurnAt=0;
+  if(saraVadFrame){cancelAnimationFrame(saraVadFrame);saraVadFrame=null;}
+  try{if(saraRecorder && saraRecorder.state!=="inactive")saraRecorder.stop();}catch(e){}
+  saraRecorder=null; saraChunks=[];
+  if(saraStream){try{saraStream.getTracks().forEach(t=>t.stop());}catch(e){} saraStream=null;}
+  if(saraAudioContext){try{saraAudioContext.close();}catch(e){} saraAudioContext=null;}
+  saraAnalyser=null;
   stopAISpeech();
 }
 
-async function altFetchJSON(url, options, timeout=45000){
+async function saraFetchJSON(url, options, timeout=45000){
   const controller=new AbortController(); const timer=setTimeout(()=>controller.abort(),timeout);
   try{
     const r=await fetch(url,{...options,signal:controller.signal});
@@ -822,35 +478,35 @@ async function altFetchJSON(url, options, timeout=45000){
 }
 
 
-let altBookingState={name:'',phone:'',partySize:null,date:'',time:'',notes:'',orderItems:[]};
-let altBookingActive=false;
-let altLastConfirmedBooking={signature:'',code:'',at:0};
-let altBookingSaveInFlight=false;
-let altBargeCandidateAt=0;
-let altTtsStartedAt=0;
-let altTtsEndedAt=0;
-let altLastSpokenText='';
-let altCaptureStartedDuringSara=false;
-let altSpeechStoppedAt=0;
+let saraBookingState={name:'',phone:'',partySize:null,date:'',time:'',notes:'',orderItems:[]};
+let saraBookingActive=false;
+let saraLastConfirmedBooking={signature:'',code:'',at:0};
+let saraBookingSaveInFlight=false;
+let saraBargeCandidateAt=0;
+let saraTtsStartedAt=0;
+let saraTtsEndedAt=0;
+let saraLastSpokenText='';
+let saraCaptureStartedDuringSara=false;
+let saraSpeechStoppedAt=0;
 // One voice turn must produce exactly one transcript/AI reply. iOS Safari can
 // fire VAD/MediaRecorder transitions very close together, so keep an explicit
 // processing lock and a short transcript de-duplication window.
-let altVoiceProcessInFlight=false;
-let altLastTurnFingerprint='';
-let altLastTurnAt=0;
-function exp3TurnFingerprint(text){
+let saraVoiceProcessInFlight=false;
+let saraLastTurnFingerprint='';
+let saraLastTurnAt=0;
+function saraTurnFingerprint(text){
   return String(text||'').toLowerCase().replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا').replace(/[^\u0600-\u06FF0-9a-z+ ]/gi,' ').replace(/\s+/g,' ').trim();
 }
-function exp3IsDuplicateTurn(text){
-  const fp=exp3TurnFingerprint(text), now=Date.now();
+function saraIsDuplicateTurn(text){
+  const fp=saraTurnFingerprint(text), now=Date.now();
   if(!fp)return false;
-  if(fp===altLastTurnFingerprint && now-altLastTurnAt<4500)return true;
-  altLastTurnFingerprint=fp; altLastTurnAt=now; return false;
+  if(fp===saraLastTurnFingerprint && now-saraLastTurnAt<4500)return true;
+  saraLastTurnFingerprint=fp; saraLastTurnAt=now; return false;
 }
-function normalizeArabicDigitsExp3(v){return String(v||'').replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[۰-۹]/g,d=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(d));}
-function exp3TodayISO(){try{const parts=new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Riyadh',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());const get=t=>parts.find(p=>p.type===t)?.value||'';return `${get('year')}-${get('month')}-${get('day')}`;}catch(e){return new Date(Date.now()+3*3600000).toISOString().slice(0,10)}}
-function exp3PhoneDigitsFromSpeech(raw){
-  raw=normalizeArabicDigitsExp3(String(raw||'')).replace(/[،,.;:!?؟]/g,' ').replace(/\s+/g,' ').trim();
+function normalizeArabicDigitsSara(v){return String(v||'').replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[۰-۹]/g,d=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(d));}
+function saraTodayISO(){try{const parts=new Intl.DateTimeFormat('en-US',{timeZone:'Asia/Riyadh',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());const get=t=>parts.find(p=>p.type===t)?.value||'';return `${get('year')}-${get('month')}-${get('day')}`;}catch(e){return new Date(Date.now()+3*3600000).toISOString().slice(0,10)}}
+function saraPhoneDigitsFromSpeech(raw){
+  raw=normalizeArabicDigitsSara(String(raw||'')).replace(/[،,.;:!?؟]/g,' ').replace(/\s+/g,' ').trim();
   // Preserve the exact phone digits the guest said. Do not force a Saudi/Tunisian
   // length here: some restaurant records intentionally use non-standard lengths.
   // We only require 8-15 digits so times/dates cannot be mistaken for a phone.
@@ -872,85 +528,85 @@ function exp3PhoneDigitsFromSpeech(raw){
   if(cur.length>best.length)best=cur;
   return best.length>=8&&best.length<=15?best:'';
 }
-function exp3AwaitingPhoneNumber(){
+function saraAwaitingPhoneNumber(){
   const last=[...conversationHistory].reverse().find(m=>m?.role==='assistant');
   const t=String(last?.content||'').replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا').toLowerCase();
   return /(رقم الجوال|رقم الواتساب|واتساب عشان|الجوال أو الواتساب|الجوال او الواتساب)/.test(t);
 }
-function exp3NormalizePhoneTranscriptForDisplay(text){
+function saraNormalizePhoneTranscriptForDisplay(text){
   const raw=String(text||'').trim();
-  const phone=exp3PhoneDigitsFromSpeech(raw);
+  const phone=saraPhoneDigitsFromSpeech(raw);
   if(!phone)return raw;
-  if(exp3AwaitingPhoneNumber() || exp3IsPhoneCorrection(raw)) return phone;
+  if(saraAwaitingPhoneNumber() || saraIsPhoneCorrection(raw)) return phone;
   return raw;
 }
-function exp3AwaitingPartySize(){
+function saraAwaitingPartySize(){
   const last=[...conversationHistory].reverse().find(m=>m?.role==='assistant');
   const t=String(last?.content||'').replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا').toLowerCase();
   return /(الحجز|حجز).{0,18}(كم|لكم).{0,12}(شخص|اشخاص)|(?:كم|لكم).{0,12}(شخص|اشخاص)/.test(t);
 }
-function exp3AwaitingBookingName(){
+function saraAwaitingBookingName(){
   const last=[...conversationHistory].reverse().find(m=>m?.role==='assistant');
   const t=String(last?.content||'').replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا').toLowerCase();
   return /(وش الاسم|ايش الاسم|اسم الحجز|الاسم اللي اسجل|الاسم الذي اسجل)/.test(t);
 }
-function exp3BookingContextActive(){
-  if(altBookingActive)return true;
-  const a=exp3BookingArgsFromState();
+function saraBookingContextActive(){
+  if(saraBookingActive)return true;
+  const a=saraBookingArgsFromState();
   if(a.name||a.phone||a.party_size||a.date||a.time)return true;
   const recent=conversationHistory.slice(-8).map(m=>String(m?.content||'')).join(' ')
     .replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا').toLowerCase();
   return /(احجز|حجز|الحجز|طاولة|وش الاسم|اسم الحجز|رقم الجوال|رقم الواتساب|الحجز لكم شخص|اي يوم|الساعة كم)/.test(recent);
 }
-function exp3ExtractBookingName(raw){
+function saraExtractBookingName(raw){
   const text=String(raw||'').replace(/[،,.!?؟]+$/g,'').trim();
   let m=text.match(/(?:اسم(?:\s+الحجز)?|اسمي|باسم)\s+([\u0600-\u06FF]{2,})(?=\s+(?:رقم|والرقم|واتساب|رقم الواتساب|لـ|لشخص|اليوم|بكره|غدا|غدًا|الساعة)|$)/i);
   if(m)return m[1];
-  if(exp3AwaitingBookingName()){
+  if(saraAwaitingBookingName()){
     // "اسم ماجد" / "ماجد" / "أنا ماجد" should be accepted locally.
     m=text.match(/^(?:انا\s+|أنا\s+)?(?:اسمي\s+|اسم\s+)?([\u0600-\u06FF]{2,})(?:\s+.*)?$/i);
     if(m && !/(اعتمد|تمام|نعم|ايه|حجز|واتساب|جوال|رقم)/.test(m[1])) return m[1];
   }
   return '';
 }
-function exp3UpdateBookingState(text,role='user'){
-  let raw=normalizeArabicDigitsExp3(String(text||'')).replace(/\s+/g,' ').trim(); if(!raw)return;
-  if(role==='user' && /(?:احجز|أحجز|حجز|الحجز|حجزت|حجزي|طاولة)/.test(raw)) altBookingActive=true;
-  const phone=exp3PhoneDigitsFromSpeech(raw);
-  if(phone)altBookingState.phone=phone;
+function saraUpdateBookingState(text,role='user'){
+  let raw=normalizeArabicDigitsSara(String(text||'')).replace(/\s+/g,' ').trim(); if(!raw)return;
+  if(role==='user' && /(?:احجز|أحجز|حجز|الحجز|حجزت|حجزي|طاولة)/.test(raw)) saraBookingActive=true;
+  const phone=saraPhoneDigitsFromSpeech(raw);
+  if(phone)saraBookingState.phone=phone;
   const rawForNames=raw.replace(/[،,.!?؟]+$/g,'').trim();
   let m=null;
   if(role==='user'){
-    const extractedName=exp3ExtractBookingName(rawForNames);
-    if(extractedName)altBookingState.name=extractedName;
+    const extractedName=saraExtractBookingName(rawForNames);
+    if(extractedName)saraBookingState.name=extractedName;
   }
   // Sara's booking summary is also authoritative context. Keep the same booking state
   // instead of making the guest repeat their name at final confirmation.
-  if(role==='assistant'&&!altBookingState.name){
+  if(role==='assistant'&&!saraBookingState.name){
     m=raw.match(/(?:^|[،,.]\s*)تمام\s+([\u0600-\u06FF]{2,})(?=[،,.\s])/);
-    if(m&&!/(حجز|الحجز|تمام|اكيد|أكيد)/.test(m[1]))altBookingState.name=m[1];
+    if(m&&!/(حجز|الحجز|تمام|اكيد|أكيد)/.test(m[1]))saraBookingState.name=m[1];
   }
-  if(role==='user'&&!altBookingState.name&&exp3AwaitingBookingName()){
-    m=rawForNames.match(/^([\u0600-\u06FF]{2,})$/); if(m&&!/(اعتمد|تمام|نعم|ايه|حجز|واتساب|جوال|رقم)/.test(m[1]))altBookingState.name=m[1];
+  if(role==='user'&&!saraBookingState.name&&saraAwaitingBookingName()){
+    m=rawForNames.match(/^([\u0600-\u06FF]{2,})$/); if(m&&!/(اعتمد|تمام|نعم|ايه|حجز|واتساب|جوال|رقم)/.test(m[1]))saraBookingState.name=m[1];
   }
-  m=raw.match(/(?:ل|لـ)?(\d{1,2})\s*(?:اشخاص|أشخاص|شخص)/); if(m)altBookingState.partySize=Math.max(1,Math.min(30,Number(m[1])));
-  if(/(?:ل|لـ)?شخصين/.test(raw)) altBookingState.partySize=2;
+  m=raw.match(/(?:ل|لـ)?(\d{1,2})\s*(?:اشخاص|أشخاص|شخص)/); if(m)saraBookingState.partySize=Math.max(1,Math.min(30,Number(m[1])));
+  if(/(?:ل|لـ)?شخصين/.test(raw)) saraBookingState.partySize=2;
   // Saudi speech often uses the cardinal stem with "أشخاص" (e.g. "ثلاث
   // أشخاص", "أربع أشخاص") rather than the form expected by formal Arabic.
   // Accept both forms so a correctly transcribed answer is never discarded.
   const partyWords={'واحد':1,'واحدة':1,'اثنين':2,'إثنين':2,'ثنين':2,'ثنتين':2,'ثلاث':3,'ثلاثة':3,'ثلاثه':3,'اربع':4,'أربع':4,'اربعة':4,'أربعة':4,'اربعه':4,'خمس':5,'خمسة':5,'خمسه':5,'ست':6,'ستة':6,'سته':6,'سبع':7,'سبعة':7,'سبعه':7,'ثمان':8,'ثمانية':8,'ثمانيه':8,'تسع':9,'تسعة':9,'تسعه':9,'عشر':10,'عشرة':10,'عشره':10};
   for(const [w,n] of Object.entries(partyWords)){
-    if(new RegExp(`(?:ل|لـ)?${w}\\s+(?:اشخاص|أشخاص|اشخاصًا|أشخاصًا|شخص)`).test(raw)){altBookingState.partySize=n;break;}
+    if(new RegExp(`(?:ل|لـ)?${w}\\s+(?:اشخاص|أشخاص|اشخاصًا|أشخاصًا|شخص)`).test(raw)){saraBookingState.partySize=n;break;}
   }
   // If Sara has explicitly just asked "الحجز لكم شخص؟", a short answer like
   // "ثلاث" or "3" is unambiguously the party size and should be stored.
-  if(role==='user' && !altBookingState.partySize && exp3AwaitingPartySize()){
+  if(role==='user' && !saraBookingState.partySize && saraAwaitingPartySize()){
     const compact=raw.replace(/[،,.!?؟]/g,'').trim();
-    if(/^\d{1,2}$/.test(compact)) altBookingState.partySize=Math.max(1,Math.min(30,Number(compact)));
-    else if(partyWords[compact]) altBookingState.partySize=partyWords[compact];
+    if(/^\d{1,2}$/.test(compact)) saraBookingState.partySize=Math.max(1,Math.min(30,Number(compact)));
+    else if(partyWords[compact]) saraBookingState.partySize=partyWords[compact];
   }
-  if(/(?:^|\s|[،,.!?؟])اليوم(?=$|\s|[،,.!?؟])/.test(raw))altBookingState.date=exp3TodayISO();
-  const iso=(raw.match(/\b20\d{2}-\d{2}-\d{2}\b/)||[])[0]; if(iso)altBookingState.date=iso;
+  if(/(?:^|\s|[،,.!?؟])اليوم(?=$|\s|[،,.!?؟])/.test(raw))saraBookingState.date=saraTodayISO();
+  const iso=(raw.match(/\b20\d{2}-\d{2}-\d{2}\b/)||[])[0]; if(iso)saraBookingState.date=iso;
   m=raw.match(/الساعة\s*(\d{1,2})(?::(\d{2}))?\s*(?:و?نص(?:ف)?|و?نصف)?\s*(صباح(?:ا|ًا)?|مساء(?:ً|ا|ًا)?|ظهر(?:ا|ًا)?|بالليل|ليل(?:ا|ًا)?|المغرب)?/);
   if(m){
     let h=Number(m[1]),min=Number(m[2]||0),ap=m[3]||'';
@@ -959,7 +615,7 @@ function exp3UpdateBookingState(text,role='user'){
     const isAm=/صباح/.test(ap)||/صباح/.test(raw);
     if(isPm&&h<12)h+=12;
     if(isAm&&h===12)h=0;
-    altBookingState.time=String(h).padStart(2,'0')+':'+String(min).padStart(2,'0');
+    saraBookingState.time=String(h).padStart(2,'0')+':'+String(min).padStart(2,'0');
   }
   const hourWords={'واحدة':1,'وحدة':1,'الواحدة':1,'الواحده':1,'اثنتين':2,'ثنتين':2,'اثنين':2,'الاثنتين':2,'الثنتين':2,'ثلاثة':3,'ثلاثه':3,'الثلاثة':3,'الثلاثه':3,'أربعة':4,'اربعة':4,'الأربعة':4,'الاربعة':4,'خمسة':5,'خمسه':5,'الخمسة':5,'الخمسه':5,'ستة':6,'سته':6,'الستة':6,'السته':6,'سبعة':7,'سبعه':7,'السبعة':7,'السبعه':7,'ثمانية':8,'ثمانيه':8,'الثمانية':8,'الثمانيه':8,'تسعة':9,'تسعه':9,'التسعة':9,'التسعه':9,'عشرة':10,'عشره':10,'العشرة':10,'العشره':10,'احدعش':11,'احد عشر':11,'إحدى عشرة':11,'احدى عشرة':11,'الحادية عشرة':11,'الحاديه عشره':11,'اثنتا عشرة':12,'اثنا عشر':12,'الثانية عشرة':12,'الثانيه عشره':12};
   for(const [w,h0] of Object.entries(hourWords)){
@@ -968,56 +624,56 @@ function exp3UpdateBookingState(text,role='user'){
       let h=h0,min=/(?:و?نص(?:ف)?|و?نصف)/.test(hm[0])?30:0;
       if(/(?:مساء|المسا|بالليل|ليل|المغرب)/.test(raw)&&h<12)h+=12;
       if(/صباح/.test(raw)&&h===12)h=0;
-      altBookingState.time=String(h).padStart(2,'0')+':'+String(min).padStart(2,'0');
+      saraBookingState.time=String(h).padStart(2,'0')+':'+String(min).padStart(2,'0');
       break;
     }
   }
   // Safety net for numeric Saudi booking phrases such as "الساعة 10 مساء".
   // Once the guest gives the time, persist it in bookingState so later steps
   // (name/phone) can never cause Sara to ask for the time again.
-  if(role==='user' && !altBookingState.time && /(?:الساعة|الساعه)/.test(raw)){
+  if(role==='user' && !saraBookingState.time && /(?:الساعة|الساعه)/.test(raw)){
     const normalizedHourText=raw.replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا');
     const hm=normalizedHourText.match(/(?:الساعة|الساعه)\s*(\d{1,2})(?::(\d{1,2}))?/);
     if(hm){
       let h=Number(hm[1]),min=Number(hm[2]||0);
       if(/(?:مساء|المسا|بالليل|ليل|المغرب)/.test(normalizedHourText)&&h<12)h+=12;
       if(/صباح/.test(normalizedHourText)&&h===12)h=0;
-      if(h>=0&&h<=23&&min>=0&&min<=59) altBookingState.time=String(h).padStart(2,'0')+':'+String(min).padStart(2,'0');
+      if(h>=0&&h<=23&&min>=0&&min<=59) saraBookingState.time=String(h).padStart(2,'0')+':'+String(min).padStart(2,'0');
     }
   }
 }
-function exp3BookingArgsFromState(){return {name:altBookingState.name||'',phone:altBookingState.phone||'',party_size:Number(altBookingState.partySize)||0,date:altBookingState.date||'',time:altBookingState.time||'',notes:altBookingState.notes||'',order_items:Array.isArray(altBookingState.orderItems)?altBookingState.orderItems:[]};}
-function exp3ApplyPreorderTool(args){
+function saraBookingArgsFromState(){return {name:saraBookingState.name||'',phone:saraBookingState.phone||'',party_size:Number(saraBookingState.partySize)||0,date:saraBookingState.date||'',time:saraBookingState.time||'',notes:saraBookingState.notes||'',order_items:Array.isArray(saraBookingState.orderItems)?saraBookingState.orderItems:[]};}
+function saraApplyPreorderTool(args){
   if(typeof args==='string'){try{args=JSON.parse(args)}catch(e){args={}}}
   if(!args||typeof args!=='object')args={};
   const items=Array.isArray(args.order_items)?args.order_items:[];
-  altBookingState.orderItems=items.map(x=>({
+  saraBookingState.orderItems=items.map(x=>({
     item_name:String(x?.item_name||'').trim(),
     quantity:Math.max(1,Math.min(20,Number(x?.quantity)||1)),
     special_request:String(x?.special_request||'').trim()
   })).filter(x=>x.item_name);
-  altBookingActive=true;
+  saraBookingActive=true;
   const msg=String(args.response_message||'').trim();
   if(msg)return msg;
   return waiterLanguage==='ar'?'أبشر، حفظت طلبك المسبق على نفس الحجز.':waiterLanguage==='fr'?'C’est noté avec votre réservation.':'Got it — I saved that with your reservation.';
 }
-function exp3MergeToolArgs(args){
-  const st=exp3BookingArgsFromState();
+function saraMergeToolArgs(args){
+  const st=saraBookingArgsFromState();
   // Booking state is authoritative for date/time because it was extracted from the
   // guest's actual Arabic phrasing (e.g. "عشرة ونص بالليل" => 22:30).
   // This prevents an LLM tool call from downgrading it back to ambiguous 10:30.
   return {...args,name:String(st.name||args.name||'').trim(),phone:String(st.phone||args.phone||'').trim(),party_size:Number(st.party_size||args.party_size||0),date:String(st.date||args.date||''),time:String(st.time||args.time||''),notes:String(args.notes||st.notes||''),order_items:Array.isArray(args.order_items)&&args.order_items.length?args.order_items:st.order_items};
 }
 
-async function askAltSara(question,{greeting=false}={}){
-  return altFetchJSON('/api/sara-alt-chat',{
+async function askSara(question,{greeting=false}={}){
+  return saraFetchJSON('/api/sara-chat',{
     method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({question,menu:compactMenu(),history:conversationHistory.slice(isBrainSaraEngine()?-12:-10),language:waiterLanguage,greeting,tableNumber:saraTableNumber,bookingState:isBrainSaraEngine()&&!saraTableNumber?altBookingState:null,provider:isBrainSaraEngine()?saraBrainProvider():'deepseek'})
+    body:JSON.stringify({question,menu:compactMenu(),history:conversationHistory.slice(-12),language:waiterLanguage,greeting,tableNumber:saraTableNumber,bookingState:!saraTableNumber?saraBookingState:null})
   },60000);
 }
 
 
-async function handleAltTableOrderTool(toolCall){
+async function handleSaraTableOrderTool(toolCall){
   let args={}; try{args=JSON.parse(toolCall?.arguments||'{}')}catch(e){}
   status.textContent=waiterLanguage==='ar'?(saraTableNumber?`لحظة، أرسل طلب طاولة ${saraTableNumber}…`:'لحظة، أرسل طلبك للمطعم…'):'Sending your order…';
   const order=await saveSaraTableOrder(args);
@@ -1025,7 +681,7 @@ async function handleAltTableOrderTool(toolCall){
   if(order.orderMode==='external'||!saraTableNumber) return waiterLanguage==='ar'?`تم، أرسلت طلب الاستلام الخارجي للمطعم. رقم طلبك ${order.code}.`:waiterLanguage==='fr'?`C'est envoyé pour emporter. Numéro ${order.code}.`:`Done. Your pickup order was sent. Order number ${order.code}.`;
   return waiterLanguage==='ar'?`تم، أرسلت طلبك للمطعم لطاولة ${order.tableNumber}. رقم طلبك ${order.code}.`:waiterLanguage==='fr'?`C'est envoyé à la table ${order.tableNumber}. Numéro de commande ${order.code}.`:`Done. Your order was sent for table ${order.tableNumber}. Order number ${order.code}.`;
 }
-function altBookingSignature(args){
+function saraBookingSignature(args){
   const items=Array.isArray(args?.order_items)?args.order_items:[];
   const normalizedItems=items.map(x=>({
     item_name:String(x?.item_name||'').trim().toLowerCase(),
@@ -1042,17 +698,17 @@ function altBookingSignature(args){
     order_items:normalizedItems
   });
 }
-async function handleAltBookingTool(toolCall){
+async function handleSaraBookingTool(toolCall){
   let args={}; try{args=JSON.parse(toolCall?.arguments||'{}');}catch(e){}
-  if(isBrainSaraEngine()) args=exp3MergeToolArgs(args);
-  const signature=altBookingSignature(args);
-  if(altBookingSaveInFlight){
+  args=saraMergeToolArgs(args);
+  const signature=saraBookingSignature(args);
+  if(saraBookingSaveInFlight){
     return waiterLanguage==='ar'?'لحظة، الحجز قاعد ينحفظ الآن.':waiterLanguage==='fr'?`Un instant, la réservation est en cours d’enregistrement.`:`One moment, the booking is being saved.`;
   }
-  if(altLastConfirmedBooking.signature===signature && altLastConfirmedBooking.code && (Date.now()-altLastConfirmedBooking.at)<30*60*1000){
-    return waiterLanguage==='ar'?`حجزك معتمد مسبقًا. رقم حجزك ${altLastConfirmedBooking.code}.`:waiterLanguage==='fr'?`Votre réservation est déjà confirmée sous le numéro ${altLastConfirmedBooking.code}.`:`Your booking is already confirmed. Your booking number is ${altLastConfirmedBooking.code}.`;
+  if(saraLastConfirmedBooking.signature===signature && saraLastConfirmedBooking.code && (Date.now()-saraLastConfirmedBooking.at)<30*60*1000){
+    return waiterLanguage==='ar'?`حجزك معتمد مسبقًا. رقم حجزك ${saraLastConfirmedBooking.code}.`:waiterLanguage==='fr'?`Votre réservation est déjà confirmée sous le numéro ${saraLastConfirmedBooking.code}.`:`Your booking is already confirmed. Your booking number is ${saraLastConfirmedBooking.code}.`;
   }
-  altBookingSaveInFlight=true;
+  saraBookingSaveInFlight=true;
   status.textContent=saraToolMessage('saving');
   const resolved=[];
   for(const item of (Array.isArray(args.order_items)?args.order_items:[])){
@@ -1072,154 +728,124 @@ async function handleAltBookingTool(toolCall){
     const data=await r.json().catch(()=>({}));
     if(!r.ok||!data.reservation) throw new Error(data.message||'Booking save failed');
     const code=data.reservation.code;
-    altLastConfirmedBooking={signature,code:String(code),at:Date.now()};
+    saraLastConfirmedBooking={signature,code:String(code),at:Date.now()};
     return waiterLanguage==='ar'?`تم، اعتمدت الحجز${resolved.length?' والطلب':''} بنجاح. رقم حجزك ${code}.`:waiterLanguage==='fr'?`C'est confirmé. La réservation${resolved.length?' et la commande':''} est enregistrée sous le numéro ${code}.`:`Done. Your booking${resolved.length?' and order':''} is confirmed. Your booking number is ${code}.`;
   } finally {
-    altBookingSaveInFlight=false;
+    saraBookingSaveInFlight=false;
   }
 }
 
-function stopAltSpeechForBargeIn(){
-  if(!altSpeaking)return;
+function stopSaraSpeechForBargeIn(){
+  if(!saraSpeaking)return;
   stopAISpeech();
-  altSpeaking=false;
-  altSpeechStoppedAt=performance.now();
+  saraSpeaking=false;
+  saraSpeechStoppedAt=performance.now();
   status.textContent=waiterLanguage==='ar'?'سمعتك، كمّل…':waiterLanguage==='fr'?'Je vous écoute…':'I’m listening…';
 }
 
-async function speakAltSara(text,{waitForEnd=false}={}){
-  const clean=String(text||'').trim(); if(!clean)return;
-  altLastSpokenText=clean;
-  stopAISpeech();
-  const r=await fetch('/api/sara-alt-tts',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:clean,language:waiterLanguage})});
-  if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(d.message||`TTS HTTP ${r.status}`);}
-  const blob=await r.blob();
-  const AC=window.AudioContext||window.webkitAudioContext;
-  if(AC){
-    if(!speechAudioContext)speechAudioContext=new AC();
-    if(speechAudioContext.state==='suspended')await speechAudioContext.resume();
-    const bytes=await blob.arrayBuffer();
-    const decoded=await speechAudioContext.decodeAudioData(bytes.slice(0));
-    await new Promise((resolve,reject)=>{
-      try{
-        speechSource=speechAudioContext.createBufferSource(); speechSource.buffer=decoded; speechSource.connect(speechAudioContext.destination);
-        altSpeaking=true; altTtsStartedAt=performance.now(); altBargeCandidateAt=0; orb.classList.add('speaking');
-        speechSource.onended=()=>{orb.classList.remove('speaking');speechSource=null;altSpeaking=false;altTtsEndedAt=performance.now();altBargeCandidateAt=0;resolve();};
-        speechSource.start(0);
-        if(!waitForEnd) resolve();
-      }catch(e){reject(e)}
-    });
-    return;
-  }
-  const url=URL.createObjectURL(blob); const audio=new Audio(url); currentAudio=audio; audio.playsInline=true;
-  altSpeaking=true; altTtsStartedAt=performance.now(); altBargeCandidateAt=0; orb.classList.add('speaking');
-  const ended=new Promise((resolve,reject)=>{audio.onended=()=>{altSpeaking=false;altTtsEndedAt=performance.now();altBargeCandidateAt=0;orb.classList.remove('speaking');URL.revokeObjectURL(url);if(currentAudio===audio)currentAudio=null;resolve();};audio.onerror=reject;});
-  await audio.play(); if(waitForEnd)await ended;
-}
-
-function startAltCapture({duringSara=false}={}){
-  if(!altStream || altCapturing || altVoiceProcessInFlight || (altBusy && !(isBrainSaraEngine() && (altSpeaking||duringSara))))return;
-  altCaptureStartedDuringSara=Boolean(duringSara);
-  const mime=bestMime(); altChunks=[];
-  try{altRecorder=new MediaRecorder(altStream,mime?{mimeType:mime}:undefined);}catch(e){return;}
-  altRecorder.ondataavailable=e=>{if(e.data?.size)altChunks.push(e.data)};
-  altRecorder.onstop=async()=>{
-    const rec=altRecorder; altRecorder=null; altCapturing=false;
-    const type=rec?.mimeType||mime||'audio/webm'; const blob=new Blob(altChunks,{type}); altChunks=[];
-    if(blob.size<700){altVoiceProcessInFlight=false;altBusy=false;return;}
-    await processAltVoice(blob,type);
+function startSaraCapture({duringSara=false}={}){
+  if(!saraStream || saraCapturing || saraVoiceProcessInFlight || (saraBusy && !(saraSpeaking||duringSara)))return;
+  saraCaptureStartedDuringSara=Boolean(duringSara);
+  const mime=bestMime(); saraChunks=[];
+  try{saraRecorder=new MediaRecorder(saraStream,mime?{mimeType:mime}:undefined);}catch(e){return;}
+  saraRecorder.ondataavailable=e=>{if(e.data?.size)saraChunks.push(e.data)};
+  saraRecorder.onstop=async()=>{
+    const rec=saraRecorder; saraRecorder=null; saraCapturing=false;
+    const type=rec?.mimeType||mime||'audio/webm'; const blob=new Blob(saraChunks,{type}); saraChunks=[];
+    if(blob.size<700){saraVoiceProcessInFlight=false;saraBusy=false;return;}
+    await processSaraVoice(blob,type);
   };
-  altRecorder.start(100); altCapturing=true; altSpeechStartedAt=performance.now(); altSilenceAt=0;
+  saraRecorder.start(100); saraCapturing=true; saraSpeechStartedAt=performance.now(); saraSilenceAt=0;
   micBtn.classList.add('recording'); micBtn.textContent='⏹';
 }
 
-function stopAltCapture(){
-  if(!altCapturing)return;
+function stopSaraCapture(){
+  if(!saraCapturing)return;
   // Lock before MediaRecorder's asynchronous `stop` event. Without this tiny
   // guard, VAD can start a second recorder in the gap and submit the same turn
   // twice on Safari/iOS.
-  altVoiceProcessInFlight=true;
+  saraVoiceProcessInFlight=true;
   micBtn.classList.remove('recording'); micBtn.textContent='🎤';
-  try{if(altRecorder&&altRecorder.state!=='inactive')altRecorder.stop();else altVoiceProcessInFlight=false;}catch(e){altCapturing=false;altVoiceProcessInFlight=false;}
+  try{if(saraRecorder&&saraRecorder.state!=='inactive')saraRecorder.stop();else saraVoiceProcessInFlight=false;}catch(e){saraCapturing=false;saraVoiceProcessInFlight=false;}
 }
 
-function runAltVAD(){
-  if(!altAnalyser)return;
-  const data=new Uint8Array(altAnalyser.fftSize);
+function runSaraVAD(){
+  if(!saraAnalyser)return;
+  const data=new Uint8Array(saraAnalyser.fftSize);
   const tick=()=>{
-    if(!altStarted||!altAnalyser)return;
-    altAnalyser.getByteTimeDomainData(data); let sum=0;
+    if(!saraStarted||!saraAnalyser)return;
+    saraAnalyser.getByteTimeDomainData(data); let sum=0;
     for(let i=0;i<data.length;i++){const x=(data[i]-128)/128;sum+=x*x;}
     const rms=Math.sqrt(sum/data.length), now=performance.now();
-    const isHybrid3=isBrainSaraEngine();
-    const isDeepgramEngine=saraEngine==='openai-deepgram'||saraEngine==='openai-deepgram-cartesia';
+    
+    
 
     // Adaptive VAD for Deepgram: a fixed RMS threshold is unreliable across
     // iPhones/Android devices and restaurant noise. Track the ambient floor while
     // idle, require a short voice hold to start, then use a much lower release
     // threshold plus a long hangover so natural pauses do not cut the guest off.
-    if(isDeepgramEngine && !altCapturing && !altSpeaking){
-      if(!altNoiseFloor || !Number.isFinite(altNoiseFloor))altNoiseFloor=Math.max(0.004,rms);
-      const capped=Math.min(rms,altNoiseFloor*2.2+0.006);
-      altNoiseFloor=altNoiseFloor*0.985+capped*0.015;
+    if(!saraCapturing && !saraSpeaking){
+      if(!saraNoiseFloor || !Number.isFinite(saraNoiseFloor))saraNoiseFloor=Math.max(0.004,rms);
+      const capped=Math.min(rms,saraNoiseFloor*2.2+0.006);
+      saraNoiseFloor=saraNoiseFloor*0.985+capped*0.015;
     }
-    const adaptiveStart=isDeepgramEngine?Math.min(0.024,Math.max(0.007,altNoiseFloor*1.38+0.0015)):0;
-    const adaptiveKeep=isDeepgramEngine?Math.min(0.012,Math.max(0.0038,altNoiseFloor*1.02+0.0006)):0;
-    const startThreshold=isDeepgramEngine?adaptiveStart:(isHybrid3?0.024:0.055);
-    const keepThreshold=isDeepgramEngine?adaptiveKeep:(isHybrid3?0.018:0.040);
-    const minSpeechMs=isDeepgramEngine?260:(isHybrid3?280:220);
-    const endSilenceMs=isDeepgramEngine?1800:(isHybrid3?1100:600);
-    const startHoldMs=isDeepgramEngine?0:0;
-    const canStart=!altBusy || (isHybrid3 && altSpeaking);
+    const adaptiveStart=Math.min(0.024,Math.max(0.007,saraNoiseFloor*1.38+0.0015));
+    const adaptiveKeep=Math.min(0.012,Math.max(0.0038,saraNoiseFloor*1.02+0.0006));
+    const startThreshold=adaptiveStart;
+    const keepThreshold=adaptiveKeep;
+    const minSpeechMs=260;
+    const endSilenceMs=1800;
+    const startHoldMs=0;
+    const canStart=!saraBusy || saraSpeaking;
 
-    if(canStart && !altCapturing){
-      if(isHybrid3 && altSpeaking){
+    if(canStart && !saraCapturing){
+      if(saraSpeaking){
         // Separate barge-in detection from end-of-turn detection. A nearby voice
         // can stop Sara, while a short plate/music spike should not.
         const bargeThreshold=0.050, bargeHoldMs=95, ttsGraceMs=180;
-        if(now-altTtsStartedAt>ttsGraceMs && rms>bargeThreshold){
-          if(!altBargeCandidateAt)altBargeCandidateAt=now;
-          if(now-altBargeCandidateAt>=bargeHoldMs){
-            stopAltSpeechForBargeIn();
-            startAltCapture({duringSara:true});
-            altBargeCandidateAt=0;
+        if(now-saraTtsStartedAt>ttsGraceMs && rms>bargeThreshold){
+          if(!saraBargeCandidateAt)saraBargeCandidateAt=now;
+          if(now-saraBargeCandidateAt>=bargeHoldMs){
+            stopSaraSpeechForBargeIn();
+            startSaraCapture({duringSara:true});
+            saraBargeCandidateAt=0;
           }
-        }else altBargeCandidateAt=0;
+        }else saraBargeCandidateAt=0;
       }else if(rms>startThreshold){
-        if(!altVoiceCandidateAt)altVoiceCandidateAt=now;
-        if(now-altVoiceCandidateAt>=startHoldMs){
-          startAltCapture();
-          altVoiceCandidateAt=0;
+        if(!saraVoiceCandidateAt)saraVoiceCandidateAt=now;
+        if(now-saraVoiceCandidateAt>=startHoldMs){
+          startSaraCapture();
+          saraVoiceCandidateAt=0;
         }
-      }else altVoiceCandidateAt=0;
+      }else saraVoiceCandidateAt=0;
     }
 
-    if(altCapturing){
-      if(rms>keepThreshold){altSilenceAt=0;}
-      else if(now-altSpeechStartedAt>minSpeechMs){
-        if(!altSilenceAt)altSilenceAt=now;
-        if(now-altSilenceAt>endSilenceMs)stopAltCapture();
+    if(saraCapturing){
+      if(rms>keepThreshold){saraSilenceAt=0;}
+      else if(now-saraSpeechStartedAt>minSpeechMs){
+        if(!saraSilenceAt)saraSilenceAt=now;
+        if(now-saraSilenceAt>endSilenceMs)stopSaraCapture();
       }
     }
-    altVadFrame=requestAnimationFrame(tick);
+    saraVadFrame=requestAnimationFrame(tick);
   };
-  altVadFrame=requestAnimationFrame(tick);
+  saraVadFrame=requestAnimationFrame(tick);
 }
-function altAwaitingBookingApproval(){
+function saraAwaitingBookingApproval(){
   const last=[...conversationHistory].reverse().find(m=>m?.role==='assistant');
   const t=String(last?.content||'').replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا').toLowerCase();
   return /(اعتمد الحجز|اعتمد\?|اثبت الحجز|اكد الحجز|أعتمد الحجز|أعتمد\؟)/.test(String(last?.content||'')) ||
          (/(حجز|الحجز)/.test(t) && /(اعتمد|اكد|ثبت)/.test(t));
 }
-function altAwaitingOrderApproval(){
+function saraAwaitingOrderApproval(){
   const last=[...conversationHistory].reverse().find(m=>m?.role==='assistant');
   const t=String(last?.content||'').replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا').toLowerCase();
   return /(اعتمد الطلب|اعتمد\?|ارسل الطلب|أعتمد الطلب|أعتمد\؟)/.test(String(last?.content||'')) ||
          (/(طلب|الطلب)/.test(t) && /(اعتمد|اكد|ثبت|ارسل)/.test(t));
 }
-function normalizeAltBookingApprovalTranscript(text){
+function normalizeSaraBookingApprovalTranscript(text){
   const raw=String(text||'').trim();
-  if(!(altAwaitingBookingApproval()||altAwaitingOrderApproval())) return raw;
+  if(!(saraAwaitingBookingApproval()||saraAwaitingOrderApproval())) return raw;
   const t=raw.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[.!؟?،,;:]/g,'').replace(/\s+/g,' ').trim();
 
   // Respect clear rejections first. This prevents a short foreign STT guess
@@ -1232,7 +858,7 @@ function normalizeAltBookingApprovalTranscript(text){
   const approvalHits=(t.match(/اعتمد(?:ي)?|اثبت|أثبت|اكد|أكد|نعم|ايه|إيه|تمام|موافق|evet|yes|si|oui|ta|da|ja|sim/g)||[]).length;
   if(approvalHits>=2 && t.length<140) return 'اعتمد';
 
-  // Experimental 3 Arabic mode: one-word confirmations such as "إيه" are
+  // Sara Arabic mode: one-word confirmations such as "إيه" are
   // occasionally returned by STT as a tiny phrase in an unrelated language
   // (for example "Hey, Temet." or even another script). While Sara is
   // explicitly waiting for booking approval, never show that gibberish to the
@@ -1247,40 +873,40 @@ function normalizeAltBookingApprovalTranscript(text){
 
   return raw;
 }
-function exp3CanConfirmBookingNow(){
-  const a=exp3BookingArgsFromState();
+function saraCanConfirmBookingNow(){
+  const a=saraBookingArgsFromState();
   return Boolean(a.name && a.phone && Number(a.party_size)>0 && a.date && a.time);
 }
-async function exp3ConfirmBookingDirectly(){
-  const args=exp3BookingArgsFromState();
-  return handleAltBookingTool({name:'confirm_booking_order',arguments:JSON.stringify(args)});
+async function saraConfirmBookingDirectly(){
+  const args=saraBookingArgsFromState();
+  return handleSaraBookingTool({name:'confirm_booking_order',arguments:JSON.stringify(args)});
 }
 
-function exp3IsRepeatPhoneRequest(text){
+function saraIsRepeatPhoneRequest(text){
   const t=String(text||'').replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا').toLowerCase();
   return /(اعد|اعيد|عيد|كرر|قولي|قول).*?(رقم|واتساب)|(?:رقم|واتساب).*?(مره ثانيه|مرة ثانية|من جديد|اعد|اعيد|كرر)/.test(t);
 }
-function exp3IsPhoneCorrection(text){
+function saraIsPhoneCorrection(text){
   const t=String(text||'').replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا').toLowerCase();
   return /(الرقم|واتساب).*(غلط|خطا|مو صح|غير صحيح|الصحيح|عدل|صحح|غير)|(?:غلط|خطا).*(الرقم|واتساب)/.test(t);
 }
-function exp3PhoneDisplay(phone){return String(phone||'').replace(/\s+/g,'');}
-function exp3BookingDateDisplay(date){
+function saraPhoneDisplay(phone){return String(phone||'').replace(/\s+/g,'');}
+function saraBookingDateDisplay(date){
   const d=String(date||'').trim();
   if(!d)return '';
-  return d===exp3TodayISO()?'اليوم':d;
+  return d===saraTodayISO()?'اليوم':d;
 }
-function exp3BookingTimeDisplay(time){
+function saraBookingTimeDisplay(time){
   const m=String(time||'').trim().match(/^(\d{1,2}):(\d{2})$/);
   if(!m)return String(time||'').trim();
   return `${String(Number(m[1])).padStart(2,'0')}:${m[2]}`;
 }
-function exp3ArabicHourWord(h){
+function saraArabicHourWord(h){
   const hours={0:'اثنتي عشرة',1:'واحدة',2:'اثنتين',3:'ثلاثة',4:'أربعة',5:'خمسة',6:'ستة',7:'سبعة',8:'ثمانية',9:'تسعة',10:'عشرة',11:'إحدى عشرة',12:'اثنتي عشرة'};
   const h12=((Number(h)%24)+24)%24%12;
   return hours[h12]||String(h);
 }
-function exp3ArabicMinuteWords(min){
+function saraArabicMinuteWords(min){
   const n=Number(min)||0;
   if(n===0)return '';
   if(n===5)return 'وخمس دقايق';
@@ -1296,47 +922,47 @@ function exp3ArabicMinuteWords(min){
   if(n===55)return 'إلا خمس دقايق';
   return `و${n} دقيقة`;
 }
-function exp3TimeForSpeech(time){
+function saraTimeForSpeech(time){
   const m=String(time||'').trim().match(/^(\d{1,2}):(\d{2})$/);
   if(!m)return String(time||'').trim();
-  return `${exp3ArabicHourWord(Number(m[1]))}${exp3ArabicMinuteWords(Number(m[2]))}`;
+  return `${saraArabicHourWord(Number(m[1]))}${saraArabicMinuteWords(Number(m[2]))}`;
 }
-function exp3PrepareSpeechText(text){
+function saraPrepareSpeechText(text){
   let out=String(text||'');
-  out=out.replace(/الساعة\s+(\d{1,2}:\d{2})/g,(_,t)=>`الساعة ${exp3TimeForSpeech(t)}`);
+  out=out.replace(/الساعة\s+(\d{1,2}:\d{2})/g,(_,t)=>`الساعة ${saraTimeForSpeech(t)}`);
   // Keep phone numbers numeric on-screen, but pronounce them digit by digit.
-  out=out.replace(/(?<!\d)(\+?\d{8,15})(?!\d)/g,m=>exp3PhoneWords(m));
+  out=out.replace(/(?<!\d)(\+?\d{8,15})(?!\d)/g,m=>saraPhoneWords(m));
   return out;
 }
-function exp3PhoneWords(phone){
+function saraPhoneWords(phone){
   const m={'0':'صفر','1':'واحد','2':'اثنين','3':'ثلاثة','4':'أربعة','5':'خمسة','6':'ستة','7':'سبعة','8':'ثمانية','9':'تسعة','+':'زائد'};
   return String(phone||'').split('').filter(ch=>m[ch]).map(ch=>m[ch]).join('، ');
 }
-function exp3BookingMissingFields(){
-  const a=exp3BookingArgsFromState(), miss=[];
+function saraBookingMissingFields(){
+  const a=saraBookingArgsFromState(), miss=[];
   if(!a.name)miss.push('الاسم'); if(!a.phone)miss.push('رقم الواتساب'); if(!a.party_size)miss.push('عدد الأشخاص'); if(!a.date)miss.push('التاريخ'); if(!a.time)miss.push('الوقت');
   return miss;
 }
-function exp3BookingSummaryReply(){
-  if(!exp3BookingContextActive() || saraTableNumber || !exp3CanConfirmBookingNow())return '';
-  const a=exp3BookingArgsFromState();
+function saraBookingSummaryReply(){
+  if(!saraBookingContextActive() || saraTableNumber || !saraCanConfirmBookingNow())return '';
+  const a=saraBookingArgsFromState();
   const name=String(a.name||'').trim();
-  const date=exp3BookingDateDisplay(a.date);
-  const time=exp3BookingTimeDisplay(a.time);
+  const date=saraBookingDateDisplay(a.date);
+  const time=saraBookingTimeDisplay(a.time);
   const party=Number(a.party_size)||0;
   const partyText=party===1?'لشخص واحد':party===2?'لشخصين':`لـ${party} أشخاص`;
-  const phone=exp3PhoneDisplay(a.phone);
+  const phone=saraPhoneDisplay(a.phone);
   const orderText=Array.isArray(a.order_items)&&a.order_items.length?`ومع طلب مسبق: ${a.order_items.map(x=>`${Number(x.quantity)||1} ${x.item_name}${x.special_request?` (${x.special_request})`:''}`).join('، ')}`:'وبدون طلب مسبق';
   return `تمام ${name}، أتأكد معك قبل الاعتماد: رقم الجوال ${phone}، الحجز ${date} الساعة ${time} ${partyText}، ${orderText}. البيانات صحيحة وأعتمد الحجز؟`;
 }
-function exp3LastAssistantAskedBookingField(){
+function saraLastAssistantAskedBookingField(){
   const last=[...conversationHistory].reverse().find(m=>m?.role==='assistant');
   const t=String(last?.content||'').replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا').toLowerCase();
   return /(وش الاسم|الاسم اللي اسجل|رقم الجوال|رقم الواتساب|واتساب عشان|الحجز لكم شخص|اي يوم|أي يوم|الساعة كم|الوقت)/.test(t);
 }
-function exp3BookingMissingReply(){
-  if(!exp3BookingContextActive() || saraTableNumber)return '';
-  const miss=exp3BookingMissingFields();
+function saraBookingMissingReply(){
+  if(!saraBookingContextActive() || saraTableNumber)return '';
+  const miss=saraBookingMissingFields();
   if(!miss.length)return '';
   const field=miss[0];
   if(waiterLanguage==='ar'){
@@ -1349,18 +975,18 @@ function exp3BookingMissingReply(){
   if(waiterLanguage==='fr')return field==='رقم الواتساب'?'Quel est votre numéro WhatsApp pour terminer la réservation ?':`Il me manque encore : ${field}.`;
   return field==='رقم الواتساب'?'What WhatsApp/mobile number should I use to complete the booking?':`I still need: ${field}.`;
 }
-function exp3PhoneReplyAfterCorrection(){
-  const p=exp3PhoneDisplay(altBookingState.phone); if(!p)return '';
-  const miss=exp3BookingMissingFields();
+function saraPhoneReplyAfterCorrection(){
+  const p=saraPhoneDisplay(saraBookingState.phone); if(!p)return '';
+  const miss=saraBookingMissingFields();
   if(!miss.length)return `تمام، عدلت رقم الواتساب إلى ${p}. باقي بيانات حجزك محفوظة. أعتمد الحجز؟`;
   return `تمام، عدلت رقم الواتساب إلى ${p}. باقي بياناتك محفوظة، وباقي عندي ${miss[0]} فقط.`;
 }
-function exp3NormalizeForEcho(text){
+function saraNormalizeForEcho(text){
   return String(text||'').toLowerCase().replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا').replace(/[^\u0600-\u06FF0-9a-z ]/gi,' ').replace(/\s+/g,' ').trim();
 }
-function exp3LooksLikeSaraEcho(transcript){
-  if(!isBrainSaraEngine() || !altCaptureStartedDuringSara || !altLastSpokenText)return false;
-  const q=exp3NormalizeForEcho(transcript), a=exp3NormalizeForEcho(altLastSpokenText);
+function saraLooksLikeSaraEcho(transcript){
+  if(!saraCaptureStartedDuringSara || !saraLastSpokenText)return false;
+  const q=saraNormalizeForEcho(transcript), a=saraNormalizeForEcho(saraLastSpokenText);
   // Never suppress short real barge-ins such as "لا", "إيه", "اعتمد".
   if(q.length<12 || q.split(' ').length<3)return false;
   if(a.includes(q) && q.length>=16)return true;
@@ -1371,48 +997,48 @@ function exp3LooksLikeSaraEcho(transcript){
   const coverage=common/qs.size;
   return coverage>=0.72 && common>=3;
 }
-function exp3DeterministicBookingReply(q){
-  if(!isBrainSaraEngine() || saraTableNumber || !exp3BookingContextActive())return '';
-  if(exp3IsRepeatPhoneRequest(q) && altBookingState.phone){
-    return `رقم الواتساب المسجل عندي ${exp3PhoneDisplay(altBookingState.phone)}.`;
+function saraDeterministicBookingReply(q){
+  if(saraTableNumber || !saraBookingContextActive())return '';
+  if(saraIsRepeatPhoneRequest(q) && saraBookingState.phone){
+    return `رقم الواتساب المسجل عندي ${saraPhoneDisplay(saraBookingState.phone)}.`;
   }
-  if(exp3CanConfirmBookingNow() && exp3LastAssistantAskedBookingField()){
-    return exp3BookingSummaryReply();
+  if(saraCanConfirmBookingNow() && saraLastAssistantAskedBookingField()){
+    return saraBookingSummaryReply();
   }
-  return exp3BookingMissingReply();
+  return saraBookingMissingReply();
 }
-function exp3AssistantAsksKnownBookingField(answer){
+function saraAssistantAsksKnownBookingField(answer){
   const t=String(answer||'').replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا').toLowerCase();
-  if(altBookingState.name && /(وش الاسم|ايش الاسم|اسم الحجز|الاسم اللي اسجل)/.test(t))return true;
-  if(altBookingState.phone && /(رقم الجوال|رقم الواتساب|عطيني رقم|وش رقم)/.test(t))return true;
-  if(altBookingState.partySize && /(?:الحجز|حجز).{0,20}(كم|لكم).{0,12}(شخص|اشخاص)|(?:كم|لكم).{0,12}(شخص|اشخاص)/.test(t))return true;
-  if(altBookingState.date && /(اي يوم|أي يوم|وش اليوم|تاريخ الحجز)/.test(t))return true;
-  if(altBookingState.time && /(الساعة كم|الساعه كم|وش الوقت|وقت الحجز)/.test(t))return true;
+  if(saraBookingState.name && /(وش الاسم|ايش الاسم|اسم الحجز|الاسم اللي اسجل)/.test(t))return true;
+  if(saraBookingState.phone && /(رقم الجوال|رقم الواتساب|عطيني رقم|وش رقم)/.test(t))return true;
+  if(saraBookingState.partySize && /(?:الحجز|حجز).{0,20}(كم|لكم).{0,12}(شخص|اشخاص)|(?:كم|لكم).{0,12}(شخص|اشخاص)/.test(t))return true;
+  if(saraBookingState.date && /(اي يوم|أي يوم|وش اليوم|تاريخ الحجز)/.test(t))return true;
+  if(saraBookingState.time && /(الساعة كم|الساعه كم|وش الوقت|وقت الحجز)/.test(t))return true;
   return false;
 }
-function exp3ApplyBookingMemoryGuard(question,answer){
+function saraApplyBookingMemoryGuard(question,answer){
   const out=String(answer||'').trim();
-  if(!isBrainSaraEngine() || saraTableNumber || !exp3BookingContextActive())return out;
-  if(exp3AssistantAsksKnownBookingField(out)){
-    if(exp3CanConfirmBookingNow())return exp3BookingSummaryReply();
-    return exp3BookingMissingReply() || out;
+  if(saraTableNumber || !saraBookingContextActive())return out;
+  if(saraAssistantAsksKnownBookingField(out)){
+    if(saraCanConfirmBookingNow())return saraBookingSummaryReply();
+    return saraBookingMissingReply() || out;
   }
   return out;
 }
-async function exp3AskWithBookingFallback(q){
+async function saraAskWithBookingFallback(q){
   try{
-    return await askAltSara(q);
+    return await askSara(q);
   }catch(e){
-    if(isBrainSaraEngine() && !saraTableNumber && exp3BookingContextActive()){
-      const fallback=exp3DeterministicBookingReply(q) || (waiterLanguage==='ar'?'تمام، بيانات حجزك عندي. كمّل معي آخر معلومة ناقصة.':'Your booking details are still saved. Please continue with the remaining detail.');
+    if(!saraTableNumber && saraBookingContextActive()){
+      const fallback=saraDeterministicBookingReply(q) || (waiterLanguage==='ar'?'تمام، بيانات حجزك عندي. كمّل معي آخر معلومة ناقصة.':'Your booking details are still saved. Please continue with the remaining detail.');
       return {answer:fallback,localFallback:true};
     }
     throw e;
   }
 }
-async function processAltVoice(blob,mime){
-  altVoiceProcessInFlight=true;
-  altBusy=true;
+async function processSaraVoice(blob,mime){
+  saraVoiceProcessInFlight=true;
+  saraBusy=true;
   try{
     status.textContent=TEXT[waiterLanguage].transcribing;
     const ext=mime.includes('mp4')?'m4a':mime.includes('ogg')?'ogg':'webm';
@@ -1420,220 +1046,92 @@ async function processAltVoice(blob,mime){
     // Arabic accuracy fix: keep Cartesia for Sara's voice, but use OpenAI's
     // gpt-4o-transcribe for Saudi Arabic. Deepgram remains available for FR/EN.
     // This separation prevents the TTS engine choice from lowering STT accuracy.
-    if((saraEngine==='openai-deepgram'||saraEngine==='openai-deepgram-cartesia') && waiterLanguage!=='ar') form.append('mode','deepgram-stt');
-    else if(isBrainSaraEngine()) form.append('mode','hybrid3');
-    const sttUrl=isBrainSaraEngine()?'/api/transcribe':'/api/sara-alt-transcribe';
+    if(waiterLanguage!=='ar') form.append('mode','deepgram-stt');
+    else form.append('mode','sara');
+    const sttUrl='/api/transcribe';
     const r=await fetch(sttUrl,{method:'POST',body:form}); const d=await r.json().catch(()=>({}));
     if(!r.ok||!d.text)throw new Error(d.message||'Transcription failed');
     let q=String(d.text).trim(); if(!q)return;
-    q=normalizeAltBookingApprovalTranscript(q);
-    if(isBrainSaraEngine()&&!saraTableNumber) q=exp3NormalizePhoneTranscriptForDisplay(q);
-    if(exp3IsDuplicateTurn(q)){
+    q=normalizeSaraBookingApprovalTranscript(q);
+    if(!saraTableNumber) q=saraNormalizePhoneTranscriptForDisplay(q);
+    if(saraIsDuplicateTurn(q)){
       console.info('Sara: ignored duplicate voice turn',q);
       status.textContent=TEXT[waiterLanguage].ready;
       return;
     }
-    if(exp3LooksLikeSaraEcho(q)){
-      console.info('Experimental 3: ignored probable Sara echo',q);
-      altCaptureStartedDuringSara=false;
-      altBusy=false; status.textContent=TEXT[waiterLanguage].ready;
+    if(saraLooksLikeSaraEcho(q)){
+      console.info('Sara: ignored probable Sara echo',q);
+      saraCaptureStartedDuringSara=false;
+      saraBusy=false; status.textContent=TEXT[waiterLanguage].ready;
       return;
     }
-    altCaptureStartedDuringSara=false;
-    const wasPhoneCorrection=isBrainSaraEngine() && !saraTableNumber && exp3IsPhoneCorrection(q);
-    if(isBrainSaraEngine()&&!saraTableNumber)exp3UpdateBookingState(q,'user');
+    saraCaptureStartedDuringSara=false;
+    const wasPhoneCorrection=!saraTableNumber && saraIsPhoneCorrection(q);
+    if(!saraTableNumber)saraUpdateBookingState(q,'user');
     addBubble('user',q); conversationHistory.push({role:'user',content:q});
     status.textContent=isExplicitBookingConfirmation(q)&&waiterLanguage==='ar'?'تمام، أعتمد الحجز…':TEXT[waiterLanguage].thinking;
     let answer='';
-    if(isBrainSaraEngine() && !saraTableNumber && altAwaitingBookingApproval() && isExplicitBookingConfirmation(q) && exp3CanConfirmBookingNow()){
-      answer=await exp3ConfirmBookingDirectly();
+    if(!saraTableNumber && saraAwaitingBookingApproval() && isExplicitBookingConfirmation(q) && saraCanConfirmBookingNow()){
+      answer=await saraConfirmBookingDirectly();
     }else{
-      const data=await exp3AskWithBookingFallback(q);
-      if(data.toolCall?.name==='confirm_table_order') answer=await handleAltTableOrderTool(data.toolCall); else if(data.toolCall?.name==='confirm_booking_order') answer=await handleAltBookingTool(data.toolCall); else if(data.toolCall?.name==='update_booking_preorder') answer=exp3ApplyPreorderTool(data.toolCall.arguments||data.toolCall.args||{}); else answer=String(data.answer||'').trim();
-      if(isBrainSaraEngine()&&!saraTableNumber)answer=exp3ApplyBookingMemoryGuard(q,answer);
+      const data=await saraAskWithBookingFallback(q);
+      if(data.toolCall?.name==='confirm_table_order') answer=await handleSaraTableOrderTool(data.toolCall); else if(data.toolCall?.name==='confirm_booking_order') answer=await handleSaraBookingTool(data.toolCall); else if(data.toolCall?.name==='update_booking_preorder') answer=saraApplyPreorderTool(data.toolCall.arguments||data.toolCall.args||{}); else answer=String(data.answer||'').trim();
+      if(!saraTableNumber)answer=saraApplyBookingMemoryGuard(q,answer);
     }
     if(!answer)throw new Error('No answer');
-    if(isBrainSaraEngine()&&!saraTableNumber)exp3UpdateBookingState(answer,'assistant');
+    if(!saraTableNumber)saraUpdateBookingState(answer,'assistant');
     addBubble('assistant',answer); conversationHistory.push({role:'assistant',content:answer}); status.textContent=TEXT[waiterLanguage].ready;
-    if(isBrainSaraEngine()) await speakAI(answer); else await speakAltSara(answer,{waitForEnd:false});
+    await speakAI(answer);
   }catch(e){
-    console.error('Alt Sara voice error',e); status.textContent=e.message||TEXT[waiterLanguage].serverError; showDiagnostic(status.textContent,false);
+    console.error('Sara voice error',e); status.textContent=e.message||TEXT[waiterLanguage].serverError; showDiagnostic(status.textContent,false);
   }finally{
-    altBusy=false;
-    altVoiceProcessInFlight=false;
+    saraBusy=false;
+    saraVoiceProcessInFlight=false;
   }
 }
 
-async function submitAltQuestion(q){
-  q=String(q||'').trim();if(!q||altBusy||altVoiceProcessInFlight)return;
-  q=normalizeAltBookingApprovalTranscript(q);
-  if(isBrainSaraEngine()&&!saraTableNumber) q=exp3NormalizePhoneTranscriptForDisplay(q);
-  if(exp3IsDuplicateTurn(q)){console.info('Sara: ignored duplicate typed turn',q);return;}
-  const wasPhoneCorrection=isBrainSaraEngine() && !saraTableNumber && exp3IsPhoneCorrection(q);
-  if(isBrainSaraEngine()&&!saraTableNumber)exp3UpdateBookingState(q,'user');
-  stopAltSpeechForBargeIn(); addBubble('user',q);conversationHistory.push({role:'user',content:q});input.value='';altBusy=true;status.textContent=TEXT[waiterLanguage].thinking;
+async function submitSaraQuestion(q){
+  q=String(q||'').trim();if(!q||saraBusy||saraVoiceProcessInFlight)return;
+  q=normalizeSaraBookingApprovalTranscript(q);
+  if(!saraTableNumber) q=saraNormalizePhoneTranscriptForDisplay(q);
+  if(saraIsDuplicateTurn(q)){console.info('Sara: ignored duplicate typed turn',q);return;}
+  const wasPhoneCorrection=!saraTableNumber && saraIsPhoneCorrection(q);
+  if(!saraTableNumber)saraUpdateBookingState(q,'user');
+  stopSaraSpeechForBargeIn(); addBubble('user',q);conversationHistory.push({role:'user',content:q});input.value='';saraBusy=true;status.textContent=TEXT[waiterLanguage].thinking;
   try{
     let answer='';
-    if(isBrainSaraEngine() && !saraTableNumber && altAwaitingBookingApproval() && isExplicitBookingConfirmation(q) && exp3CanConfirmBookingNow()){
-      answer=await exp3ConfirmBookingDirectly();
+    if(!saraTableNumber && saraAwaitingBookingApproval() && isExplicitBookingConfirmation(q) && saraCanConfirmBookingNow()){
+      answer=await saraConfirmBookingDirectly();
     }else{
-      const data=await exp3AskWithBookingFallback(q);
-      if(data.toolCall?.name==='confirm_table_order')answer=await handleAltTableOrderTool(data.toolCall);else if(data.toolCall?.name==='confirm_booking_order')answer=await handleAltBookingTool(data.toolCall);else if(data.toolCall?.name==='update_booking_preorder')answer=exp3ApplyPreorderTool(data.toolCall.arguments||data.toolCall.args||{});else answer=String(data.answer||'').trim();
-      if(isBrainSaraEngine()&&!saraTableNumber)answer=exp3ApplyBookingMemoryGuard(q,answer);
+      const data=await saraAskWithBookingFallback(q);
+      if(data.toolCall?.name==='confirm_table_order')answer=await handleSaraTableOrderTool(data.toolCall);else if(data.toolCall?.name==='confirm_booking_order')answer=await handleSaraBookingTool(data.toolCall);else if(data.toolCall?.name==='update_booking_preorder')answer=saraApplyPreorderTool(data.toolCall.arguments||data.toolCall.args||{});else answer=String(data.answer||'').trim();
+      if(!saraTableNumber)answer=saraApplyBookingMemoryGuard(q,answer);
     }
-    if(!answer)throw new Error('No answer'); if(isBrainSaraEngine()&&!saraTableNumber)exp3UpdateBookingState(answer,'assistant'); addBubble('assistant',answer);conversationHistory.push({role:'assistant',content:answer});status.textContent=TEXT[waiterLanguage].ready;if(isBrainSaraEngine())await speakAI(answer);else await speakAltSara(answer,{waitForEnd:false});altBusy=false;
-  }catch(e){altBusy=false;status.textContent=e.message||TEXT[waiterLanguage].serverError;showDiagnostic(status.textContent,false);}
+    if(!answer)throw new Error('No answer'); if(!saraTableNumber)saraUpdateBookingState(answer,'assistant'); addBubble('assistant',answer);conversationHistory.push({role:'assistant',content:answer});status.textContent=TEXT[waiterLanguage].ready;await speakAI(answer);saraBusy=false;
+  }catch(e){saraBusy=false;status.textContent=e.message||TEXT[waiterLanguage].serverError;showDiagnostic(status.textContent,false);}
 }
 
-async function startAltSara(){
-  if(altStarted)return;
-  try{
-    const cfg=await altFetchJSON('/api/sara-alt-status',{cache:'no-store'});
-    if(!cfg.configured)throw new Error(waiterLanguage==='ar'?'المحرك التجريبي يحتاج مفاتيح ElevenLabs وDeepSeek وFish Audio في Render.':'Experimental engine keys are not configured.');
-    const supported=navigator.mediaDevices.getSupportedConstraints?.()||{};
-    const constraints={echoCancellation:true,noiseSuppression:true,autoGainControl:true,channelCount:1};
-    // Do not force iOS voiceIsolation here: on some iPhones it can gate soft Arabic
-    // consonants and the first syllable. AGC keeps quiet guests audible instead.
-    if(supported.sampleRate)constraints.sampleRate=48000;
-    altStream=await navigator.mediaDevices.getUserMedia({audio:constraints});
-    const AC=window.AudioContext||window.webkitAudioContext; altAudioContext=new AC(); const src=altAudioContext.createMediaStreamSource(altStream); altAnalyser=altAudioContext.createAnalyser();altAnalyser.fftSize=1024;altAnalyser.smoothingTimeConstant=.2;src.connect(altAnalyser);
-    altStarted=true; altBusy=true;
-    showDiagnostic(waiterLanguage==='ar'?'✅ تجريبي 1 جاهز':waiterLanguage==='fr'?'✅ Expérimental 1 prêt':'✅ Experimental 1 ready',true);
-    const data=await askAltSara('',{greeting:true}); const answer=String(data.answer||'').trim();
-    if(answer){addBubble('assistant',answer);conversationHistory.push({role:'assistant',content:answer});status.textContent=TEXT[waiterLanguage].ready;await speakAltSara(answer,{waitForEnd:true});}
-    altBusy=false; runAltVAD(); status.textContent=TEXT[waiterLanguage].ready;
-  }catch(e){console.error('Alt Sara start failed',e);closeAltSara();status.textContent=e.message;showDiagnostic(e.message,false);}
-}
-
-
-function setStandardChatVisible(visible){
-  const ids=['orb','status','transcript'];
-  ids.forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=visible?'':'none';});
-  const ask=document.querySelector('.askRow'); if(ask) ask.style.display=visible?'flex':'none';
-  const hint=document.getElementById('recordHint'); if(hint) hint.style.display=visible?'':'none';
-  const test=document.getElementById('testAudioBtn'); if(test) test.style.display=visible?'':'none';
-  const diag=document.getElementById('diagBox'); if(diag && !visible) diag.style.display='none';
-  if(agent2Wrap) agent2Wrap.style.display=visible?'none':'block';
-}
-
-async function loadAgent2SDK(){
-  if(window.__ELEVENLABS_CONVERSATION__) return window.__ELEVENLABS_CONVERSATION__;
-  const mod=await import('https://cdn.jsdelivr.net/npm/@elevenlabs/client/+esm');
-  if(!mod?.Conversation) throw new Error('تعذر تحميل نظام المحادثة.');
-  window.__ELEVENLABS_CONVERSATION__=mod.Conversation;
-  return mod.Conversation;
-}
-
-function agent2EventText(event){
-  if(!event) return '';
-  if(typeof event==='string') return event.trim();
-  return String(event.message||event.text||event.transcript||event.content||event?.data?.message||event?.data?.text||'').trim();
-}
-function agent2EventRole(event){
-  const source=String(event?.source||event?.role||event?.type||event?.data?.source||event?.data?.role||'').toLowerCase();
-  if(source.includes('user')) return 'user';
-  if(source.includes('ai')||source.includes('agent')||source.includes('assistant')) return 'assistant';
-  return '';
-}
-function addAgent2Message(event){
-  const text=agent2EventText(event), role=agent2EventRole(event);
-  if(!text||!role) return;
-  const key=role+'|'+text;
-  if(agent2LastMessages.has(key)) return;
-  agent2LastMessages.add(key);
-  if(agent2LastMessages.size>50){const first=agent2LastMessages.values().next().value;agent2LastMessages.delete(first);}
-  addBubble(role,text);
-  conversationHistory.push({role,content:text});
-}
-function setAgent2Mode(modeLike){
-  const mode=String(modeLike?.mode||modeLike||'').toLowerCase();
-  const speaking=mode.includes('speaking');
-  orb.classList.toggle('speaking',speaking);
-  status.textContent=speaking
-    ?(waiterLanguage==='ar'?'سارة تتكلم…':waiterLanguage==='fr'?'Sara parle…':'Sara is speaking…')
-    :(waiterLanguage==='ar'?'أنا معك، تكلم على طول 🎤':waiterLanguage==='fr'?'Je vous écoute 🎤':'I’m listening 🎤');
-}
-
-async function startAgent2(){
-  if(agent2Conversation) return;
-  try{
-    if(agent2Wrap) agent2Wrap.style.display='none';
-    status.textContent=waiterLanguage==='ar'?'جاري تشغيل سارة…':waiterLanguage==='fr'?'Connexion à Sara…':'Starting Sara…';
-    permissionHelp.classList.remove('show');
-
-    // Request microphone permission from our own UI, then let the SDK create
-    // its WebRTC session. The provider's default widget is not rendered.
-    const testStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:false}});
-    testStream.getTracks().forEach(t=>t.stop());
-
-    const Conversation=await loadAgent2SDK();
-    agent2LastMessages=new Set();
-    agent2MicMuted=false;
-    agent2Conversation=await Conversation.startSession({
-      agentId:ELEVEN_AGENT_ID,
-      onConnect:()=>{
-        agent2Loaded=true;
-        micBtn.textContent='🎤';
-        status.textContent=waiterLanguage==='ar'?'أنا معك، تكلم على طول 🎤':waiterLanguage==='fr'?'Je vous écoute 🎤':'I’m listening 🎤';
-        showDiagnostic(waiterLanguage==='ar'?'✅ سارة جاهزة':waiterLanguage==='fr'?'✅ Sara est prête':'✅ Sara is ready',true);
-      },
-      onDisconnect:()=>{
-        orb.classList.remove('speaking');
-        if(modal.classList.contains('show')) status.textContent=waiterLanguage==='ar'?'انتهت المحادثة.':waiterLanguage==='fr'?'Conversation terminée.':'Conversation ended.';
-      },
-      onMessage:(event)=>addAgent2Message(event),
-      onModeChange:(mode)=>setAgent2Mode(mode),
-      onStatusChange:(state)=>{
-        const st=String(state?.status||state||'').toLowerCase();
-        if(st.includes('connecting')) status.textContent=waiterLanguage==='ar'?'جاري الاتصال بسارة…':waiterLanguage==='fr'?'Connexion à Sara…':'Connecting to Sara…';
-      },
-      onError:(error)=>{
-        console.error('Experimental 2 error',error);
-        const msg=String(error?.message||error||'تعذر تشغيل المحادثة.');
-        status.textContent=msg; showDiagnostic(msg,false);
-      }
-    });
-  }catch(e){
-    console.error('Experimental 2 start failed',e);
-    agent2Conversation=null;
-    const msg=waiterLanguage==='ar'?`تعذر تشغيل سارة: ${e.message||e}`:waiterLanguage==='fr'?`Impossible de démarrer Sara : ${e.message||e}`:`Could not start Sara: ${e.message||e}`;
-    status.textContent=msg; showDiagnostic(msg,false);
-    permissionHelp.textContent=TEXT[waiterLanguage].permission; permissionHelp.classList.add('show');
-  }
-}
-
-async function closeAgent2(){
-  const c=agent2Conversation;
-  agent2Conversation=null; agent2Loaded=false; agent2MicMuted=false; agent2LastMessages=new Set();
-  try{if(c)await c.endSession();}catch(e){}
-  orb.classList.remove('speaking');
-  micBtn.textContent='🎤';
-  if(agent2Wrap){agent2Wrap.innerHTML='';agent2Wrap.style.display='none';}
-}
-
-async function startHybrid3(){
-  if(altStarted)return;
+async function startSara(){
+  if(saraStarted)return;
   try{
     const supported=navigator.mediaDevices.getSupportedConstraints?.()||{};
     const constraints={echoCancellation:true,noiseSuppression:true,autoGainControl:true,channelCount:1};
     // Avoid iOS voiceIsolation: it can clip the first syllable of quiet Arabic names.
-    altStream=await navigator.mediaDevices.getUserMedia({audio:constraints});
+    saraStream=await navigator.mediaDevices.getUserMedia({audio:constraints});
     const AC=window.AudioContext||window.webkitAudioContext;
-    altAudioContext=new AC();
-    const src=altAudioContext.createMediaStreamSource(altStream);
-    altAnalyser=altAudioContext.createAnalyser();
-    altAnalyser.fftSize=2048;
+    saraAudioContext=new AC();
+    const src=saraAudioContext.createMediaStreamSource(saraStream);
+    saraAnalyser=saraAudioContext.createAnalyser();
+    saraAnalyser.fftSize=2048;
     // Faster envelope response for Deepgram so quiet/short Saudi utterances
     // trigger recording earlier instead of being swallowed by smoothing.
-    altAnalyser.smoothingTimeConstant=(saraEngine==='openai-deepgram'||saraEngine==='openai-deepgram-cartesia')?.22:.35;
-    src.connect(altAnalyser);
+    saraAnalyser.smoothingTimeConstant=.22;
+    src.connect(saraAnalyser);
     // Seed adaptive VAD conservatively; it continuously learns the ambient floor while idle.
-    altNoiseFloor=0.006; altNoiseLastUpdate=0; altVoiceCandidateAt=0; altBargeCandidateAt=0;
-    altNoiseReadyAt=performance.now()+450;
-    altStarted=true; altBusy=true;
-    const engineReadyNote=(saraEngine==='openai-deepgram'||saraEngine==='openai-deepgram-cartesia')
-      ? (waiterLanguage==='ar'?'🟢 سارة جاهزة':waiterLanguage==='fr'?'🟢 Sara prête':'🟢 Sara ready')
-      : (waiterLanguage==='ar'?'🧠 ':'🧠 ')+saraBrainLabel()+(waiterLanguage==='ar'?' جاهز':waiterLanguage==='fr'?' prêt':' ready');
+    saraNoiseFloor=0.006; saraNoiseLastUpdate=0; saraVoiceCandidateAt=0; saraBargeCandidateAt=0;
+    saraNoiseReadyAt=performance.now()+450;
+    saraStarted=true; saraBusy=true;
+    const engineReadyNote=waiterLanguage==='ar'?'🟢 سارة جاهزة':waiterLanguage==='fr'?'🟢 Sara prête':'🟢 Sara ready';
     showDiagnostic(engineReadyNote,true);
     // Fast greeting: this sentence is fixed, so do not wait for the brain API.
     // Show it immediately and start TTS while the rest of the voice session finishes.
@@ -1645,127 +1143,18 @@ async function startHybrid3(){
     addBubble('assistant',answer); conversationHistory.push({role:'assistant',content:answer});
     status.textContent=TEXT[waiterLanguage].ready;
     await speakAI(answer);
-    altBusy=false; runAltVAD(); status.textContent=TEXT[waiterLanguage].ready;
+    saraBusy=false; runSaraVAD(); status.textContent=TEXT[waiterLanguage].ready;
   }catch(e){
-    console.error('Hybrid 3 start failed',e); closeAltSara(); status.textContent=e.message; showDiagnostic(e.message,false);
-  }
-}
-
-async function startRealtime(){
-  if(realtimeConnected || realtimeStarting) return;
-  realtimeStarting=true;
-
-  try{
-    const pc=new RTCPeerConnection();
-    realtimePC=pc;
-
-    const audio=document.createElement('audio');
-    audio.autoplay=true;
-    audio.playsInline=true;
-    audio.volume=1.0;
-    audio.style.display='none';
-    document.body.appendChild(audio);
-    realtimeRemoteAudio=audio;
-
-    pc.ontrack=(ev)=>{
-      audio.srcObject=ev.streams[0];
-      audio.play().catch(err=>console.warn('Remote audio play',err));
-    };
-
-    const supported=navigator.mediaDevices.getSupportedConstraints?.()||{};
-    const audioConstraints={
-      echoCancellation:true,
-      noiseSuppression:true,
-      autoGainControl:false,
-      channelCount:1
-    };
-    if(supported.voiceIsolation) audioConstraints.voiceIsolation=true;
-
-    const stream=await navigator.mediaDevices.getUserMedia({audio:audioConstraints});
-
-    realtimeMicStream=stream;
-    stream.getTracks().forEach(track=>pc.addTrack(track,stream));
-
-    const dc=pc.createDataChannel('oai-events');
-    realtimeDC=dc;
-    dc.addEventListener('message',handleRealtimeEvent);
-
-    dc.addEventListener('open',()=>{
-      realtimeConnected=true;
-      realtimeStarting=false;
-      status.textContent=TEXT[waiterLanguage].ready;
-
-      showDiagnostic(
-        waiterLanguage==='ar'
-          ?'✅ المايك جاهز — تكلم على طول'
-          :waiterLanguage==='fr'
-          ?'✅ Micro prêt — parlez directement'
-          :'✅ Microphone ready — just start speaking',
-        true
-      );
-
-      realtimeAssistantSpeaking=true;
-      setRealtimeMicEnabled(false);
-      dc.send(JSON.stringify({
-        type:'response.create',
-        response:{
-          instructions:
-            waiterLanguage==='ar'
-              ?`ابدئي بترحيب قصير وطبيعي باللهجة السعودية، واذكري اسم المطعم واسمك بوضوح. قولي: هلا والله، حياك في ${restaurantName('ar')}، معك سارة، كيف أقدر أخدمك؟ لا تقولي كلمة نادلتك في الترحيب، ولا تذكري أي تفاصيل تقنية. إذا كان مناسبًا، تقدرين تساعدين في المنيو أو الحجز والطلب.`
-              :waiterLanguage==='fr'
-              ?`Accueille brièvement le client, mentionne clairement le restaurant ${restaurantName('fr')} et présente-toi comme Sara, sa serveuse. Puis demande comment tu peux l'aider avec le menu.`
-              :`Give a very brief welcome, clearly mention ${restaurantName('en')}, introduce yourself as Sara, the guest's waitress, then ask how you can help with the menu.`
-        }
-      }));
-    });
-
-    const offer=await pc.createOffer();
-    await pc.setLocalDescription(offer);
-
-    const r=await fetch('/api/realtime-call',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        sdp:offer.sdp,
-        language:waiterLanguage,
-        instructions:realtimeInstructions()
-      })
-    });
-
-    const data=await r.json().catch(()=>({}));
-    if(!r.ok) throw new Error(data.message||data.error||`HTTP ${r.status}`);
-    if(!data.sdp) throw new Error('Realtime SDP answer missing');
-
-    await pc.setRemoteDescription({type:'answer',sdp:data.sdp});
-  }catch(e){
-    console.error('Realtime start failed',e);
-    realtimeStarting=false;
-    closeRealtime();
-
-    const msg=
-      waiterLanguage==='ar'
-        ?`تعذر تشغيل المحادثة الصوتية: ${e.message}`
-        :waiterLanguage==='fr'
-        ?`Impossible de démarrer la voix : ${e.message}`
-        :`Could not start live voice: ${e.message}`;
-
-    status.textContent=msg;
-    showDiagnostic(msg,false);
+    console.error('Sara start failed',e); closeSara(); status.textContent=e.message; showDiagnostic(e.message,false);
   }
 }
 
 function openWaiter(){
- closeAgent2();
- currentDish=null; conversationHistory=[]; realtimeProcessedToolCalls=new Set();
+ currentDish=null; conversationHistory=[];
  waiterLanguage=siteLanguage||'ar'; permissionHelp.classList.remove('show');
  waiterLangStep.classList.remove('hidden'); chatStep.classList.add('hidden'); modal.classList.add('show');
 }
 cancelWaiter.onclick=closeWaiter;
-document.querySelectorAll('[data-sara-engine]').forEach(b=>b.onclick=()=>{
- saraEngine=b.dataset.saraEngine||'openai';
- setStandardChatVisible(true);
- document.querySelectorAll('[data-sara-engine]').forEach(x=>x.classList.toggle('active',x===b));
-});
 document.querySelectorAll('[data-waiter-lang]').forEach(b=>b.onclick=async()=>{
  waiterLanguage=b.dataset.waiterLang;
  waiterLangStep.classList.add('hidden');
@@ -1787,7 +1176,7 @@ document.querySelectorAll('[data-waiter-lang]').forEach(b=>b.onclick=async()=>{
    'Turning on the microphone…';
 
  await unlockSpeechAudio();
- if(saraEngine==='alt') await startAltSara(); else if(saraEngine==='agent') await startAgent2(); else if(isBrainSaraEngine()) await startHybrid3(); else await startRealtime();
+ await startSara();
 });
 
 function addBubble(role,text){
@@ -1863,26 +1252,6 @@ async function runDiagnostics(){
  }
 }
 
-async function fetchJSON(url,options,timeout=45000){
- const controller=new AbortController(); const timer=setTimeout(()=>controller.abort(),timeout);
- try{
-   const r=await fetch(url,{...options,signal:controller.signal});
-   const data=await r.json().catch(()=>({}));
-   if(!r.ok){
-     const err=new Error(friendlyApiError(data,r.status));
-     err.status=r.status; err.data=data; throw err;
-   }
-   return data;
- }finally{clearTimeout(timer)}
-}
-async function askAI(question){
- return fetchJSON('/api/ai',{
-  method:'POST',headers:{'Content-Type':'application/json'},
-  body:JSON.stringify({question,dish:null,menu:compactMenu(),history:conversationHistory.slice(-10),language:waiterLanguage})
- });
-}
-
-
 function stopAISpeech(){
   try{
     if(typeof speechSource!=='undefined' && speechSource){
@@ -1924,7 +1293,7 @@ async function speakAI(text){
   try{
     const clean=String(text||'').trim();
     if(!clean) return;
-    if(isBrainSaraEngine()) altLastSpokenText=clean;
+    saraLastSpokenText=clean;
 
     if(currentAudio){
       try{currentAudio.pause();}catch(e){}
@@ -1935,8 +1304,8 @@ async function speakAI(text){
       speechSource=null;
     }
 
-    const ttsEndpoint=waiterLanguage==='ar'?'/api/cartesia-tts':(saraEngine==='openai-deepgram-cartesia'?'/api/cartesia-tts':'/api/tts');
-    const speechText=waiterLanguage==='ar'?exp3PrepareSpeechText(clean):clean;
+    const ttsEndpoint='/api/cartesia-tts';
+    const speechText=waiterLanguage==='ar'?saraPrepareSpeechText(clean):clean;
     const r=await fetch(ttsEndpoint,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
@@ -1964,11 +1333,11 @@ async function speakAI(text){
         speechSource.buffer=decoded;
         speechSource.connect(speechAudioContext.destination);
         orb.classList.add('speaking');
-        if(isBrainSaraEngine()){altSpeaking=true;altTtsStartedAt=performance.now();altBargeCandidateAt=0;}
+        saraSpeaking=true;saraTtsStartedAt=performance.now();saraBargeCandidateAt=0;
         speechSource.onended=()=>{
           orb.classList.remove('speaking');
           speechSource=null;
-          if(isBrainSaraEngine()){altSpeaking=false;altTtsEndedAt=performance.now();altBargeCandidateAt=0;}
+          saraSpeaking=false;saraTtsEndedAt=performance.now();saraBargeCandidateAt=0;
         };
         speechSource.start(0);
         return;
@@ -1985,17 +1354,17 @@ async function speakAI(text){
     audio.playsInline=true;
     audio.src=url;
     orb.classList.add('speaking');
-    if(isBrainSaraEngine()){altSpeaking=true;altTtsStartedAt=performance.now();altBargeCandidateAt=0;}
+    saraSpeaking=true;saraTtsStartedAt=performance.now();saraBargeCandidateAt=0;
 
     audio.onended=()=>{
       orb.classList.remove('speaking');
       URL.revokeObjectURL(url);
       if(currentAudio===audio) currentAudio=null;
-      if(isBrainSaraEngine()){altSpeaking=false;altTtsEndedAt=performance.now();altBargeCandidateAt=0;}
+      saraSpeaking=false;saraTtsEndedAt=performance.now();saraBargeCandidateAt=0;
     };
     audio.onerror=()=>{
       orb.classList.remove('speaking');
-      if(isBrainSaraEngine()){altSpeaking=false;altTtsEndedAt=performance.now();altBargeCandidateAt=0;}
+      saraSpeaking=false;saraTtsEndedAt=performance.now();saraBargeCandidateAt=0;
       URL.revokeObjectURL(url);
     };
 
@@ -2015,141 +1384,13 @@ async function speakAI(text){
     status.textContent=msg;
   }
 }
-async function submitQuestion(q){
- q=(q||'').trim(); if(!q)return;
- addBubble('user',q); conversationHistory.push({role:'user',content:q});
- input.value=''; input.disabled=true; micBtn.disabled=true; status.textContent=TEXT[waiterLanguage].thinking;
- try{
-  const data=await askAI(q);
-  const answer=String((data&&data.answer)||'').trim();
-  if(!answer){
-    throw new Error(
-      waiterLanguage==='ar'?'لم تصل إجابة من النادلة. حاول مرة أخرى.':
-      waiterLanguage==='fr'?"Aucune réponse reçue. Réessayez.":
-      'No answer was received. Please try again.'
-    );
-  }
-  addBubble('assistant',answer); conversationHistory.push({role:'assistant',content:answer});
-  status.textContent=TEXT[waiterLanguage].ready; await speakAI(answer);
- }catch(e){
-  console.error(e);
-  const message=e.message||TEXT[waiterLanguage].aiError;
-  status.textContent=message;
-  showDiagnostic(message,false);
- }
- finally{input.disabled=false;micBtn.disabled=false;}
-}
 input.addEventListener('keydown',async e=>{
  if(e.key==='Enter'){
    stopAISpeech();
    await unlockSpeechAudio();
-   if(saraEngine==='alt'||isBrainSaraEngine()) submitAltQuestion(input.value); else if(saraEngine==='agent'){ const q=String(input.value||'').trim(); if(q&&agent2Conversation){ input.value=''; try{agent2Conversation.sendUserMessage(q);}catch(e){showDiagnostic(e.message||String(e),false);} } } else submitQuestion(input.value);
+   submitSaraQuestion(input.value);
  }
 });
-
-function bestMime(){
- if(!window.MediaRecorder)return '';
- const types=['audio/mp4','audio/webm;codecs=opus','audio/webm'];
- return types.find(t=>MediaRecorder.isTypeSupported?.(t))||'';
-}
-function stopVAD(){
- if(vadFrame){cancelAnimationFrame(vadFrame);vadFrame=null;}
- if(audioContext){audioContext.close().catch(()=>{});audioContext=null;}
- analyser=null; speechStarted=false; speechStartAt=0; silenceStartAt=0;
-}
-function startVAD(){
- if(!stream || !(window.AudioContext||window.webkitAudioContext)) return;
- const AC=window.AudioContext||window.webkitAudioContext;
- audioContext=new AC();
- const source=audioContext.createMediaStreamSource(stream);
- analyser=audioContext.createAnalyser();
- analyser.fftSize=1024; analyser.smoothingTimeConstant=.25; source.connect(analyser);
- const data=new Uint8Array(analyser.fftSize);
- const tick=()=>{
-  if(!recording||!analyser)return;
-  analyser.getByteTimeDomainData(data);
-  let sum=0;
-  for(let i=0;i<data.length;i++){const x=(data[i]-128)/128;sum+=x*x;}
-  const rms=Math.sqrt(sum/data.length), now=performance.now();
-  if(rms>SPEECH_THRESHOLD){
-   if(!speechStarted){speechStarted=true;speechStartAt=now;}
-   silenceStartAt=0;
-  }else if(speechStarted && now-speechStartAt>=MIN_SPEECH_MS){
-   if(!silenceStartAt)silenceStartAt=now;
-   if(now-silenceStartAt>=SILENCE_MS){stopRecording();return;}
-  }
-  vadFrame=requestAnimationFrame(tick);
- };
- vadFrame=requestAnimationFrame(tick);
-}
-async function startRecording(){
- permissionHelp.classList.remove('show');
- if(!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder){
-  status.textContent=TEXT[waiterLanguage].micError; permissionHelp.textContent=TEXT[waiterLanguage].permission; permissionHelp.classList.add('show'); return;
- }
- try{
-  stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:false}});
-  chunks=[]; const mime=bestMime(); recorder=new MediaRecorder(stream,mime?{mimeType:mime}:undefined);
-  recorder.ondataavailable=e=>{if(e.data?.size)chunks.push(e.data)};
-  recorder.onstop=sendVoice;
-  recorder.start(250); recording=true; micBtn.classList.add('recording'); micBtn.textContent='⏹'; status.textContent=TEXT[waiterLanguage].recording;
-  startVAD();
- }catch(e){
-  console.error(e); status.textContent=TEXT[waiterLanguage].micError; permissionHelp.textContent=TEXT[waiterLanguage].permission; permissionHelp.classList.add('show');
- }
-}
-function stopRecording(){
- if(!recording)return;
- recording=false; stopVAD(); micBtn.classList.remove('recording'); micBtn.textContent='🎤';
- if(recorder&&recorder.state!=='inactive')recorder.stop();
-}
-async function sendVoice(){
- try{
-  status.textContent=TEXT[waiterLanguage].transcribing; micBtn.disabled=true;
-  const mime=recorder.mimeType||'audio/webm'; const ext=mime.includes('mp4')?'m4a':'webm';
-  const blob=new Blob(chunks,{type:mime});
-  if(blob.size<800) throw new Error('Recording too short');
-  const form=new FormData(); form.append('audio',blob,'voice.'+ext); form.append('language',waiterLanguage);
-  const r=await fetch('/api/transcribe',{method:'POST',body:form});
-  const data=await r.json().catch(()=>({}));
-  if(!r.ok||!data.text){
-   const err=new Error(friendlyApiError(data,r.status));
-   err.status=r.status; throw err;
-  }
-  await submitQuestion(data.text);
- }catch(e){
-  console.error(e); status.textContent=e.message||TEXT[waiterLanguage].serverError; showDiagnostic(status.textContent,false);
- }finally{
-  micBtn.disabled=false; chunks=[];
-  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}
- }
-}
-micBtn.onclick=()=>{
- if(saraEngine==='agent'){
-   if(!agent2Conversation)return;
-   agent2MicMuted=!agent2MicMuted;
-   try{agent2Conversation.setMicMuted(agent2MicMuted);}catch(e){}
-   micBtn.textContent=agent2MicMuted?'🔇':'🎤';
-   status.textContent=agent2MicMuted?(waiterLanguage==='ar'?'المايك مكتوم':waiterLanguage==='fr'?'Micro coupé':'Microphone muted'):TEXT[waiterLanguage].ready;
-   return;
- }
- if(saraEngine==='alt'||isBrainSaraEngine()){
-   if(!altStream)return;
-   const track=altStream.getAudioTracks()[0];if(!track)return;track.enabled=!track.enabled;micBtn.textContent=track.enabled?'🎤':'🔇';
-   status.textContent=track.enabled?TEXT[waiterLanguage].ready:(waiterLanguage==='ar'?'المايك مكتوم':waiterLanguage==='fr'?'Micro coupé':'Microphone muted');
-   return;
- }
- if(!realtimeMicStream) return;
- const track=realtimeMicStream.getAudioTracks()[0];
- if(!track) return;
- track.enabled=!track.enabled;
- micBtn.textContent=track.enabled?'🎤':'🔇';
- status.textContent=
-   track.enabled
-     ?TEXT[waiterLanguage].ready
-     :(waiterLanguage==='ar'?'المايك مكتوم':waiterLanguage==='fr'?'Micro coupé':'Microphone muted');
-};
-
 
 const BOOKING_TEXT={
  ar:{button:'📅 احجز طاولة',title:'حجز طاولة',sub:'احجز موعدك وسنذكّرك على واتساب قبل 30 دقيقة.',name:'الاسم',phone:'رقم واتساب',people:'عدد الأشخاص',date:'التاريخ',time:'الوقت',notes:'ملاحظات (اختياري)',submit:'تأكيد الحجز',saving:'جاري حفظ الحجز…',note:'اكتب رقم واتساب بصيغة دولية. التذكير يرسل قبل الموعد بـ30 دقيقة.',success:(r)=>`تم الحجز ✅ رقم الحجز: ${r.code} — ${r.date} الساعة ${r.time}. سنرسل تذكير واتساب قبل الموعد بـ30 دقيقة.`,error:'تعذر حفظ الحجز الآن.'},
@@ -2192,12 +1433,7 @@ function setBookingMinDate(){
 })();
 
 function closeWaiter(){
- closeAgent2();
- closeAltSara();
- closeRealtime();
- stopVAD();
- if(recording) stopRecording();
- if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}
+ closeSara();
  if(currentAudio){currentAudio.pause();currentAudio=null;}
  modal.classList.remove('show'); currentDish=null; conversationHistory=[];
 }

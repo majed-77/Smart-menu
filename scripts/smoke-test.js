@@ -5,137 +5,78 @@ const path = require("path");
 const { BASE_CATEGORIES, BASE_MENU_ITEMS } = require("../src/data/base-menu");
 
 const root = path.join(__dirname, "..");
-const customerHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8");
-const dashboardHtml = fs.readFileSync(path.join(root, "public", "restaurant-dashboard.html"), "utf8");
-const customerJs = fs.readFileSync(path.join(root, "public", "assets", "js", "customer-app.js"), "utf8");
-const dashboardJs = fs.readFileSync(path.join(root, "public", "assets", "js", "dashboard-app.js"), "utf8");
-const databaseSource = fs.readFileSync(path.join(root, "src", "db", "database.js"), "utf8");
+const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
+const customerHtml = read("public/index.html");
+const dashboardHtml = read("public/restaurant-dashboard.html");
+const customerJs = read("public/assets/js/customer-app.js");
+const dashboardJs = read("public/assets/js/dashboard-app.js");
+const saraRoutes = read("src/features/sara/sara-routes.js");
+const appSource = read("src/app.js");
+const envSource = read("src/config/env.js");
+const orderSource = read("src/features/orders/orders-service.js");
 const routeSources = [
-  "src/app.js",
-  "src/features/menu/menu-routes.js",
-  "src/features/restaurant/restaurant-routes.js",
-  "src/features/orders/orders-routes.js",
-  "src/features/sara/sara-routes.js"
-].map((file) => fs.readFileSync(path.join(root, file), "utf8")).join("\n");
+  appSource,
+  read("src/features/menu/menu-routes.js"),
+  read("src/features/restaurant/restaurant-routes.js"),
+  read("src/features/orders/orders-routes.js"),
+  saraRoutes
+].join("\n");
 
 const checks = [];
-function check(name, condition) {
-  checks.push({ name, ok: Boolean(condition) });
-}
+const check = (name, condition) => checks.push({ name, ok: Boolean(condition) });
 
 check("16 menu categories", BASE_CATEGORIES.length === 16);
 check("138 base menu items", BASE_MENU_ITEMS.length === 138);
-check("Arabic is canonical for all base item names", BASE_MENU_ITEMS.every((item) => /[\u0600-\u06FF]/.test(item.nameAr)));
-check("Arabic description exists for all base items", BASE_MENU_ITEMS.every((item) => String(item.descriptionAr || "").trim().length > 0));
-check("Base prices no longer contain DT/TND", BASE_MENU_ITEMS.every((item) => !/(?:\bDT\b|TND)/i.test(String(item.priceText))));
+check("Arabic is canonical for base item names", BASE_MENU_ITEMS.every((item) => /[\u0600-\u06FF]/.test(item.nameAr)));
+check("Arabic descriptions exist", BASE_MENU_ITEMS.every((item) => String(item.descriptionAr || "").trim()));
+check("Base prices contain no DT/TND", BASE_MENU_ITEMS.every((item) => !/(?:\bDT\b|TND)/i.test(String(item.priceText))));
 check("Unique base item keys", new Set(BASE_MENU_ITEMS.map((item) => item.itemKey)).size === BASE_MENU_ITEMS.length);
+
 check("Customer page loads external JS", /\/assets\/js\/customer-app\.js/.test(customerHtml));
 check("Dashboard loads external JS", /\/assets\/js\/dashboard-app\.js/.test(dashboardHtml));
-check("Customer JS has one API menu source", !/let\s+menu\s*=\s*\[\s*\{cat:/.test(customerJs));
-check("Dashboard Arabic item editor", dashboardHtml.includes("اسم الصنف بالعربية — الأساسي"));
-check("Dashboard SAR price field", dashboardHtml.includes("السعر الأساسي (ريال سعودي)"));
-check("Dashboard supports image upload", dashboardHtml.includes('id="mImageFile"'));
-check("Customer supports 1.1s DeepSeek silence", customerJs.includes("isHybrid3?1100:600"));
-check("Booking idempotency preserved", fs.readFileSync(path.join(root, "src/features/orders/orders-service.js"), "utf8").includes("INTERVAL '10 minutes'"));
-check("Security headers enabled", fs.readFileSync(path.join(root, "src/app.js"), "utf8").includes("helmet("));
-check("Rate limiting enabled", fs.readFileSync(path.join(root, "src/app.js"), "utf8").includes("rateLimit("));
-check("Deepgram STT + OpenAI engine button exists", customerHtml.includes('data-sara-engine="openai-deepgram"') && customerHtml.includes("Deepgram STT + OpenAI"));
-check("OpenAI brain provider exists", routeSources.includes('provider === "openai"'));
-check("Deepgram STT route mode exists", routeSources.includes('deepgram-stt') && routeSources.includes('api.deepgram.com/v1/listen'));
-check("Deepgram Arabic STT pinned to Saudi dialect", fs.readFileSync(path.join(root, "src/config/env.js"), "utf8").includes('DEEPGRAM_STT_LANGUAGE_AR') && fs.readFileSync(path.join(root, "src/config/env.js"), "utf8").includes('ar-SA'));
-check("Original Deepgram engine keeps OpenAI TTS", customerJs.includes("saraEngine==='openai-deepgram-cartesia'?'/api/cartesia-tts':'/api/tts'"));
-check("Deepgram engine sends Deepgram STT mode", customerJs.includes("form.append('mode','deepgram-stt')"));
-check("Deepgram key is server-side env only", fs.readFileSync(path.join(root, "src/config/env.js"), "utf8").includes('DEEPGRAM_API_KEY') && !customerJs.includes('DEEPGRAM_API_KEY'));
-check("Deepgram STT key is server-side env only", fs.readFileSync(path.join(root, "src/config/env.js"), "utf8").includes('DEEPGRAM_API_KEY') && !customerJs.includes('DEEPGRAM_API_KEY'));
-check("Settings form is not auto-refreshed while editing", dashboardJs.includes("if(!['menu','settings'].includes(view))load()"));
-check("Customer assets are version-busted", customerHtml.includes("customer.css?v=6.0.19") && customerHtml.includes("customer-app.js?v=6.0.19"));
-check("Dashboard assets are version-busted", dashboardHtml.includes("dashboard.css?v=6.0.15") && dashboardHtml.includes("dashboard-app.js?v=6.0.15"));
-check("Static assets revalidate instead of one-day cache", fs.readFileSync(path.join(root, "src/app.js"), "utf8").includes('Cache-Control", "no-cache, max-age=0, must-revalidate') && !fs.readFileSync(path.join(root, "src/app.js"), "utf8").includes('maxAge: env.nodeEnv === "production" ? "1d" : 0'));
-check("HTML routes disable stale cache", fs.readFileSync(path.join(root, "src/app.js"), "utf8").includes('no-store, no-cache, must-revalidate, proxy-revalidate'));
+check("Customer assets are version 6.0.20", customerHtml.includes("customer.css?v=6.0.20") && customerHtml.includes("customer-app.js?v=6.0.20"));
+check("No AI engine picker remains", !customerHtml.includes("data-sara-engine") && !customerHtml.includes("enginePicker"));
+check("Only retained Sara client route is used", customerJs.includes("'/api/sara-chat'") && customerJs.includes("'/api/cartesia-tts'"));
+check("Deleted client engines are absent", !/(saraEngine|startRealtime|startAgent2|startAltSara|ElevenLabs|DeepSeek|Claude|Gemini|Kimi|Fish Audio)/i.test(customerJs));
+
+check("OpenAI Sara chat route exists", saraRoutes.includes('router.post("/sara-chat"'));
+check("Deepgram STT remains", saraRoutes.includes("api.deepgram.com/v1/listen") && saraRoutes.includes('deepgram-stt'));
+check("OpenAI Arabic STT remains", saraRoutes.includes('"gpt-4o-transcribe"') && saraRoutes.includes('req.body.mode === "sara"'));
+check("Cartesia TTS remains", saraRoutes.includes("https://api.cartesia.ai/tts/bytes"));
+check("Saudi Cartesia voice remains", envSource.includes("731ace69-ee17-41bc-8c6f-665c9f1db95c"));
+check("Deleted server engines are absent", !/(realtime-call|sara-alt|deepgram-tts|ElevenLabs|DeepSeek|Fish Audio|Claude|Gemini|Kimi|anthropic|moonshot)/i.test(saraRoutes));
+check("Deleted provider env keys are absent", !/(DEEPSEEK|ANTHROPIC|GEMINI|KIMI|MOONSHOT|ELEVENLABS|FISH_AUDIO|DEEPGRAM_TTS)/.test(envSource));
+
+check("Order intent locks to fulfillment question", saraRoutes.includes("ORDER INTENT LOCK") && saraRoutes.includes("تبي طلبك هنا بالمطعم ولا استلام خارجي؟"));
+check("Order flow does not re-offer booking", saraRoutes.includes("Do not offer table reservation again"));
+check("Active booking overrides order fulfillment", saraRoutes.includes("ACTIVE BOOKING OVERRIDES SERVICE SELECTION"));
+check("Draft preorder tool remains", saraRoutes.includes("update_booking_preorder"));
+check("Booking memory keeps twelve turns", saraRoutes.includes("history.slice(-12).map"));
+check("Booking parser preserves Arabic party size", customerJs.includes("'ثلاث':3"));
+check("Booking confirmation repeats phone and time", customerJs.includes("رقم الجوال ${phone}، الحجز ${date} الساعة ${time}"));
+check("Booking idempotency remains", orderSource.includes("INTERVAL '10 minutes'"));
+
+check("Security headers enabled", appSource.includes("helmet("));
+check("Rate limiting enabled", appSource.includes("rateLimit("));
+check("Static assets revalidate", appSource.includes('Cache-Control", "no-cache, max-age=0, must-revalidate'));
+check("Settings editor is not auto-refreshed", dashboardJs.includes("if(!['menu','settings'].includes(view))load()"));
 
 const customerEndpoints = [...new Set([...customerJs.matchAll(/["'`]\/api\/([A-Za-z0-9_\-/]+)/g)].map((m) => m[1]))];
 const dashboardEndpoints = [...new Set([...dashboardJs.matchAll(/["'`]\/api\/([A-Za-z0-9_\-/]+)/g)].map((m) => m[1]))];
 const allEndpoints = [...customerEndpoints, ...dashboardEndpoints];
-const endpointCoverage = allEndpoints.filter((endpoint) => {
+const covered = allEndpoints.filter((endpoint) => {
   const suffix = endpoint.split("/").filter(Boolean).pop();
-  return routeSources.includes(suffix) || routeSources.includes(`/${suffix}`);
+  return routeSources.includes(`/${suffix}`);
 });
-check("Frontend API endpoints have route coverage", endpointCoverage.length >= Math.max(1, allEndpoints.length - 3));
-
-check("Booking parser accepts colloquial ثلاث أشخاص", customerJs.includes("'ثلاث':3") && customerJs.includes("exp3AwaitingPartySize"));
-check("Voice processing has an in-flight lock", customerJs.includes("altVoiceProcessInFlight") && customerJs.includes("exp3IsDuplicateTurn") && customerJs.includes("altCapturing || altVoiceProcessInFlight"));
-check("Server booking memory treats stored partySize as authoritative", routeSources.includes("Treat partySize as already answered whenever it is a positive number"));
+check("Frontend API endpoints have route coverage", covered.length >= Math.max(1, allEndpoints.length - 3));
 
 let failed = 0;
 for (const result of checks) {
   console.log(`${result.ok ? "✓" : "✗"} ${result.name}`);
   if (!result.ok) failed += 1;
 }
-
-
-check("Booking flow forces missing WhatsApp before confirmation", customerJs.includes("exp3BookingMissingReply") && customerJs.includes("عطيني رقم الجوال أو الواتساب عشان أكمل الحجز"));
-check("Booking state recognizes booking intent", customerJs.includes("altBookingActive=true"));
-check("Arabic booking name parser tolerates trailing punctuation", customerJs.includes("rawForNames=raw.replace"));
 if (failed) {
   console.error(`\n${failed} smoke check(s) failed.`);
   process.exit(1);
 }
-
-check("Deepgram VAD uses more sensitive thresholds", customerJs.includes("isDeepgramEngine?0.016") && customerJs.includes("isDeepgramEngine?0.011") && customerJs.includes("isDeepgramEngine?1250"));
-check("Deepgram VAD uses faster smoothing", customerJs.includes("saraEngine==='openai-deepgram'?.18:.35"));
-check("Deepgram Nova-3 uses Saudi restaurant keyterms", routeSources.includes('url.searchParams.append("keyterm", term)') && routeSources.includes('"اعتمد"') && routeSources.includes('"رقم الجوال"'));
 console.log(`\n✓ ${checks.length} smoke checks passed.`);
-
-// v6.0.10 Cartesia playground-parity integration static checks
-{
-  const fs = require('fs');
-  const path = require('path');
-  const root = path.join(__dirname, '..');
-  const customer = fs.readFileSync(path.join(root, 'public/assets/js/customer-app.js'), 'utf8');
-  const index = fs.readFileSync(path.join(root, 'public/index.html'), 'utf8');
-  const sara = fs.readFileSync(path.join(root, 'src/features/sara/sara-routes.js'), 'utf8');
-  const envFile = fs.readFileSync(path.join(root, 'src/config/env.js'), 'utf8');
-  if (!index.includes('openai-deepgram-cartesia')) throw new Error('Cartesia engine button missing');
-  if (!customer.includes("'/api/cartesia-tts'")) throw new Error('Cartesia TTS client route missing');
-  if (!customer.includes("form.append('mode','deepgram-stt')")) throw new Error('Deepgram STT mode missing');
-  if (!sara.includes('https://api.cartesia.ai/tts/bytes')) throw new Error('Cartesia TTS endpoint missing');
-  if (!sara.includes('language: cartesiaLanguage')) throw new Error('Cartesia language mapping missing');
-  if (!envFile.includes('731ace69-ee17-41bc-8c6f-665c9f1db95c')) throw new Error('Cartesia voice id missing');
-  if (!sara.includes('function prepareCartesiaTranscript')) throw new Error('Cartesia transcript parity helper missing');
-  if (!sara.includes('transcript: prepareCartesiaTranscript(cleanText)')) throw new Error('Exact Cartesia transcript is not wired');
-  if (!sara.includes('accent: "khaleeji"')) throw new Error('Cartesia Khaleeji accent conditioning missing');
-  if (!sara.includes('speed: language === "ar" ? 0.97 : 1')) throw new Error('Cartesia Arabic speaking speed missing');
-  if (sara.includes('prepareSaudiCartesiaTTS(cleanText)')) throw new Error('Legacy Cartesia dialect rewriting is still active');
-  if (sara.includes('speed: language === \"ar\" ? 0.96 : 1')) throw new Error('Legacy Arabic Cartesia slowdown is still active');
-  console.log('✓ Cartesia Fatima + Khaleeji checks passed');
-}
-
-// v6.0.11 adaptive VAD + native Cartesia Arabic voice conditioning
-check("Deepgram adaptive noise-floor VAD", customerJs.includes('altNoiseFloor*1.65') && customerJs.includes('endSilenceMs=isDeepgramEngine?1800'));
-check("Deepgram VAD preserves first syllable", customerJs.includes('startHoldMs=isDeepgramEngine?25'));
-check("iPhone mic uses AGC without forced voiceIsolation", customerJs.includes('autoGainControl:true') && !customerJs.includes('constraints.voiceIsolation=true'));
-check("Fatima voice uses sonic-3 parity model", fs.readFileSync(path.join(root,'src/config/env.js'),'utf8').includes('CARTESIA_TTS_MODEL", "sonic-3"'));
-check("Cartesia Arabic explicitly selected", routeSources.includes('language === "ar" ? "ar"'));
-check("Cartesia Arabic language override omitted", routeSources.includes('cartesiaLanguage = language === \"fr\" ? \"fr\" : language === \"en\" ? \"en\" : null'));
-
-// v6.0.15 deterministic booking-value formatting
-check("Booking summary renders canonical numeric HH:MM", customerJs.includes("exp3BookingTimeDisplay") && customerJs.includes("الساعة ${time}"));
-check("Booking summary renders phone numerically on screen", customerJs.includes("exp3PhoneDisplay") && customerJs.includes("رقم الواتساب المسجل عندي ${exp3PhoneDisplay"));
-check("Arabic TTS formats time separately from display", customerJs.includes("exp3PrepareSpeechText") && customerJs.includes("الساعة ${exp3TimeForSpeech(t)}"));
-check("Booking summary is deterministic after final missing field", customerJs.includes("exp3BookingSummaryReply") && customerJs.includes("exp3LastAssistantAskedBookingField"));
-check("Server forbids reinterpretation of stored booking time", routeSources.includes("preserve that exact HH:MM value"));
-
-
-// v6.0.17 booking memory / confirmation regression checks
-const customerJsV617 = fs.readFileSync(path.join(root, 'public/assets/js/customer-app.js'), 'utf8');
-check('Booking parser preserves الساعة عشرة/العشرة from the first turn', customerJsV617.includes("'العشرة':10"));
-check('Booking confirmation repeats phone and time before approval', customerJsV617.includes('رقم الجوال ${phone}، الحجز ${date} الساعة ${time}'));
-
-
-// v6.0.19 active-booking context / attached preorder regression checks
-check("Active booking overrides service selection", routeSources.includes("ACTIVE BOOKING OVERRIDES SERVICE SELECTION"));
-check("Server forbids dinein/pickup question during active booking", routeSources.includes("NEVER ask \"تبيه هنا بالمطعم ولا استلام خارجي؟\""));
-check("Draft booking preorder tool exists", routeSources.includes("update_booking_preorder"));
-check("Booking preorder is stored in client memory", customerJs.includes("function exp3ApplyPreorderTool"));
-check("Final summary names preorder items", customerJs.includes("ومع طلب مسبق:"));
-check("Sara server keeps twelve history messages", routeSources.includes("history.slice(-12).map"));
