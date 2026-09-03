@@ -23,7 +23,7 @@ let saves = 0;
 const context = {
   waiterLanguage: "ar",
   conversationHistory: [{ role: "user", content: "أضف كابتشينو" }],
-  saraBookingState: { phone: "+966538626899", orderItems: [], preorderChoice: "no" },
+  saraBookingState: { phone: "+966500000001", orderItems: [], preorderChoice: "no" },
   saraBookingActive: true,
   saraLastConfirmedBooking: { signature: "old", code: "30", at: Date.now() },
   saraConfirmedBookingOrderAwaitingApproval: false,

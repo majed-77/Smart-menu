@@ -34,7 +34,7 @@ check("Unique base item keys", new Set(BASE_MENU_ITEMS.map((item) => item.itemKe
 
 check("Customer page loads external JS", /\/assets\/js\/customer-app\.js/.test(customerHtml));
 check("Dashboard loads external JS", /\/assets\/js\/dashboard-app\.js/.test(dashboardHtml));
-check("Customer assets are version 6.0.24", customerHtml.includes("customer.css?v=6.0.24") && customerHtml.includes("customer-app.js?v=6.0.24"));
+check("Customer assets are version 6.0.25", customerHtml.includes("customer.css?v=6.0.25") && customerHtml.includes("customer-app.js?v=6.0.25"));
 check("No AI engine picker remains", !customerHtml.includes("data-sara-engine") && !customerHtml.includes("enginePicker"));
 check("Only retained Sara client route is used", customerJs.includes("'/api/sara-chat'") && customerJs.includes("'/api/cartesia-tts'"));
 check("Deleted client engines are absent", !/(saraEngine|startRealtime|startAgent2|startAltSara|ElevenLabs|DeepSeek|Claude|Gemini|Kimi|Fish Audio)/i.test(customerJs));
@@ -60,6 +60,9 @@ check("Booking asks about preorder before approval", customerJs.includes("قبل
 check("Confirmed booking remains available for order updates", customerJs.includes("confirmationCode:saraLastConfirmedBooking.code") && saraRoutes.includes("A confirmed reservation remains active"));
 check("Confirmed booking order update reaches the server", customerJs.includes("/order`,{method:'PATCH'") && orderSource.includes("async function updateReservationOrder") && routeSources.includes('router.patch("/reservations/:code/order"'));
 check("Booking success is not mistaken for pending approval", customerJs.includes("حجزك معتمد مسبق|رقم حجزك\\s*\\d+"));
+check("Existing reservations require code and phone verification", customerJs.includes("saraHandleExistingReservationLookup") && orderSource.includes("verifyReservationForGuest") && routeSources.includes('router.post("/reservations/:code/verify"'));
+check("Existing reservations can be rescheduled or cancelled", customerJs.includes("handleSaraReservationManagementTool") && saraRoutes.includes("manage_existing_reservation") && orderSource.includes("manageReservationForGuest") && routeSources.includes('router.patch("/reservations/:code/manage"'));
+check("Verified reservation lookup shows the prior order", customerJs.includes("saraManagedReservationOrderSummary") && customerJs.includes("وطلبك السابق على الحجز") && saraRoutes.includes("what they previously ordered"));
 check("Booking memory keeps twelve turns", saraRoutes.includes("history.slice(-12).map"));
 check("Booking parser preserves Arabic party size", customerJs.includes("'ثلاث':3"));
 check("Booking confirmation repeats phone and time", customerJs.includes("رقم الجوال ${phone}، الحجز ${date} الساعة ${time}"));

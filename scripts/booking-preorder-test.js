@@ -24,7 +24,7 @@ const context = {
   saraBookingState: { preorderChoice: "", orderItems: [] },
   saraBookingArgsFromState: null
 };
-context.saraBookingArgsFromState = () => ({ name: "ماجد", phone: "+966538626899", party_size: 2, date: "2026-09-04", time: "20:00", order_items: context.saraBookingState.orderItems });
+context.saraBookingArgsFromState = () => ({ name: "عميل تجريبي", phone: "+966500000001", party_size: 2, date: "2026-09-04", time: "20:00", order_items: context.saraBookingState.orderItems });
 vm.createContext(context);
 vm.runInContext([
   "saraAwaitingPreorderChoice",

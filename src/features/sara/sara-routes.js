@@ -520,6 +520,27 @@ const updateBookingPreorderTool = {
   }
 };
 
+const manageExistingReservationTool = {
+  type: "function",
+  function: {
+    name: "manage_existing_reservation",
+    description: "Stage a reschedule or cancellation for a verified existing reservation. Call when the guest clearly requests the change and provide the new complete date/time for reschedule. The website asks for final approval before saving.",
+    strict: true,
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        action: { type: "string", enum: ["reschedule", "cancel"] },
+        confirmation_code: { type: "string" },
+        phone: { type: "string" },
+        date: { type: "string", description: "YYYY-MM-DD; current reservation date for cancellation" },
+        time: { type: "string", description: "HH:mm; current reservation time for cancellation" }
+      },
+      required: ["action", "confirmation_code", "phone", "date", "time"]
+    }
+  }
+};
+
 const confirmTableOrderTool = {
   type: "function",
   function: {
@@ -561,7 +582,7 @@ function brainToolResult(call) {
 }
 
 async function callOpenAICompatibleBrain({ endpoint, apiKey, model, messages, extraBody = {}, strictTools = true }) {
-  const baseBody = { model, messages, tools:[confirmBookingOrderTool,confirmTableOrderTool,updateBookingPreorderTool].map(t=>strictTools?t:{...t,function:{...t.function,strict:undefined}}), tool_choice:"auto" };
+  const baseBody = { model, messages, tools:[confirmBookingOrderTool,confirmTableOrderTool,updateBookingPreorderTool,manageExistingReservationTool].map(t=>strictTools?t:{...t,function:{...t.function,strict:undefined}}), tool_choice:"auto" };
   if (!Object.prototype.hasOwnProperty.call(extraBody, "max_completion_tokens")) baseBody.max_tokens = 160;
   if (!/api\.openai\.com/.test(endpoint)) baseBody.temperature = 0.25;
   const response = await fetch(endpoint, {
@@ -572,14 +593,14 @@ async function callOpenAICompatibleBrain({ endpoint, apiKey, model, messages, ex
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data?.error?.message || data?.message || `AI HTTP ${response.status}`);
   const message = data?.choices?.[0]?.message || {};
-  const call = Array.isArray(message.tool_calls) ? message.tool_calls.find(x => ["confirm_booking_order","confirm_table_order","update_booking_preorder"].includes(x?.function?.name)) : null;
+  const call = Array.isArray(message.tool_calls) ? message.tool_calls.find(x => ["confirm_booking_order","confirm_table_order","update_booking_preorder","manage_existing_reservation"].includes(x?.function?.name)) : null;
   if (call) return { toolCall:brainToolResult({ id:call.id, name:call.function?.name, arguments:call.function?.arguments }) };
   return { answer:String(message.content || "").trim() };
 }
 
 router.post("/sara-chat", async (req, res) => {
   try {
-    const { question = "", history = [], menu = [], language = "ar", greeting = false, bookingState = null, orderState = null, tableNumber = "" } = req.body || {};
+    const { question = "", history = [], menu = [], language = "ar", greeting = false, bookingState = null, managedReservation = null, orderState = null, tableNumber = "" } = req.body || {};
     if (!env.openaiApiKey) {
       return res.status(401).json({ ok:false, code:"OPENAI_NOT_CONFIGURED", message:"مفتاح OpenAI غير موجود في Render." });
     }
@@ -614,6 +635,14 @@ BOOKING MEMORY / AI BEHAVIOR RULES:
 - Before the first booking approval, preorderChoice is mandatory. If it is empty, ask whether the guest wants a menu pre-order. If it is yes with no orderItems, ask what they want. Only summarize for approval when it is no or when yes has concrete items.
 - If confirmed is true, the reservation already exists under confirmationCode. Never call confirm_booking_order again. The guest may add or change a pre-order on that same reservation through update_booking_preorder after approving the revised complete order.
 - When the guest confirms, fill tool arguments from this state.` : "")
+      + (managedReservation && typeof managedReservation === "object" ? `\n\nVERIFIED EXISTING RESERVATION MANAGEMENT (authoritative):\n${JSON.stringify(managedReservation)}
+- The guest has passed phone verification for this existing reservation. Keep using this exact code and never create a new reservation.
+- They may add/change a food pre-order, reschedule, or cancel.
+- If the guest asks what they previously ordered, answer from bookingState.orderItems exactly. If the list is empty, say there is no pre-order on the reservation. Never guess from conversation text.
+- For food changes, use update_booking_preorder with the COMPLETE revised list; the website stages and confirms it.
+- For a requested new date/time or cancellation, call manage_existing_reservation with the exact verified code, phone from bookingState, and complete date/time. The website stages it and asks for final approval.
+- Never claim a reschedule, cancellation, or order update succeeded unless the website tool returns success.
+- If status is cancelled or completed, do not offer further changes.` : "")
       + (orderState && typeof orderState === "object" ? `\n\nKNOWN ORDER STATE FROM THE WEBSITE (authoritative):\n${JSON.stringify(orderState)}
 ORDER MEMORY / AI BEHAVIOR RULES:
 - Preserve the known order mode, customer name, phone, notes, and every order item across turns.

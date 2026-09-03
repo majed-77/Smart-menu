@@ -7,8 +7,10 @@ const {
   createReservation,
   createTableOrder,
   lookupReservation,
+  manageReservationForGuest,
   processDueReservationReminders,
-  updateReservationOrder
+  updateReservationOrder,
+  verifyReservationForGuest
 } = require("./orders-service");
 
 function sendServiceError(response, error, fallbackCode, fallbackMessage) {
@@ -89,6 +91,24 @@ function createOrdersRouter() {
       response.json({ ok: true, reservation: await lookupReservation(request.params.code) });
     } catch (error) {
       sendServiceError(response, error, "RESERVATION_LOOKUP_ERROR", "تعذر البحث عن الحجز.");
+    }
+  });
+
+  router.post("/reservations/:code/verify", async (request, response) => {
+    try {
+      const reservation = await verifyReservationForGuest(request.params.code, request.body?.phone);
+      response.json({ ok: true, reservation });
+    } catch (error) {
+      sendServiceError(response, error, "RESERVATION_VERIFICATION_ERROR", "تعذر التحقق من الحجز.");
+    }
+  });
+
+  router.patch("/reservations/:code/manage", async (request, response) => {
+    try {
+      const result = await manageReservationForGuest(request.params.code, request.body || {});
+      response.json({ ok: true, ...result });
+    } catch (error) {
+      sendServiceError(response, error, "RESERVATION_MANAGEMENT_ERROR", "تعذر تعديل الحجز.");
     }
   });
 

@@ -161,6 +161,7 @@ function restaurantOrderCopy(reservation, { update = false } = {}) {
     `التاريخ: ${local.toFormat("dd/LL/yyyy")}`,
     `الوقت: ${local.toFormat("HH:mm")}`,
     `عدد الأشخاص: ${reservation.party_size}`,
+    ...(update ? [`الحالة: ${reservation.status === "cancelled" ? "ملغي" : "محدّث"}`] : []),
     "",
     "الطلب:",
     lines,
@@ -477,6 +478,61 @@ async function updateReservationOrder(codeValue, body = {}) {
   return { reservation: reservationToPublic(row), restaurantWhatsApp };
 }
 
+async function verifyReservationForGuest(codeValue, phoneValue) {
+  if (!pool) throw Object.assign(new Error("نظام الحجز يحتاج DATABASE_URL في Render."), { status: 503, code: "DATABASE_NOT_CONFIGURED" });
+  if (!(await ensureSchemaReady())) throw Object.assign(new Error("قاعدة الحجوزات غير جاهزة الآن."), { status: 503, code: "DATABASE_NOT_READY" });
+  const code = cleanText(codeValue, 40).toUpperCase();
+  const phone = normalizeWhatsAppPhone(phoneValue);
+  if (!code || !phone) throw Object.assign(new Error("أدخل رقم الحجز ورقم الجوال المستخدم في الحجز."), { status: 400, code: "INVALID_RESERVATION_VERIFICATION" });
+  const result = await pool.query(
+    `SELECT * FROM reservations WHERE confirmation_code=$1 AND phone=$2 LIMIT 1`,
+    [code, phone]
+  );
+  if (!result.rowCount) throw Object.assign(new Error("ما لقيت حجزًا مطابقًا لهذا الرقم والجوال."), { status: 404, code: "RESERVATION_NOT_FOUND" });
+  return reservationToPublic(result.rows[0]);
+}
+
+async function manageReservationForGuest(codeValue, body = {}) {
+  const current = await verifyReservationForGuest(codeValue, body.phone);
+  const action = cleanText(body.action, 30).toLowerCase();
+  if (!["reschedule", "cancel"].includes(action)) throw Object.assign(new Error("نوع تعديل الحجز غير صحيح."), { status: 400, code: "INVALID_RESERVATION_ACTION" });
+  if (["completed", "cancelled"].includes(current.status)) throw Object.assign(new Error("لا يمكن تعديل حجز مكتمل أو ملغي."), { status: 409, code: "RESERVATION_NOT_EDITABLE" });
+
+  let updated;
+  if (action === "cancel") {
+    updated = await pool.query(
+      `UPDATE reservations SET status='cancelled', updated_at=NOW() WHERE confirmation_code=$1 AND phone=$2 AND status IN ('new','confirmed','arrived') RETURNING *`,
+      [cleanText(codeValue, 40).toUpperCase(), normalizeWhatsAppPhone(body.phone)]
+    );
+  } else {
+    const date = cleanText(body.date || current.date, 20);
+    const time = cleanText(body.time || current.time, 20);
+    const reservationAt = DateTime.fromISO(`${date}T${time}`, { zone: env.restaurantTimezone });
+    if (!reservationAt.isValid) throw Object.assign(new Error("وقت الحجز الجديد غير واضح."), { status: 400, code: "INVALID_DATETIME" });
+    const now = DateTime.now().setZone(env.restaurantTimezone);
+    if (reservationAt <= now.plus({ minutes: 5 })) throw Object.assign(new Error("اختر موعدًا بعد الوقت الحالي بأكثر من 5 دقائق."), { status: 400, code: "PAST_DATETIME" });
+    if (reservationAt > now.plus({ years: 1 })) throw Object.assign(new Error("يمكن تعديل الحجز إلى موعد خلال سنة فقط."), { status: 400, code: "TOO_FAR" });
+    updated = await pool.query(
+      `UPDATE reservations SET reservation_at=$1, updated_at=NOW() WHERE confirmation_code=$2 AND phone=$3 AND status IN ('new','confirmed','arrived') RETURNING *`,
+      [reservationAt.toUTC().toISO(), cleanText(codeValue, 40).toUpperCase(), normalizeWhatsAppPhone(body.phone)]
+    );
+  }
+
+  if (!updated.rowCount) throw Object.assign(new Error("الحجز تغيّرت حالته ولم يعد قابلًا للتعديل."), { status: 409, code: "RESERVATION_NOT_EDITABLE" });
+  const row = updated.rows[0];
+  let restaurantWhatsApp = { configured: Boolean(env.restaurantWhatsAppTo), sent: false };
+  if (env.restaurantWhatsAppTo) {
+    try {
+      const sid = await sendRestaurantWhatsApp(row, { update: true });
+      restaurantWhatsApp = { configured: true, sent: true, sid };
+    } catch (error) {
+      restaurantWhatsApp = { configured: true, sent: false, error: cleanText(error?.message || error, 300) };
+      console.error(`Restaurant WhatsApp failed for reservation management ${row.confirmation_code}:`, error?.message || error);
+    }
+  }
+  return { reservation: reservationToPublic(row), restaurantWhatsApp };
+}
+
 async function createTableOrder(body = {}) {
   if (!pool || !(await ensureSchemaReady())) {
     throw Object.assign(new Error("قاعدة الطلبات غير جاهزة."), { status: 503 });
@@ -653,9 +709,11 @@ module.exports = {
   lookupReservation,
   normalizeWhatsAppPhone,
   processDueReservationReminders,
+  manageReservationForGuest,
   updateOrderNotes,
   updateOrderStatus,
   updateReservationOrder,
   updateReservationNotes,
-  updateReservationStatus
+  updateReservationStatus,
+  verifyReservationForGuest
 };
