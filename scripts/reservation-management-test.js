@@ -55,7 +55,7 @@ const assert = (condition, message) => {
 };
 
 (async () => {
-  assert(/رقم الحجز/.test(await context.managementTest.lookup("عندي حجز")), "Sara asks for a missing reservation number");
+  assert(/رقم الحجز/.test(await context.managementTest.lookup("أبي أعدل الحجز السابق")), "A request to edit the previous reservation immediately asks for its number");
   assert(/رقم الجوال/.test(await context.managementTest.lookup("ثلاثين")), "Sara understands a spoken Arabic reservation number and asks for the phone");
   const found = await context.managementTest.lookup("0500000001");
   assert(verifyCalls === 1 && context.saraManagedReservation.verified, "Code and phone verify the existing reservation");

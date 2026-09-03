@@ -22,6 +22,7 @@ const context = {
   waiterLanguage: "ar",
   conversationHistory: [],
   saraBookingState: { preorderChoice: "", orderItems: [] },
+  saraAwaitingOrderApproval: () => false,
   saraBookingArgsFromState: null
 };
 context.saraBookingArgsFromState = () => ({ name: "عميل تجريبي", phone: "+966500000001", party_size: 2, date: "2026-09-04", time: "20:00", order_items: context.saraBookingState.orderItems });
@@ -29,8 +30,9 @@ vm.createContext(context);
 vm.runInContext([
   "saraAwaitingPreorderChoice",
   "saraAwaitingBookingApproval",
+  "normalizeSaraBookingApprovalTranscript",
   "saraCanConfirmBookingNow"
-].map(functionSource).join("\n") + "\nglobalThis.bookingTest={awaitingChoice:saraAwaitingPreorderChoice,awaitingApproval:saraAwaitingBookingApproval,canConfirm:saraCanConfirmBookingNow};", context);
+].map(functionSource).join("\n") + "\nglobalThis.bookingTest={awaitingChoice:saraAwaitingPreorderChoice,awaitingApproval:saraAwaitingBookingApproval,normalizeApproval:normalizeSaraBookingApprovalTranscript,canConfirm:saraCanConfirmBookingNow};", context);
 
 const assert = (condition, message) => {
   if (!condition) throw new Error(message);
@@ -52,5 +54,8 @@ assert(test.canConfirm(), "A concrete pre-order unlocks final booking confirmati
 
 context.conversationHistory = [{ role: "assistant", content: "تم، اعتمدت الحجز بنجاح. رقم حجزك 30." }];
 assert(!test.awaitingApproval(), "A booking success message cannot trigger duplicate approval");
+context.conversationHistory = [{ role: "assistant", content: "البيانات صحيحة وأعتمد الحجز؟" }];
+assert(test.awaitingApproval(), "The final booking summary waits for approval");
+assert(test.normalizeApproval("نعم") === "نعم", "Arabic نعم stays visible as نعم while confirming internally");
 
 console.log("\n✓ Booking pre-order behavior test passed.");

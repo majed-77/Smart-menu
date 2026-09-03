@@ -612,7 +612,7 @@ function saraReservationCodeFromText(raw){
   const spoken=(text.match(/(?:حجزي|الحجز|حجز)\s*(?:رقم\s*)?([\u0600-\u06FF\s]+)$/)||[])[1]||(saraManagedReservation.awaitingCode?text:'');
   return saraSpokenReservationNumber(spoken);
 }
-function saraExistingReservationIntent(raw){const t=String(raw||'').replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا');return /(عندي حجز|حجزي|الحجز رقم|ابغى اعدل حجز|ابي اعدل حجز|الغي حجزي|الغ حجز)/.test(t);}
+function saraExistingReservationIntent(raw){const t=String(raw||'').replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا');return /(عندي حجز|حجزي|الحجز رقم|الحجز السابق|حجزي السابق|ابغى اعدل(?: على)? (?:ال)?حجز|ابي اعدل(?: على)? (?:ال)?حجز|ودي اعدل(?: على)? (?:ال)?حجز|تعديل (?:ال)?حجز|عدل (?:ال)?حجز|الغي حجزي|الغ (?:ال)?حجز)/.test(t);}
 function saraApplyVerifiedReservation(reservation){
   const items=Array.isArray(reservation?.orderItems)?reservation.orderItems.map(x=>({item_name:String(x?.name||'').trim(),quantity:Math.max(1,Number(x?.quantity)||1),special_request:String(x?.specialRequest||'').trim()})).filter(x=>x.item_name):[];
   saraBookingState={name:String(reservation?.name||''),phone:String(reservation?.phone||''),partySize:Number(reservation?.partySize)||null,date:String(reservation?.date||''),time:String(reservation?.time||''),notes:String(reservation?.notes||''),orderItems:items,preorderChoice:items.length?'yes':'no'};
@@ -1073,8 +1073,13 @@ function normalizeSaraBookingApprovalTranscript(text){
   // such as "no" from ever being treated as approval.
   if(/^(لا|مو|كلا|no|nope|nah|non)$/.test(t)) return raw;
 
+  // Keep the guest's real Arabic words visible in the chat. "نعم" is still
+  // understood as approval by isExplicitBookingConfirmation, but it must not
+  // be rewritten on screen as "اعتمد".
+  if(/[\u0600-\u06FF]/.test(raw)) return raw;
+
   // Known short approval variants / common STT guesses.
-  if(/^(evet|temet|chatgpt|yes|yeah|yep|yup|ok|okay|si|eh|nem|nem termeszet|oui|ta|da|ja|sim|mhm|uh huh|تمام|نعم|ايه|إيه|اي|اعتمد|اعتمدي)$/.test(t)) return 'اعتمد';
+  if(/^(evet|temet|chatgpt|yes|yeah|yep|yup|ok|okay|si|eh|nem|nem termeszet|oui|ta|da|ja|sim|mhm|uh huh)$/.test(t)) return 'اعتمد';
 
   const approvalHits=(t.match(/اعتمد(?:ي)?|اثبت|أثبت|اكد|أكد|نعم|ايه|إيه|تمام|موافق|evet|yes|si|oui|ta|da|ja|sim/g)||[]).length;
   if(approvalHits>=2 && t.length<140) return 'اعتمد';
