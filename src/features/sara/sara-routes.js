@@ -393,7 +393,7 @@ IDENTITY / ROLE — ABSOLUTE RULES:
 - You are always Sara, the waitress. The guest is never Sara.
 - Never rewrite the guest's request as if you were the guest.
 - Never answer with planning/meta text such as "I should ask", "I need to ask", "I should respond", or hidden reasoning.
-- Reply only with the exact words Sara should say to the guest, or call the booking tool when appropriate.
+- For a normal reply, put only the exact words Sara should say to the guest inside the required JSON answer field and fill the structured intent/booking_update fields. When an action is ready, call the appropriate tool instead.
 - In Arabic mode, your visible reply must be Arabic except for unavoidable menu/product names. Do not switch to English, Portuguese, Turkish, French, or any other language.
 - If the guest says they want a booking and provides some details, remember those details. Keep behaving like an intelligent waitress: answer any question they ask, handle menu questions or changes naturally, and continue the booking only when it makes conversational sense. Do not turn the conversation into a rigid questionnaire.
 
@@ -575,6 +575,53 @@ const confirmTableOrderTool = {
   }
 };
 
+const saraReplyFormat = {
+  type: "json_schema",
+  json_schema: {
+    name: "sara_conversation_reply",
+    strict: true,
+    schema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        answer: { type: "string", description: "The exact short natural reply Sara should say to the guest." },
+        intent: {
+          type: "string",
+          enum: ["new_booking", "existing_reservation", "order", "menu_question", "other"]
+        },
+        booking_update: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            active: { type: "boolean", description: "True when the guest is creating or continuing a new booking." },
+            has_name: { type: "boolean" },
+            name: { type: "string" },
+            has_phone: { type: "boolean" },
+            phone: { type: "string" },
+            has_party_size: { type: "boolean" },
+            party_size: { type: "integer", minimum: 0, maximum: 30 },
+            has_date: { type: "boolean" },
+            date: { type: "string", description: "YYYY-MM-DD, or empty when has_date is false." },
+            has_time: { type: "boolean" },
+            time: { type: "string", description: "HH:mm in restaurant local time, or empty when has_time is false." },
+            has_notes: { type: "boolean" },
+            notes: { type: "string" },
+            has_preorder_choice: { type: "boolean" },
+            preorder_choice: { type: "string", enum: ["unknown", "yes", "no"] }
+          },
+          required: [
+            "active", "has_name", "name", "has_phone", "phone",
+            "has_party_size", "party_size", "has_date", "date",
+            "has_time", "time", "has_notes", "notes",
+            "has_preorder_choice", "preorder_choice"
+          ]
+        }
+      },
+      required: ["answer", "intent", "booking_update"]
+    }
+  }
+};
+
 
 function brainToolResult(call) {
   if (!call) return null;
@@ -595,7 +642,14 @@ async function callOpenAICompatibleBrain({ endpoint, apiKey, model, messages, ex
   const message = data?.choices?.[0]?.message || {};
   const call = Array.isArray(message.tool_calls) ? message.tool_calls.find(x => ["confirm_booking_order","confirm_table_order","update_booking_preorder","manage_existing_reservation"].includes(x?.function?.name)) : null;
   if (call) return { toolCall:brainToolResult({ id:call.id, name:call.function?.name, arguments:call.function?.arguments }) };
-  return { answer:String(message.content || "").trim() };
+  const content = String(message.content || "").trim();
+  try {
+    const parsed = JSON.parse(content);
+    if (parsed && typeof parsed === "object" && typeof parsed.answer === "string") {
+      return { answer:parsed.answer.trim(), intent:String(parsed.intent || "other"), bookingUpdate:parsed.booking_update || null };
+    }
+  } catch (_) {}
+  return { answer:content };
 }
 
 router.post("/sara-chat", async (req, res) => {
@@ -624,6 +678,11 @@ router.post("/sara-chat", async (req, res) => {
       + (bookingState && typeof bookingState === "object" ? `\n\nKNOWN BOOKING STATE FROM THE WEBSITE (authoritative):\n${JSON.stringify(bookingState)}
 BOOKING MEMORY / AI BEHAVIOR RULES:
 - This state is authoritative memory, not a mandatory conversation flow. Remember known facts and answer the guest naturally.
+- AI-FIRST SLOT COLLECTION: understand the guest's whole latest message and extract every clearly supplied booking fact regardless of order. The guest may give name, phone, party size, date, time, notes, and preorder choice together in one rushed sentence.
+- Minor speech-to-text grammar errors must not block an otherwise obvious meaning. For example "لا ما بضيف طلب مسبق", "لا ما يضيف طلب مسبق", and "بدون طلب" all clearly mean preorder_choice=no. A nearby phrase such as "اسم الضيف التجريبي" or "الحجز باسم الضيف التجريبي" clearly supplies that name even if another connecting word was mistranscribed.
+- In booking_update, set a has_* flag true only for a value clearly stated or corrected in the latest guest turn. Put the normalized value beside it. Preserve old website state by leaving has_* false when that field was not mentioned.
+- If the guest corrects one value, return only that field with has_*=true; do not erase other remembered fields.
+- Convert relative dates using today's restaurant date above, and normalize clearly stated times to 24-hour HH:mm. Keep phone digits in their spoken order.
 - Understand intent from the whole sentence before interpreting any number. In a new-booking sentence, a number after الساعة is a time and a number before شخص/أشخاص is party size; neither is an existing reservation code.
 - Treat a number as an existing reservation code only when the guest clearly refers to an already-created reservation (for example عندي حجز, حجزي السابق, or رقم الحجز). A new request such as "أبي أحجز اليوم الساعة عشرة" is never reservation lookup.
 - If this state contains booking facts or the conversation started a reservation, keep it active until confirmed or cancelled.
@@ -669,14 +728,14 @@ ORDER MEMORY / AI BEHAVIOR RULES:
       apiKey:env.openaiApiKey,
       model:env.openaiLlmModel,
       messages,
-      extraBody:{max_completion_tokens:320},
+      extraBody:{max_completion_tokens:420,response_format:saraReplyFormat},
       strictTools:true
     });
 
     if (result?.toolCall) return res.json({ ok:true, toolCall:result.toolCall });
     const answer = String(result?.answer || "").trim();
     if (!answer) return res.status(502).json({ ok:false, code:"EMPTY_AI_RESPONSE", message:"لم تصل إجابة من سارة." });
-    return res.json({ ok:true, answer, provider:"openai" });
+    return res.json({ ok:true, answer, intent:result.intent || "other", bookingUpdate:result.bookingUpdate || null, provider:"openai" });
   } catch (error) {
     console.error("Sara brain error:", error);
     return res.status(502).json({ ok:false, code:"SARA_BRAIN_ERROR", message:error?.message || "تعذر تشغيل عقل سارة." });

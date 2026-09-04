@@ -769,6 +769,19 @@ function saraUpdateBookingState(text,role='user'){
     }
   }
 }
+function saraApplyAiBookingUpdate(update,intent='other'){
+  if(!update||typeof update!=='object'||saraTableNumber)return;
+  const aiIntent=String(intent||'other');
+  const setsAny=['has_name','has_phone','has_party_size','has_date','has_time','has_notes','has_preorder_choice'].some(k=>update[k]===true);
+  if(update.active===true||aiIntent==='new_booking'||setsAny)saraBookingActive=true;
+  if(update.has_name===true){const v=String(update.name||'').trim();if(v&&v.length<=80)saraBookingState.name=v;}
+  if(update.has_phone===true){const v=normalizeArabicDigitsSara(String(update.phone||'')).replace(/[^+\d]/g,'');if(/^\+?\d{8,15}$/.test(v))saraBookingState.phone=v;}
+  if(update.has_party_size===true){const v=Number(update.party_size);if(Number.isInteger(v)&&v>=1&&v<=30)saraBookingState.partySize=v;}
+  if(update.has_date===true){const v=String(update.date||'').trim();if(/^20\d{2}-\d{2}-\d{2}$/.test(v))saraBookingState.date=v;}
+  if(update.has_time===true){const v=String(update.time||'').trim();if(/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(v))saraBookingState.time=v;}
+  if(update.has_notes===true)saraBookingState.notes=String(update.notes||'').trim().slice(0,500);
+  if(update.has_preorder_choice===true&&['yes','no'].includes(String(update.preorder_choice||'')))saraBookingState.preorderChoice=String(update.preorder_choice);
+}
 function saraBookingArgsFromState(){return {name:saraBookingState.name||'',phone:saraBookingState.phone||'',party_size:Number(saraBookingState.partySize)||0,date:saraBookingState.date||'',time:saraBookingState.time||'',notes:saraBookingState.notes||'',order_items:Array.isArray(saraBookingState.orderItems)?saraBookingState.orderItems:[]};}
 async function saraApplyPreorderTool(args){
   if(typeof args==='string'){try{args=JSON.parse(args)}catch(e){args={}}}
@@ -1323,6 +1336,7 @@ async function processSaraVoice(blob,mime){
       answer=saraDeterministicOrderReply(q);
     }else{
       const data=await saraAskWithBookingFallback(q);
+      if(!saraTableNumber)saraApplyAiBookingUpdate(data.bookingUpdate,data.intent);
       if(data.toolCall?.name==='confirm_table_order') answer=await handleSaraTableOrderTool(data.toolCall); else if(data.toolCall?.name==='confirm_booking_order') answer=await handleSaraBookingTool(data.toolCall); else if(data.toolCall?.name==='update_booking_preorder') answer=await saraApplyPreorderTool(data.toolCall.arguments||data.toolCall.args||{}); else if(data.toolCall?.name==='manage_existing_reservation') answer=await handleSaraReservationManagementTool(data.toolCall); else answer=String(data.answer||'').trim();
       if(!saraTableNumber)answer=saraApplyBookingMemoryGuard(q,answer);
       answer=saraApplyOrderMemoryGuard(answer);
@@ -1363,6 +1377,7 @@ async function submitSaraQuestion(q){
       answer=saraDeterministicOrderReply(q);
     }else{
       const data=await saraAskWithBookingFallback(q);
+      if(!saraTableNumber)saraApplyAiBookingUpdate(data.bookingUpdate,data.intent);
       if(data.toolCall?.name==='confirm_table_order')answer=await handleSaraTableOrderTool(data.toolCall);else if(data.toolCall?.name==='confirm_booking_order')answer=await handleSaraBookingTool(data.toolCall);else if(data.toolCall?.name==='update_booking_preorder')answer=await saraApplyPreorderTool(data.toolCall.arguments||data.toolCall.args||{});else if(data.toolCall?.name==='manage_existing_reservation')answer=await handleSaraReservationManagementTool(data.toolCall);else answer=String(data.answer||'').trim();
       if(!saraTableNumber)answer=saraApplyBookingMemoryGuard(q,answer);
       answer=saraApplyOrderMemoryGuard(answer);
