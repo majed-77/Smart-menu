@@ -671,6 +671,17 @@ function saraAwaitingPreorderChoice(){
   const t=String(last?.content||'').replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا').toLowerCase();
   return /(قبل.*اعتمد.*الحجز|قبل.*اكد.*الحجز).*(تضيف|تطلب|طلب مسبق)|(تضيف|تطلب).*(على الحجز|مع الحجز)|(طلب مسبق).*(ولا بدون|او بدون)/.test(t);
 }
+function saraExpectedSpeechField(){
+  const last=[...conversationHistory].reverse().find(m=>m?.role==='assistant');
+  const t=String(last?.content||'').replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا').toLowerCase();
+  if(/(وش الاسم|باسم مين|اسم الحجز|الاسم اللي اسجل)/.test(t))return 'name';
+  if(/(رقم الجوال|رقم الواتساب|وش رقم|عطيني رقم)/.test(t))return 'phone';
+  if(/(كم|لكم).{0,12}(شخص|اشخاص)/.test(t))return 'partySize';
+  if(/(اي يوم|أي يوم|تاريخ الحجز)/.test(t))return 'date';
+  if(/(الساعة كم|الساعه كم|وش الوقت)/.test(t))return 'time';
+  if(saraAwaitingPreorderChoice())return 'preorder';
+  return 'conversation';
+}
 function saraBookingContextActive(){
   if(saraBookingActive)return true;
   const a=saraBookingArgsFromState();
@@ -1026,7 +1037,7 @@ function runSaraVAD(){
       const capped=Math.min(rms,saraNoiseFloor*2.2+0.006);
       saraNoiseFloor=saraNoiseFloor*0.985+capped*0.015;
     }
-    const adaptiveStart=Math.min(0.024,Math.max(0.007,saraNoiseFloor*1.38+0.0015));
+    const adaptiveStart=Math.min(0.022,Math.max(0.006,saraNoiseFloor*1.28+0.0012));
     // The release threshold must sit clearly above the learned idle floor.
     // The old 1.02 multiplier was too close to iPhone's post-speaker noise and
     // could keep a recording open forever.
@@ -1037,7 +1048,9 @@ function runSaraVAD(){
     // Give Saudi Arabic endings and natural pauses more room on iPhone before
     // submitting the clip to transcription.
     const endSilenceMs=1800;
-    const startHoldMs=70;
+    // Start sooner so iPhone MediaRecorder does not lose short opening sounds.
+    // End-of-speech remains unchanged at 1800ms per product requirement.
+    const startHoldMs=25;
     const canStart=!saraBusy || saraSpeaking;
 
     if(canStart && !saraCapturing){
@@ -1306,6 +1319,10 @@ async function processSaraVoice(blob,mime){
     status.textContent=TEXT[waiterLanguage].transcribing;
     const ext=mime.includes('mp4')?'m4a':mime.includes('ogg')?'ogg':'webm';
     const form=new FormData(); form.append('audio',blob,'voice.'+ext); form.append('language',waiterLanguage);
+    if(waiterLanguage==='ar'){
+      const lastAssistant=[...conversationHistory].reverse().find(m=>m?.role==='assistant');
+      form.append('context',JSON.stringify({bookingActive:saraBookingContextActive(),expected:saraExpectedSpeechField(),previousQuestion:String(lastAssistant?.content||'').slice(0,220)}));
+    }
     // Arabic accuracy fix: keep Cartesia for Sara's voice, but use OpenAI's
     // gpt-4o-transcribe for Saudi Arabic. Deepgram remains available for FR/EN.
     // This separation prevents the TTS engine choice from lowering STT accuracy.

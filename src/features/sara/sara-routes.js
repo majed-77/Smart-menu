@@ -78,6 +78,28 @@ function looksLikeArabicSttHallucination(text) {
   return false;
 }
 
+function arabicSttQualityPenalty(text) {
+  const normalized = String(text || "").replace(/[ًٌٍَُِّْـ]/g, "").replace(/[إأآ]/g, "ا");
+  let penalty = 0;
+  if (looksLikeArabicSttHallucination(normalized)) penalty += 20;
+  if (/(?:^|\s)شخاص(?:\s|$)|ما\s+يضيف\s+طلب|ييب\s+اسم/.test(normalized)) penalty += 5;
+  if (/[A-Za-z]{3,}/.test(normalized)) penalty += 2;
+  return penalty;
+}
+
+function safeSaraSttContext(raw) {
+  try {
+    const parsed = JSON.parse(String(raw || "{}"));
+    const previousQuestion = String(parsed?.previousQuestion || "").replace(/[\r\n]+/g, " ").slice(0, 220);
+    const expected = ["name", "phone", "partySize", "date", "time", "preorder"].includes(parsed?.expected)
+      ? parsed.expected
+      : "conversation";
+    return { previousQuestion, expected, bookingActive:Boolean(parsed?.bookingActive) };
+  } catch (_) {
+    return { previousQuestion:"", expected:"conversation", bookingActive:false };
+  }
+}
+
 router.post("/transcribe", upload.single("audio"), async (req, res) => {
   try {
     const transcribeMode = String(req.body?.mode || "");
@@ -109,6 +131,7 @@ router.post("/transcribe", upload.single("audio"), async (req, res) => {
 
     const language = req.body.language || "ar";
     const mime = req.file.mimetype || "audio/webm";
+    const saraContext = safeSaraSttContext(req.body?.context);
 
     // The retained Sara engine uses Deepgram STT for French/English. Arabic is pinned to
     // Saudi Arabic (ar-SA) so the speech recognizer is evaluated on the dialect
@@ -198,11 +221,14 @@ router.post("/transcribe", upload.single("audio"), async (req, res) => {
     // confirmations ("إيه", "نعم", "اعتمد"). Do not seed vocabulary prompts,
     // because prompts previously caused hallucinated approval phrases.
     const isSaraEngine = req.body.mode === "sara";
+    const contextualHint = saraContext.previousQuestion
+      ? `السياق السابق للمساعدة في فهم الصوت فقط، ولا تضف منه كلاماً غير مسموع: ${saraContext.previousQuestion}`
+      : "";
     const options = {
       file: audioFile,
       model: isSaraEngine ? "gpt-4o-transcribe" : "gpt-4o-mini-transcribe",
       ...(isSaraEngine && language === "ar" ? {
-        prompt: "محادثة طبيعية باللهجة السعودية داخل مطعم. اكتب الكلام المسموع بالعربية وبالحروف العربية فقط. لا تترجم إلى أي لغة أخرى، ولا تكتب العربية بحروف لاتينية. اترك أسماء المنتجات الأجنبية فقط كما نطقها العميل."
+        prompt: `محادثة طبيعية باللهجة السعودية داخل مطعم. اكتب الكلام المسموع بالعربية وبالحروف العربية فقط. لا تترجم إلى أي لغة أخرى، ولا تكتب العربية بحروف لاتينية. اترك أسماء المنتجات الأجنبية فقط كما نطقها العميل. ${contextualHint}`.trim()
       } : {})
     };
 
@@ -220,19 +246,20 @@ router.post("/transcribe", upload.single("audio"), async (req, res) => {
     // The retry uses temperature 0 and a generic Saudi-Arabic context hint only;
     // it intentionally contains no booking/approval vocabulary so it cannot seed
     // fake confirmation words.
-    if (isSaraEngine && language === "ar" && looksLikeArabicSttHallucination(text)) {
-      console.warn("Suspicious Arabic STT transcript; retrying once:", text);
+    const firstPenalty = arabicSttQualityPenalty(text);
+    if (isSaraEngine && language === "ar" && firstPenalty > 0) {
+      console.warn("Uncertain Arabic STT transcript; retrying once:", text);
       try {
         const retryOptions = {
           file: audioFile,
           model: "gpt-4o-transcribe",
           language: "ar",
           temperature: 0,
-          prompt: "محادثة طبيعية بالعربية السعودية داخل مطعم. اكتب فقط الكلام المسموع بوضوح، ولا تترجم ولا تضف شرحاً."
+          prompt: `محادثة طبيعية بالعربية السعودية داخل مطعم. اكتب فقط الكلام المسموع بوضوح، ولا تترجم ولا تضف شرحاً. انتبه للكلمات القصيرة مثل بضيف، أشخاص، باسم، ورقم. ${contextualHint}`.trim()
         };
         const retry = await openai.audio.transcriptions.create(retryOptions);
         const retryText = String(retry.text || "").trim();
-        if (retryText && !looksLikeArabicSttHallucination(retryText)) {
+        if (retryText && arabicSttQualityPenalty(retryText) < firstPenalty) {
           text = retryText;
         } else {
           console.warn("Arabic STT retry still uncertain:", retryText || text);
