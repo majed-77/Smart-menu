@@ -594,13 +594,19 @@ function saraSpokenReservationNumber(raw){
 }
 function saraReservationCodeFromText(raw){
   const text=normalizeArabicDigitsSara(String(raw||'')).replace(/[،,.!?؟]/g,' ').replace(/\s+/g,' ').trim();
-  let match=text.match(/(?:عندي\s+)?(?:حجزي|الحجز|حجز)\s*(?:رقم\s*)?([A-Za-z0-9-]{1,20})(?:\s|$)/i);
+  // A reservation code is only a code when the guest explicitly says "رقم"
+  // or when Sara has already asked for it. This prevents booking times such as
+  // "بحجز اليوم الساعة عشرة" from being mistaken for reservation number 10.
+  let match=text.match(/(?:حجزي|الحجز|حجز)\s+رقم\s+([A-Za-z0-9-]{1,20})(?:\s|$)/i);
   if(!match&&saraManagedReservation.awaitingCode)match=text.match(/^([A-Za-z0-9-]{1,20})$/i);
   if(match)return String(match[1]).toUpperCase();
-  const spoken=(text.match(/(?:حجزي|الحجز|حجز)\s*(?:رقم\s*)?([\u0600-\u06FF\s]+)$/)||[])[1]||(saraManagedReservation.awaitingCode?text:'');
+  const spoken=(text.match(/(?:حجزي|الحجز|حجز)\s+رقم\s+([\u0600-\u06FF\s]+)$/)||[])[1]||(saraManagedReservation.awaitingCode?text:'');
   return saraSpokenReservationNumber(spoken);
 }
 function saraExistingReservationIntent(raw){const t=String(raw||'').replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا');return /(عندي حجز|حجزي|الحجز رقم|الحجز السابق|حجزي السابق|ابغى اعدل(?: على)? (?:ال)?حجز|ابي اعدل(?: على)? (?:ال)?حجز|ودي اعدل(?: على)? (?:ال)?حجز|تعديل (?:ال)?حجز|عدل (?:ال)?حجز|الغي حجزي|الغ (?:ال)?حجز)/.test(t);}
+function saraShouldHandleExistingReservationLookup(raw){
+  return Boolean(saraManagedReservation.awaitingCode||saraManagedReservation.awaitingPhone||saraManagedReservation.verified||saraExistingReservationIntent(raw));
+}
 function saraApplyVerifiedReservation(reservation){
   const items=Array.isArray(reservation?.orderItems)?reservation.orderItems.map(x=>({item_name:String(x?.name||'').trim(),quantity:Math.max(1,Number(x?.quantity)||1),special_request:String(x?.specialRequest||'').trim()})).filter(x=>x.item_name):[];
   saraBookingState={name:String(reservation?.name||''),phone:String(reservation?.phone||''),partySize:Number(reservation?.partySize)||null,date:String(reservation?.date||''),time:String(reservation?.time||''),notes:String(reservation?.notes||''),orderItems:items,preorderChoice:items.length?'yes':'no'};
@@ -622,9 +628,11 @@ function saraManagedReservationInfoReply(question){
 }
 async function saraHandleExistingReservationLookup(question){
   const raw=String(question||'').trim();
+  const existingIntent=saraExistingReservationIntent(raw);
+  if(!existingIntent&&!saraManagedReservation.awaitingCode&&!saraManagedReservation.awaitingPhone)return '';
   let code=saraReservationCodeFromText(raw);
-  if(saraExistingReservationIntent(raw)&&!code&&!saraManagedReservation.verified){saraManagedReservation=freshSaraManagedReservation();saraManagedReservation.awaitingCode=true;return waiterLanguage==='ar'?'أبشر، وش رقم الحجز؟':'What is the reservation number?';}
-  if(code){saraManagedReservation=freshSaraManagedReservation();saraManagedReservation.code=code;saraManagedReservation.awaitingPhone=true;}
+  if(existingIntent&&!code&&!saraManagedReservation.verified){saraManagedReservation=freshSaraManagedReservation();saraManagedReservation.awaitingCode=true;return waiterLanguage==='ar'?'أبشر، وش رقم الحجز؟':'What is the reservation number?';}
+  if(code&&(existingIntent||saraManagedReservation.awaitingCode)){saraManagedReservation=freshSaraManagedReservation();saraManagedReservation.code=code;saraManagedReservation.awaitingPhone=true;}
   if(!saraManagedReservation.awaitingPhone)return '';
   const phone=saraPhoneDigitsFromSpeech(raw);
   if(!phone)return waiterLanguage==='ar'?`تمام، عطيني رقم الجوال المسجل على الحجز رقم ${saraManagedReservation.code} عشان أتحقق.`:'Please provide the phone number on the reservation so I can verify it.';
@@ -1001,7 +1009,9 @@ function runSaraVAD(){
     const startThreshold=adaptiveStart;
     const keepThreshold=adaptiveKeep;
     const minSpeechMs=300;
-    const endSilenceMs=1250;
+    // Give Saudi Arabic endings and natural pauses more room on iPhone before
+    // submitting the clip to transcription.
+    const endSilenceMs=1800;
     const startHoldMs=70;
     const canStart=!saraBusy || saraSpeaking;
 
@@ -1300,7 +1310,7 @@ async function processSaraVoice(blob,mime){
     addBubble('user',q); conversationHistory.push({role:'user',content:q});
     status.textContent=isExplicitBookingConfirmation(q)&&waiterLanguage==='ar'?'تمام، أعتمد الحجز…':TEXT[waiterLanguage].thinking;
     let answer='';
-    const lookupReply=!saraTableNumber?await saraHandleExistingReservationLookup(q):'';
+    const lookupReply=!saraTableNumber&&saraShouldHandleExistingReservationLookup(q)?await saraHandleExistingReservationLookup(q):'';
     if(lookupReply){
       answer=lookupReply;
     }else if(saraManagedReservationInfoReply(q)){
@@ -1340,7 +1350,7 @@ async function submitSaraQuestion(q){
   stopSaraSpeechForBargeIn(); addBubble('user',q);conversationHistory.push({role:'user',content:q});input.value='';saraBusy=true;status.textContent=TEXT[waiterLanguage].thinking;
   try{
     let answer='';
-    const lookupReply=!saraTableNumber?await saraHandleExistingReservationLookup(q):'';
+    const lookupReply=!saraTableNumber&&saraShouldHandleExistingReservationLookup(q)?await saraHandleExistingReservationLookup(q):'';
     if(lookupReply){
       answer=lookupReply;
     }else if(saraManagedReservationInfoReply(q)){

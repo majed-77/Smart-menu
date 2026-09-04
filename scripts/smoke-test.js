@@ -38,7 +38,7 @@ check("Generated hero and logo exist", fs.existsSync(path.join(root, "public/ass
 
 check("Customer page loads external JS", /\/assets\/js\/customer-app\.js/.test(customerHtml));
 check("Dashboard loads external JS", /\/assets\/js\/dashboard-app\.js/.test(dashboardHtml));
-check("Customer assets are version 6.1.0", customerHtml.includes("customer.css?v=6.1.0") && customerHtml.includes("customer-app.js?v=6.1.0"));
+check("Customer assets are version 6.1.1", customerHtml.includes("customer.css?v=6.1.1") && customerHtml.includes("customer-app.js?v=6.1.1"));
 check("Sara name remains without waitress labels", customerJs.includes("waiterGeneral:'سارة'") && customerJs.includes("waiterGeneral:'Sara'") && !/(النادلة|نادلة|waitress|serveuse)/i.test(customerHtml + customerJs));
 check("No AI engine picker remains", !customerHtml.includes("data-sara-engine") && !customerHtml.includes("enginePicker"));
 check("Only retained Sara client route is used", customerJs.includes("'/api/sara-chat'") && customerJs.includes("'/api/cartesia-tts'"));
@@ -76,7 +76,8 @@ check("Booking confirmation repeats phone and time", customerJs.includes("رقم
 check("Booking idempotency remains", orderSource.includes("INTERVAL '10 minutes'"));
 check("Voice capture has a 15-second watchdog", customerJs.includes("saraCaptureWatchdog") && customerJs.includes("15000"));
 check("Voice capture MIME selector exists", customerJs.includes("function bestMime()") && customerJs.includes("audio/mp4") && customerJs.includes("audio/webm;codecs=opus"));
-check("iPhone silence threshold clears idle noise", customerJs.includes("saraNoiseFloor*1.32+0.002") && customerJs.includes("endSilenceMs=1250"));
+check("iPhone silence threshold clears idle noise without clipping natural pauses", customerJs.includes("saraNoiseFloor*1.32+0.002") && customerJs.includes("endSilenceMs=1800"));
+check("Booking times cannot become reservation codes", customerJs.includes("saraShouldHandleExistingReservationLookup") && customerJs.includes("(?:حجزي|الحجز|حجز)\\s+رقم"));
 check("Recording status advances to transcription", customerJs.includes("status.textContent=TEXT[waiterLanguage].transcribing"));
 
 check("Security headers enabled", appSource.includes("helmet("));

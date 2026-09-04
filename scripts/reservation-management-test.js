@@ -55,6 +55,8 @@ const assert = (condition, message) => {
 };
 
 (async () => {
+  assert(await context.managementTest.lookup("أنا بحجز طاولة لشخص اليوم الساعة عشرة بالليل") === "", "Booking time 10 is not mistaken for reservation code 10");
+  assert(context.saraManagedReservation.awaitingCode === false && context.saraManagedReservation.awaitingPhone === false, "New booking speech does not enter existing-reservation verification");
   assert(/رقم الحجز/.test(await context.managementTest.lookup("أبي أعدل الحجز السابق")), "A request to edit the previous reservation immediately asks for its number");
   assert(/رقم الجوال/.test(await context.managementTest.lookup("ثلاثين")), "Sara understands a spoken Arabic reservation number and asks for the phone");
   const found = await context.managementTest.lookup("0500000001");

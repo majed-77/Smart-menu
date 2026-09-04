@@ -624,6 +624,8 @@ router.post("/sara-chat", async (req, res) => {
       + (bookingState && typeof bookingState === "object" ? `\n\nKNOWN BOOKING STATE FROM THE WEBSITE (authoritative):\n${JSON.stringify(bookingState)}
 BOOKING MEMORY / AI BEHAVIOR RULES:
 - This state is authoritative memory, not a mandatory conversation flow. Remember known facts and answer the guest naturally.
+- Understand intent from the whole sentence before interpreting any number. In a new-booking sentence, a number after الساعة is a time and a number before شخص/أشخاص is party size; neither is an existing reservation code.
+- Treat a number as an existing reservation code only when the guest clearly refers to an already-created reservation (for example عندي حجز, حجزي السابق, or رقم الحجز). A new request such as "أبي أحجز اليوم الساعة عشرة" is never reservation lookup.
 - If this state contains booking facts or the conversation started a reservation, keep it active until confirmed or cancelled.
 - While a reservation is active, food/drink additions are a pre-order on that reservation by default.
 - Preserve all existing orderItems when adding or modifying an item.
