@@ -1408,7 +1408,7 @@ async function processSaraVoice(blob,mime){
   saraBusy=true;
   try{
     status.textContent=TEXT[waiterLanguage].transcribing;
-    const ext=mime.includes('mp4')?'m4a':mime.includes('ogg')?'ogg':'webm';
+    const ext=mime.includes('wav')?'wav':mime.includes('mp4')?'m4a':mime.includes('ogg')?'ogg':'webm';
     const form=new FormData(); form.append('audio',blob,'voice.'+ext); form.append('language',waiterLanguage);
     if(waiterLanguage==='ar'){
       const lastAssistant=[...conversationHistory].reverse().find(m=>m?.role==='assistant');
