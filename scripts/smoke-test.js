@@ -38,7 +38,7 @@ check("Generated hero and logo exist", fs.existsSync(path.join(root, "public/ass
 
 check("Customer page loads external JS", /\/assets\/js\/customer-app\.js/.test(customerHtml));
 check("Dashboard loads external JS", /\/assets\/js\/dashboard-app\.js/.test(dashboardHtml));
-check("Customer assets are version 6.2.0", customerHtml.includes("customer.css?v=6.2.0") && customerHtml.includes("customer-app.js?v=6.2.0"));
+check("Customer assets are version 6.2.1", customerHtml.includes("customer.css?v=6.2.1") && customerHtml.includes("customer-app.js?v=6.2.1"));
 check("Sara name remains without waitress labels", customerJs.includes("waiterGeneral:'سارة'") && customerJs.includes("waiterGeneral:'Sara'") && !/(النادلة|نادلة|waitress|serveuse)/i.test(customerHtml + customerJs));
 check("No AI engine picker remains", !customerHtml.includes("data-sara-engine") && !customerHtml.includes("enginePicker"));
 check("Only retained Sara client route is used", customerJs.includes("'/api/sara-chat'") && customerJs.includes("'/api/cartesia-tts'"));
@@ -73,6 +73,7 @@ check("Arabic yes remains unchanged on screen", customerJs.includes('if(/[\\u060
 check("Booking memory keeps twelve turns", saraRoutes.includes("history.slice(-12).map"));
 check("AI-first booking understanding is returned and applied", saraRoutes.includes("sara_conversation_reply") && saraRoutes.includes("booking_update") && customerJs.includes("saraApplyAiBookingUpdate(data.bookingUpdate,data.intent)"));
 check("AI-first understanding accepts rushed multi-field speech", saraRoutes.includes("whole latest message") && saraRoutes.includes("regardless of order") && saraRoutes.includes("لا ما بضيف طلب مسبق"));
+check("Rushed party size and no-preorder speech have local safety nets", customerJs.includes("أشخاص|شخاص") && customerJs.includes("ل(?:ـ)?${w}") && customerJs.includes("ب?ضيف"));
 check("Booking parser preserves Arabic party size", customerJs.includes("'ثلاث':3"));
 check("Booking confirmation repeats phone and time", customerJs.includes("رقم الجوال ${phone}، الحجز ${date} الساعة ${time}"));
 check("Booking idempotency remains", orderSource.includes("INTERVAL '10 minutes'"));

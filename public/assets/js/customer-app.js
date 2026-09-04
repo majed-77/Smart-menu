@@ -695,10 +695,10 @@ function saraUpdateBookingState(text,role='user'){
   if(role==='user' && /(?:احجز|أحجز|حجز|الحجز|حجزت|حجزي|طاولة)/.test(raw)) saraBookingActive=true;
   if(role==='user'&&saraAwaitingPreorderChoice()){
     const choice=raw.replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا').replace(/[؟?!،,.]/g,' ').toLowerCase().trim();
-    if(/^(لا|بدون|لا بدون|ما ابي|ماني طالب|بدون طلب|بدون طلب مسبق)$/.test(choice))saraBookingState.preorderChoice='no';
+    if(/^(لا|بدون|لا بدون|ما ابي|ماني طالب|بدون طلب|بدون طلب مسبق)$/.test(choice)||/(?:لا\s+)?ما\s+(?:ب?ضيف|ابي\s+اضيف|ابغي\s+اضيف).*طلب\s+مسبق/.test(choice))saraBookingState.preorderChoice='no';
     else if(/^(اي|ايه|نعم|اكيد|تمام|ابي|ابغي|ودي)( |$)/.test(choice)||/(ابي اطلب|ابغي اطلب|ودي اطلب|اضيف طلب)/.test(choice))saraBookingState.preorderChoice='yes';
   }
-  if(role==='user'&&saraBookingActive&&/(بدون طلب|خلاص بدون|ما ابي اطلب|ماني طالب)/.test(raw.replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا')))saraBookingState.preorderChoice='no';
+  if(role==='user'&&saraBookingActive&&/(بدون طلب|خلاص بدون|ما ابي اطلب|ماني طالب|ما\s+(?:ب?ضيف|ابي\s+اضيف|ابغي\s+اضيف).*طلب\s+مسبق)/.test(raw.replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا')))saraBookingState.preorderChoice='no';
   const phone=saraPhoneDigitsFromSpeech(raw);
   if(phone)saraBookingState.phone=phone;
   const rawForNames=raw.replace(/[،,.!?؟]+$/g,'').trim();
@@ -716,14 +716,21 @@ function saraUpdateBookingState(text,role='user'){
   if(role==='user'&&!saraBookingState.name&&saraAwaitingBookingName()){
     m=rawForNames.match(/^([\u0600-\u06FF]{2,})$/); if(m&&!/(اعتمد|تمام|نعم|ايه|حجز|واتساب|جوال|رقم)/.test(m[1]))saraBookingState.name=m[1];
   }
-  m=raw.match(/(?:ل|لـ)?(\d{1,2})\s*(?:اشخاص|أشخاص|شخص)/); if(m)saraBookingState.partySize=Math.max(1,Math.min(30,Number(m[1])));
+  m=raw.match(/(?:ل|لـ)?(\d{1,2})\s*(?:اشخاص|أشخاص|شخاص|شخص)/); if(m)saraBookingState.partySize=Math.max(1,Math.min(30,Number(m[1])));
   if(/(?:ل|لـ)?شخصين/.test(raw)) saraBookingState.partySize=2;
   // Saudi speech often uses the cardinal stem with "أشخاص" (e.g. "ثلاث
   // أشخاص", "أربع أشخاص") rather than the form expected by formal Arabic.
   // Accept both forms so a correctly transcribed answer is never discarded.
   const partyWords={'واحد':1,'واحدة':1,'اثنين':2,'إثنين':2,'ثنين':2,'ثنتين':2,'ثلاث':3,'ثلاثة':3,'ثلاثه':3,'اربع':4,'أربع':4,'اربعة':4,'أربعة':4,'اربعه':4,'خمس':5,'خمسة':5,'خمسه':5,'ست':6,'ستة':6,'سته':6,'سبع':7,'سبعة':7,'سبعه':7,'ثمان':8,'ثمانية':8,'ثمانيه':8,'تسع':9,'تسعة':9,'تسعه':9,'عشر':10,'عشرة':10,'عشره':10};
   for(const [w,n] of Object.entries(partyWords)){
-    if(new RegExp(`(?:ل|لـ)?${w}\\s+(?:اشخاص|أشخاص|اشخاصًا|أشخاصًا|شخص)`).test(raw)){saraBookingState.partySize=n;break;}
+    if(new RegExp(`(?:ل|لـ)?${w}\\s+(?:اشخاص|أشخاص|شخاص|اشخاصًا|أشخاصًا|شخص)`).test(raw)){saraBookingState.partySize=n;break;}
+  }
+  // In an active booking, "لثلاثة" / "لأربعة" is naturally the party size
+  // even when rushed speech omits the word "أشخاص".
+  if(role==='user'&&saraBookingActive&&!saraBookingState.partySize){
+    for(const [w,n] of Object.entries(partyWords)){
+      if(new RegExp(`(?:^|\\s)ل(?:ـ)?${w}(?=$|[\\s،,.])`).test(raw)){saraBookingState.partySize=n;break;}
+    }
   }
   // If Sara has explicitly just asked "الحجز لكم شخص؟", a short answer like
   // "ثلاث" or "3" is unambiguously the party size and should be stored.
