@@ -38,7 +38,7 @@ check("Generated hero and logo exist", fs.existsSync(path.join(root, "public/ass
 
 check("Customer page loads external JS", /\/assets\/js\/customer-app\.js/.test(customerHtml));
 check("Dashboard loads external JS", /\/assets\/js\/dashboard-app\.js/.test(dashboardHtml));
-check("Customer assets are version 6.2.2", customerHtml.includes("customer.css?v=6.2.2") && customerHtml.includes("customer-app.js?v=6.2.2"));
+check("Customer assets are version 6.2.3", customerHtml.includes("customer.css?v=6.2.3") && customerHtml.includes("customer-app.js?v=6.2.3"));
 check("Sara name remains without waitress labels", customerJs.includes("waiterGeneral:'سارة'") && customerJs.includes("waiterGeneral:'Sara'") && !/(النادلة|نادلة|waitress|serveuse)/i.test(customerHtml + customerJs));
 check("No AI engine picker remains", !customerHtml.includes("data-sara-engine") && !customerHtml.includes("enginePicker"));
 check("Only retained Sara client route is used", customerJs.includes("'/api/sara-chat'") && customerJs.includes("'/api/cartesia-tts'"));
@@ -77,6 +77,7 @@ check("Rushed party size and no-preorder speech have local safety nets", custome
 check("A name before 'and phone number' is captured", customerJs.includes("رقم|ورقم|والرقم"));
 check("Booking parser preserves Arabic party size", customerJs.includes("'ثلاث':3"));
 check("Booking confirmation repeats phone and time", customerJs.includes("رقم الجوال ${phone}، الحجز ${date} الساعة ${time}"));
+check("Booking save requires summary plus explicit latest approval", customerJs.includes("!saraAwaitingBookingApproval()||!isExplicitBookingConfirmation(latestUser?.content||'')"));
 check("Booking idempotency remains", orderSource.includes("INTERVAL '10 minutes'"));
 check("Voice capture has a 15-second watchdog", customerJs.includes("saraCaptureWatchdog") && customerJs.includes("15000"));
 check("Voice capture MIME selector exists", customerJs.includes("function bestMime()") && customerJs.includes("audio/mp4") && customerJs.includes("audio/webm;codecs=opus"));

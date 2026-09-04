@@ -882,6 +882,11 @@ async function handleSaraBookingTool(toolCall){
     saraBookingState.preorderChoice='yes';
   }
   if(!saraCanConfirmBookingNow())return saraBookingPreorderQuestion()||saraBookingMissingReply();
+  // Never trust an early AI tool call as customer approval. The guest must have
+  // already received the final summary and then explicitly approved it in the
+  // latest turn. This client-side gate prevents accidental booking creation.
+  const latestUser=[...conversationHistory].reverse().find(m=>m?.role==='user');
+  if(!saraAwaitingBookingApproval()||!isExplicitBookingConfirmation(latestUser?.content||''))return saraBookingSummaryReply();
   const signature=saraBookingSignature(args);
   if(saraBookingSaveInFlight){
     return waiterLanguage==='ar'?'لحظة، الحجز قاعد ينحفظ الآن.':waiterLanguage==='fr'?`Un instant, la réservation est en cours d’enregistrement.`:`One moment, the booking is being saved.`;
