@@ -27,8 +27,10 @@ const context = {
   saraBookingActive: true,
   saraLastConfirmedBooking: { signature: "old", code: "30", at: Date.now() },
   saraConfirmedBookingOrderAwaitingApproval: false,
+  menu: [],
   status: { textContent: "" },
-  resolveSaraOrderItem: name => ({ name, canonicalName: name, available: true, unitPriceSar: 20 }),
+  normalizeMenuLookupText: value => String(value || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim(),
+  resolveSaraOrderItem: name => ({ name, canonicalName: name, aliases: [name], available: true, unitPriceSar: 20 }),
   saraModifierExtraSar: () => 0,
   saraBookingArgsFromState: () => ({}),
   saraBookingSignature: () => "new",
@@ -41,8 +43,12 @@ vm.createContext(context);
 vm.runInContext([
   functionSource("saraOrderText"),
   functionSource("saraOrderConfirmation"),
+  functionSource("saraUserGroundsMenuItem"),
+  functionSource("saraOrderItemKey"),
+  functionSource("saraTextGroundsAnyMenuItem"),
+  functionSource("saraConfirmedBookingEditReply"),
   functionSource("saraApplyPreorderTool")
-].join("\n") + "\nglobalThis.confirmedOrderTest={apply:saraApplyPreorderTool};", context);
+].join("\n") + "\nglobalThis.confirmedOrderTest={apply:saraApplyPreorderTool,edit:saraConfirmedBookingEditReply};", context);
 
 const assert = (condition, message) => {
   if (!condition) throw new Error(message);
@@ -50,6 +56,9 @@ const assert = (condition, message) => {
 };
 
 (async () => {
+  const editOptions = context.confirmedOrderTest.edit("طيب أقدر أعدل على الحجز؟");
+  assert(/تغيّر الموعد/.test(editOptions) && /تلغي الحجز/.test(editOptions) && /تضيف وتعدّل الطلب/.test(editOptions), "A vague booking edit offers time, cancellation, and pre-order changes");
+
   const args = { order_items: [{ item_name: "كابتشينو", quantity: 1, special_request: "" }] };
   const staged = await context.confirmedOrderTest.apply(args);
   assert(/أعتمد تحديث الطلب/.test(staged), "A confirmed-booking order change is staged for approval");
@@ -59,6 +68,14 @@ const assert = (condition, message) => {
   const saved = await context.confirmedOrderTest.apply(args);
   assert(saves === 1, "The approved order update is saved exactly once");
   assert(/أضفت الطلب على حجزك رقم 30/.test(saved), "The update keeps the original reservation number");
+
+  context.saraBookingState.orderItems = [];
+  context.saraConfirmedBookingOrderAwaitingApproval = false;
+  context.conversationHistory.push({ role: "user", content: "لا لا أبي أضيف طلب" });
+  const rejected = await context.confirmedOrderTest.apply({ order_items: [{ item_name: "كبسة دجاج", quantity: 1, special_request: "" }] });
+  assert(/وش الصنف والكمية/.test(rejected), "Generic add-order intent asks for the exact item and quantity");
+  assert(context.saraBookingState.orderItems.length === 0, "An AI-suggested item is not written into booking memory");
+  assert(saves === 1, "An unspoken item never reaches the reservation API");
   console.log("\n✓ Confirmed booking order update test passed.");
 })().catch(error => {
   console.error(error);

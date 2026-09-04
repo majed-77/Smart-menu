@@ -379,7 +379,8 @@ function resolveSaraOrderItem(requestedName){
   const raw=String(d[2]||'');
   const tnd=parseFloat(raw.replace(',','.'));
   const unitPriceSar=Number.isFinite(tnd)?Math.round(tnd*100)/100:null;
-  return {name:translateMenuText(d[0],waiterLanguage),canonicalName:d[0],unitPriceSar,available:d[4]?.available!==false,modifiers:Array.isArray(d[4]?.modifiers)?d[4].modifiers:[]};
+  const aliases=[d[0],translateMenuText(d[0],waiterLanguage),translateMenuText(d[0],'ar'),translateMenuText(d[0],'en'),translateMenuText(d[0],'fr')];
+  return {name:translateMenuText(d[0],waiterLanguage),canonicalName:d[0],aliases,unitPriceSar,available:d[4]?.available!==false,modifiers:Array.isArray(d[4]?.modifiers)?d[4].modifiers:[]};
 }
 function saraModifierExtraSar(found,specialRequest=''){
   const req=normalizeMenuLookupText(specialRequest); if(!req||!Array.isArray(found?.modifiers))return 0;
@@ -546,6 +547,37 @@ function saraDeterministicOrderReply(question){
   const t=saraOrderText(question);
   if(/^(ليش|ليه)$/.test(t)&&saraLastAssistantAskedOrderName())return waiterLanguage==='ar'?'عشان نميّز طلبك ونسلمه للشخص الصحيح. وش الاسم اللي أسجل عليه الطلب؟':'I need a name so the restaurant can identify your order. What name should I use?';
   if(/^(شي ثاني|شيء ثاني|حاجه ثانيه|حاجة ثانية)$/.test(t))return waiterLanguage==='ar'?'أكيد، وش الصنف الثاني اللي تبيه؟':'Sure — which other item would you like?';
+  return '';
+}
+function saraUserGroundsMenuItem(text,itemName){
+  const spoken=normalizeMenuLookupText(text);if(!spoken)return false;
+  const found=resolveSaraOrderItem(itemName);if(!found)return false;
+  return (found.aliases||[found.name,found.canonicalName]).some(alias=>{
+    const exact=normalizeMenuLookupText(alias);
+    return exact.length>=3&&(` ${spoken} `).includes(` ${exact} `);
+  });
+}
+function saraOrderItemKey(itemName){
+  const found=resolveSaraOrderItem(itemName);
+  return normalizeMenuLookupText(found?.canonicalName||itemName);
+}
+function saraTextGroundsAnyMenuItem(text){
+  let grounded=false;
+  menu.forEach(section=>section.items.forEach(item=>{if(!grounded&&saraUserGroundsMenuItem(text,item[0]))grounded=true;}));
+  return grounded;
+}
+function saraConfirmedBookingEditReply(question){
+  if(!saraLastConfirmedBooking.code)return '';
+  const t=saraOrderText(question);
+  const vagueEdit=/(اقدر|ابي|ابغي|ودي).{0,12}(اعدل|اغير).{0,12}(الحجز|حجزي)|(تعديل|تغير).{0,8}(الحجز|حجزي)/.test(t);
+  if(vagueEdit&&!/(وقت|موعد|ساع|يوم|تاريخ|الغي|الغاء|كنسل|طلب|اكل|صنف)/.test(t)){
+    return waiterLanguage==='ar'?'أكيد، تقدر تغيّر الموعد، تلغي الحجز، أو تضيف وتعدّل الطلب المسبق. وش ودك تعدّل؟':'Sure — you can reschedule, cancel, or add and change the pre-order. What would you like to update?';
+  }
+  const genericAddOrder=/(اضيف|ابي|ابغي|ودي).{0,10}(طلب|اكل)|(?:طلب|اكل).{0,10}(اضيف|زيادة)/.test(t);
+  if(genericAddOrder&&!saraTextGroundsAnyMenuItem(question)){
+    saraConfirmedBookingOrderAwaitingApproval=false;
+    return waiterLanguage==='ar'?`أبشر، وش الصنف والكمية اللي تبي تضيفها على الحجز رقم ${saraLastConfirmedBooking.code}؟`:`Sure — which item and quantity would you like to add to reservation ${saraLastConfirmedBooking.code}?`;
+  }
   return '';
 }
 function saraApplyOrderMemoryGuard(answer){
@@ -814,16 +846,25 @@ function saraBookingArgsFromState(){return {name:saraBookingState.name||'',phone
 async function saraApplyPreorderTool(args){
   if(typeof args==='string'){try{args=JSON.parse(args)}catch(e){args={}}}
   if(!args||typeof args!=='object')args={};
-  const items=Array.isArray(args.order_items)?args.order_items:[];
-  saraBookingState.orderItems=items.map(x=>({
+  const latestUser=[...conversationHistory].reverse().find(m=>m?.role==='user');
+  const previousItems=Array.isArray(saraBookingState.orderItems)?saraBookingState.orderItems:[];
+  const previousKeys=new Set(previousItems.map(item=>saraOrderItemKey(item.item_name)).filter(Boolean));
+  const proposedItems=(Array.isArray(args.order_items)?args.order_items:[]).map(x=>({
     item_name:String(x?.item_name||'').trim(),
     quantity:Math.max(1,Math.min(20,Number(x?.quantity)||1)),
     special_request:String(x?.special_request||'').trim()
   })).filter(x=>x.item_name);
+  const ungrounded=proposedItems.find(item=>!previousKeys.has(saraOrderItemKey(item.item_name))&&!saraUserGroundsMenuItem(latestUser?.content||'',item.item_name));
+  if(ungrounded){
+    saraConfirmedBookingOrderAwaitingApproval=false;
+    return waiterLanguage==='ar'
+      ? `أبشر، وش الصنف والكمية اللي تبي تضيفها${saraLastConfirmedBooking.code?` على الحجز رقم ${saraLastConfirmedBooking.code}`:''}؟`
+      : 'Which exact item and quantity would you like to add?';
+  }
+  saraBookingState.orderItems=proposedItems;
   saraBookingState.preorderChoice=saraBookingState.orderItems.length?'yes':'no';
   saraBookingActive=true;
   if(saraLastConfirmedBooking.code){
-    const latestUser=[...conversationHistory].reverse().find(m=>m?.role==='user');
     if(!saraConfirmedBookingOrderAwaitingApproval||!saraOrderConfirmation(latestUser?.content||'')){
       saraConfirmedBookingOrderAwaitingApproval=true;
       const summary=saraBookingState.orderItems.length?saraBookingState.orderItems.map(x=>`${x.quantity} ${x.item_name}${x.special_request?` (${x.special_request})`:''}`).join('، '):'بدون طلب مسبق';
@@ -1457,6 +1498,8 @@ async function processSaraVoice(blob,mime){
     const lookupReply=!saraTableNumber&&saraShouldHandleExistingReservationLookup(q)?await saraHandleExistingReservationLookup(q):'';
     if(lookupReply){
       answer=lookupReply;
+    }else if(saraConfirmedBookingEditReply(q)){
+      answer=saraConfirmedBookingEditReply(q);
     }else if(saraManagedReservationInfoReply(q)){
       answer=saraManagedReservationInfoReply(q);
     }else if(saraManagedReservation.pendingAction&&saraOrderConfirmation(q)){
@@ -1498,6 +1541,8 @@ async function submitSaraQuestion(q){
     const lookupReply=!saraTableNumber&&saraShouldHandleExistingReservationLookup(q)?await saraHandleExistingReservationLookup(q):'';
     if(lookupReply){
       answer=lookupReply;
+    }else if(saraConfirmedBookingEditReply(q)){
+      answer=saraConfirmedBookingEditReply(q);
     }else if(saraManagedReservationInfoReply(q)){
       answer=saraManagedReservationInfoReply(q);
     }else if(saraManagedReservation.pendingAction&&saraOrderConfirmation(q)){

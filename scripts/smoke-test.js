@@ -38,7 +38,7 @@ check("Generated hero and logo exist", fs.existsSync(path.join(root, "public/ass
 
 check("Customer page loads external JS", /\/assets\/js\/customer-app\.js/.test(customerHtml));
 check("Dashboard loads external JS", /\/assets\/js\/dashboard-app\.js/.test(dashboardHtml));
-check("Customer assets are version 7.0.0", customerHtml.includes("customer.css?v=7.0.0") && customerHtml.includes("customer-app.js?v=7.0.0"));
+check("Customer assets are version 7.0.1", customerHtml.includes("customer.css?v=7.0.1") && customerHtml.includes("customer-app.js?v=7.0.1"));
 check("Sara name remains without waitress labels", customerJs.includes("waiterGeneral:'سارة'") && customerJs.includes("waiterGeneral:'Sara'") && !/(النادلة|نادلة|waitress|serveuse)/i.test(customerHtml + customerJs));
 check("No AI engine picker remains", !customerHtml.includes("data-sara-engine") && !customerHtml.includes("enginePicker"));
 check("Only retained Sara client route is used", customerJs.includes("'/api/sara-chat'") && customerJs.includes("'/api/cartesia-tts'"));
@@ -63,6 +63,7 @@ check("Active booking overrides order fulfillment", saraRoutes.includes("ACTIVE 
 check("Draft preorder tool remains", saraRoutes.includes("update_booking_preorder"));
 check("Booking asks about preorder before approval", customerJs.includes("قبل أعتمد الحجز، ودك تضيف طلب مسبق") && saraRoutes.includes("MANDATORY PRE-ORDER CHOICE"));
 check("Confirmed booking remains available for order updates", customerJs.includes("confirmationCode:saraLastConfirmedBooking.code") && saraRoutes.includes("A confirmed reservation remains active"));
+check("Generic add-order intent cannot invent a menu item", customerJs.includes("saraUserGroundsMenuItem") && customerJs.includes("وش الصنف والكمية اللي تبي تضيفها") && saraRoutes.includes('أبي أضيف طلب'));
 check("Confirmed booking order update reaches the server", customerJs.includes("/order`,{method:'PATCH'") && orderSource.includes("async function updateReservationOrder") && routeSources.includes('router.patch("/reservations/:code/order"'));
 check("Booking success is not mistaken for pending approval", customerJs.includes("حجزك معتمد مسبق|رقم حجزك\\s*\\d+"));
 check("Existing reservations require code and phone verification", customerJs.includes("saraHandleExistingReservationLookup") && orderSource.includes("verifyReservationForGuest") && routeSources.includes('router.post("/reservations/:code/verify"'));

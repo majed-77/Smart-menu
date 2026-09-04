@@ -1,6 +1,6 @@
 {
   "name": "smart-menu-ai",
-  "version": "7.0.0",
+  "version": "7.0.1",
   "private": true,
   "description": "Arabic-first AI smart menu, ordering and restaurant operations platform.",
   "main": "server.js",
