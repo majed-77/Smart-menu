@@ -122,6 +122,8 @@ let currentDish=null;
 let conversationHistory=[];
 let currentAudio=null;
 let saraStream=null, saraAnalyser=null, saraAudioContext=null, saraVadFrame=null, saraRecorder=null, saraChunks=[];
+let saraPcmNode=null, saraPcmZeroGain=null, saraPcmReady=false, saraPcmSampleRate=48000;
+let saraPcmRing=[], saraPcmRingSamples=0, saraPcmCapture=[], saraPcmCaptureSamples=0;
 let saraCapturing=false, saraSpeechStartedAt=0, saraSilenceAt=0, saraBusy=false, saraSpeaking=false, saraStarted=false;
 let saraCaptureWatchdog=null;
 let saraNoiseFloor=0.012, saraNoiseReadyAt=0, saraNoiseLastUpdate=0, saraVoiceCandidateAt=0;
@@ -451,6 +453,9 @@ function closeSara(){
   if(saraVadFrame){cancelAnimationFrame(saraVadFrame);saraVadFrame=null;}
   try{if(saraRecorder && saraRecorder.state!=="inactive")saraRecorder.stop();}catch(e){}
   saraRecorder=null; saraChunks=[];
+  if(saraPcmNode){try{saraPcmNode.onaudioprocess=null;saraPcmNode.disconnect();}catch(e){} saraPcmNode=null;}
+  if(saraPcmZeroGain){try{saraPcmZeroGain.disconnect();}catch(e){} saraPcmZeroGain=null;}
+  saraPcmReady=false;saraPcmRing=[];saraPcmRingSamples=0;saraPcmCapture=[];saraPcmCaptureSamples=0;
   if(saraStream){try{saraStream.getTracks().forEach(t=>t.stop());}catch(e){} saraStream=null;}
   if(saraAudioContext){try{saraAudioContext.close();}catch(e){} saraAudioContext=null;}
   saraAnalyser=null;
@@ -975,9 +980,81 @@ function bestMime(){
   return types.find(type=>MediaRecorder.isTypeSupported?.(type))||'';
 }
 
+function saraClearPcmPreroll(){
+  if(saraCapturing)return;
+  saraPcmRing=[];saraPcmRingSamples=0;
+}
+
+function setupSaraPcmPreroll(source){
+  if(!saraAudioContext?.createScriptProcessor)return false;
+  try{
+    // Keep a rolling copy of the microphone before VAD fires. The old flow
+    // created MediaRecorder only after hearing speech, which clipped the first
+    // Arabic consonant and made short names/numbers look like other words.
+    saraPcmSampleRate=saraAudioContext.sampleRate||48000;
+    saraPcmNode=saraAudioContext.createScriptProcessor(2048,1,1);
+    saraPcmZeroGain=saraAudioContext.createGain();
+    saraPcmZeroGain.gain.value=0;
+    source.connect(saraPcmNode);
+    saraPcmNode.connect(saraPcmZeroGain);
+    saraPcmZeroGain.connect(saraAudioContext.destination);
+    saraPcmNode.onaudioprocess=event=>{
+      if(!saraStarted)return;
+      const input=event.inputBuffer.getChannelData(0);
+      const chunk=new Float32Array(input.length);chunk.set(input);
+      if(saraCapturing){
+        saraPcmCapture.push(chunk);saraPcmCaptureSamples+=chunk.length;
+        return;
+      }
+      saraPcmRing.push(chunk);saraPcmRingSamples+=chunk.length;
+      const maxSamples=Math.round(saraPcmSampleRate*0.9);
+      while(saraPcmRingSamples>maxSamples&&saraPcmRing.length>1){
+        saraPcmRingSamples-=saraPcmRing[0].length;saraPcmRing.shift();
+      }
+    };
+    saraPcmReady=true;
+    return true;
+  }catch(error){
+    console.warn('Sara PCM pre-roll unavailable; using MediaRecorder fallback',error);
+    saraPcmReady=false;
+    return false;
+  }
+}
+
+function saraEncodeWav(chunks,totalSamples,sampleRate){
+  const buffer=new ArrayBuffer(44+totalSamples*2), view=new DataView(buffer);
+  const write=(offset,text)=>{for(let i=0;i<text.length;i++)view.setUint8(offset+i,text.charCodeAt(i));};
+  write(0,'RIFF');view.setUint32(4,36+totalSamples*2,true);write(8,'WAVE');write(12,'fmt ');
+  view.setUint32(16,16,true);view.setUint16(20,1,true);view.setUint16(22,1,true);
+  view.setUint32(24,sampleRate,true);view.setUint32(28,sampleRate*2,true);view.setUint16(32,2,true);view.setUint16(34,16,true);
+  write(36,'data');view.setUint32(40,totalSamples*2,true);
+  let offset=44;
+  for(const chunk of chunks){
+    for(let i=0;i<chunk.length;i++){
+      const sample=Math.max(-1,Math.min(1,chunk[i]));
+      view.setInt16(offset,sample<0?sample*0x8000:sample*0x7fff,true);offset+=2;
+    }
+  }
+  return new Blob([buffer],{type:'audio/wav'});
+}
+
 function startSaraCapture({duringSara=false}={}){
   if(!saraStream || saraCapturing || saraVoiceProcessInFlight || (saraBusy && !(saraSpeaking||duringSara)))return;
   saraCaptureStartedDuringSara=Boolean(duringSara);
+  if(saraPcmReady){
+    // Seed every turn with audio captured before speech detection. During
+    // barge-in use a shorter prefix to reduce the chance of including Sara's TTS.
+    const prefixSamples=Math.round(saraPcmSampleRate*(duringSara?0.45:0.9));
+    let kept=0, prefix=[];
+    for(let i=saraPcmRing.length-1;i>=0&&kept<prefixSamples;i--){prefix.unshift(saraPcmRing[i]);kept+=saraPcmRing[i].length;}
+    saraPcmCapture=prefix.map(chunk=>chunk.slice());saraPcmCaptureSamples=kept;
+    saraCapturing=true;saraSpeechStartedAt=performance.now();saraSilenceAt=0;
+    status.textContent=TEXT[waiterLanguage].recording;
+    micBtn.classList.add('recording');micBtn.textContent='⏹';
+    if(saraCaptureWatchdog)clearTimeout(saraCaptureWatchdog);
+    saraCaptureWatchdog=setTimeout(()=>{if(saraCapturing)stopSaraCapture();},15000);
+    return;
+  }
   const mime=bestMime(); saraChunks=[];
   try{saraRecorder=new MediaRecorder(saraStream,mime?{mimeType:mime}:undefined);}catch(e){
     status.textContent=TEXT[waiterLanguage].micError;
@@ -1013,6 +1090,15 @@ function stopSaraCapture(){
   saraVoiceProcessInFlight=true;
   status.textContent=TEXT[waiterLanguage].transcribing;
   micBtn.classList.remove('recording'); micBtn.textContent='🎤';
+  if(saraPcmReady){
+    saraCapturing=false;
+    const chunks=saraPcmCapture,total=saraPcmCaptureSamples;
+    saraPcmCapture=[];saraPcmCaptureSamples=0;saraPcmRing=[];saraPcmRingSamples=0;
+    const blob=saraEncodeWav(chunks,total,saraPcmSampleRate);
+    if(blob.size<1200){saraVoiceProcessInFlight=false;saraBusy=false;status.textContent=TEXT[waiterLanguage].ready;return;}
+    processSaraVoice(blob,'audio/wav');
+    return;
+  }
   try{
     if(saraRecorder&&saraRecorder.state!=='inactive')saraRecorder.stop();
     else {saraCapturing=false;saraVoiceProcessInFlight=false;status.textContent=TEXT[waiterLanguage].ready;}
@@ -1434,7 +1520,7 @@ async function submitSaraQuestion(q){
 async function startSara(){
   if(saraStarted)return;
   try{
-    if(!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder){
+    if(!navigator.mediaDevices?.getUserMedia){
       throw new Error(TEXT[waiterLanguage].micError);
     }
     const supported=navigator.mediaDevices.getSupportedConstraints?.()||{};
@@ -1450,6 +1536,7 @@ async function startSara(){
     // trigger recording earlier instead of being swallowed by smoothing.
     saraAnalyser.smoothingTimeConstant=.22;
     src.connect(saraAnalyser);
+    if(!setupSaraPcmPreroll(src)&&!window.MediaRecorder)throw new Error(TEXT[waiterLanguage].micError);
     // Seed adaptive VAD conservatively; it continuously learns the ambient floor while idle.
     saraNoiseFloor=0.006; saraNoiseLastUpdate=0; saraVoiceCandidateAt=0; saraBargeCandidateAt=0;
     saraNoiseReadyAt=performance.now()+450;
@@ -1661,6 +1748,7 @@ async function speakAI(text){
           orb.classList.remove('speaking');
           speechSource=null;
           saraSpeaking=false;saraTtsEndedAt=performance.now();saraBargeCandidateAt=0;
+          saraClearPcmPreroll();
         };
         speechSource.start(0);
         return;
@@ -1684,6 +1772,7 @@ async function speakAI(text){
       URL.revokeObjectURL(url);
       if(currentAudio===audio) currentAudio=null;
       saraSpeaking=false;saraTtsEndedAt=performance.now();saraBargeCandidateAt=0;
+      saraClearPcmPreroll();
     };
     audio.onerror=()=>{
       orb.classList.remove('speaking');

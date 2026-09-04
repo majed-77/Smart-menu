@@ -38,7 +38,7 @@ check("Generated hero and logo exist", fs.existsSync(path.join(root, "public/ass
 
 check("Customer page loads external JS", /\/assets\/js\/customer-app\.js/.test(customerHtml));
 check("Dashboard loads external JS", /\/assets\/js\/dashboard-app\.js/.test(dashboardHtml));
-check("Customer assets are version 6.3.2", customerHtml.includes("customer.css?v=6.3.2") && customerHtml.includes("customer-app.js?v=6.3.2"));
+check("Customer assets are version 7.0.0", customerHtml.includes("customer.css?v=7.0.0") && customerHtml.includes("customer-app.js?v=7.0.0"));
 check("Sara name remains without waitress labels", customerJs.includes("waiterGeneral:'سارة'") && customerJs.includes("waiterGeneral:'Sara'") && !/(النادلة|نادلة|waitress|serveuse)/i.test(customerHtml + customerJs));
 check("No AI engine picker remains", !customerHtml.includes("data-sara-engine") && !customerHtml.includes("enginePicker"));
 check("Only retained Sara client route is used", customerJs.includes("'/api/sara-chat'") && customerJs.includes("'/api/cartesia-tts'"));
@@ -90,6 +90,8 @@ check("Names and phone numbers receive independent STT verification", saraRoutes
 check("Hesitation sounds cannot become booking names", saraRoutes.includes("isArabicHesitation") && customerJs.includes("hesitation sounds are never booking names"));
 check("Sara asks naturally when a critical voice field is uncertain", customerJs.includes("UNCERTAIN_NAME_TRANSCRIPT','UNCERTAIN_PHONE_TRANSCRIPT") && customerJs.includes("await speakAI(retryMessage)"));
 check("iPhone voice start is faster without extending end silence", customerJs.includes("startHoldMs=25") && customerJs.includes("endSilenceMs=1800"));
+check("Voice turns include PCM audio captured before VAD", customerJs.includes("setupSaraPcmPreroll") && customerJs.includes("saraPcmSampleRate*0.9") && customerJs.includes("audio/wav"));
+check("Legacy MediaRecorder remains as automatic fallback", customerJs.includes("using MediaRecorder fallback") && customerJs.includes("new MediaRecorder"));
 check("Booking times cannot become reservation codes", customerJs.includes("saraShouldHandleExistingReservationLookup") && customerJs.includes("(?:حجزي|الحجز|حجز)\\s+رقم"));
 check("Recording status advances to transcription", customerJs.includes("status.textContent=TEXT[waiterLanguage].transcribing"));
 
