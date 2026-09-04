@@ -576,7 +576,8 @@ function saraPhoneDigitsFromSpeech(raw){
   const map={صفر:'0',زيرو:'0',واحد:'1',وحده:'1',واحدة:'1',اثنين:'2',إثنين:'2',اثنان:'2',ثنين:'2',ثنتين:'2',ثلاثة:'3',ثلاثه:'3',اربعة:'4',أربعة:'4',اربعه:'4',خمسة:'5',خمسه:'5',ستة:'6',سته:'6',سبعة:'7',سبعه:'7',ثمانية:'8',ثمانيه:'8',تسعة:'9',تسعه:'9'};
   const toks=raw.split(/\s+/); let best='',cur='';
   for(const tok0 of toks){
-    const tok=tok0.replace(/^و(?=[ء-ي])/,'');
+    const noWaw=tok0.startsWith('و')?tok0.slice(1):tok0;
+    const tok=Object.prototype.hasOwnProperty.call(map,tok0)?tok0:Object.prototype.hasOwnProperty.call(map,noWaw)?noWaw:tok0;
     if(/^\d$/.test(tok))cur+=tok;
     else if(map[tok]!=null)cur+=map[tok];
     else {if(cur.length>best.length)best=cur;cur='';}
@@ -692,6 +693,10 @@ function saraBookingContextActive(){
 }
 function saraExtractBookingName(raw){
   const text=String(raw||'').replace(/[،,.!?؟]+$/g,'').trim();
+  const compact=text.replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا').replace(/\s+/g,'').toLowerCase();
+  // Local defense in depth: hesitation sounds are never booking names even if
+  // a browser/proxy serves an older transcription response.
+  if(/^(?:ا+|ه+|اه+|اها+|ام+|مم+|هم+|ممم+|اييي+)$/.test(compact))return '';
   let m=text.match(/(?:اسم(?:\s+الحجز)?|اسمي|باسم)\s+([\u0600-\u06FF]{2,})(?=\s+(?:رقم|ورقم|والرقم|واتساب|رقم الواتساب|لـ|لشخص|اليوم|بكره|غدا|غدًا|الساعة)|$)/i);
   if(m)return m[1];
   if(saraAwaitingBookingName()){

@@ -8,6 +8,7 @@ const { env } = require("../../config/env");
 const { normalizeOpenAIError } = require("../../lib/errors");
 const { getRestaurantProfile } = require("../restaurant/restaurant-service");
 const {
+  isArabicHesitation,
   isShortNameCandidate,
   isWeakTranscript,
   phoneDigitsFromTranscript,
@@ -281,6 +282,16 @@ router.post("/transcribe", upload.single("audio"), async (req, res) => {
     }
     phoneDigits = phoneDigitsFromTranscript(text);
 
+    if (isSaraEngine && language === "ar" && ["name", "phone"].includes(saraContext.expected) && isArabicHesitation(text)) {
+      return res.status(422).json({
+        ok: false,
+        code: saraContext.expected === "name" ? "UNCERTAIN_NAME_TRANSCRIPT" : "UNCERTAIN_PHONE_TRANSCRIPT",
+        message: saraContext.expected === "name"
+          ? "ما التقطت الاسم بوضوح، قل الاسم مرة ثانية لو سمحت."
+          : "الرقم ما وصلني واضح. قله رقم رقم وبهدوء لو سمحت."
+      });
+    }
+
     // Names and phone numbers become booking data, so verify them from the same
     // audio independently. If two readings disagree, ask only for that field again.
     if (isSaraEngine && language === "ar" && saraContext.expected === "name" && isShortNameCandidate(text)) {
@@ -312,7 +323,10 @@ router.post("/transcribe", upload.single("audio"), async (req, res) => {
         response_format: "json",
         include: ["logprobs"],
         temperature: 0,
-        prompt: "استخرج رقم الجوال المسموع فقط، واكتبه أرقاماً متصلة بالترتيب نفسه. لا تبدل ولا تجمع ولا تخمن أي رقم. إذا لم تسمع رقماً كاملاً بوضوح فاترك النص فارغاً."
+        // A transcription prompt is vocabulary/context conditioning, not an
+        // instruction. Keep it as a natural Arabic sample so spoken digits are
+        // recognized in sequence instead of being regrouped as a large number.
+        prompt: "رقم جوال سعودي منطوق رقماً رقماً: صفر، واحد، اثنين، ثلاثة، أربعة، خمسة، ستة، سبعة، ثمانية، تسعة."
       });
       const verifiedPhone = phoneDigitsFromTranscript(phoneVerification.text);
       if (!verifiedPhone || (phoneDigits && phoneDigits !== verifiedPhone) || isWeakTranscript(phoneVerification)) {

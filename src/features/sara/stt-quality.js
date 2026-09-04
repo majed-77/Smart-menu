@@ -67,7 +67,12 @@ function phoneDigitsFromTranscript(value) {
   let current = "";
   let best = "";
   for (const original of raw.split(/\s+/)) {
-    const token = original.replace(/^و(?=[ء-ي])/, "");
+    // Keep "واحد" intact. Strip a conjunction waw only when the remaining
+    // token is itself a known digit word (for example "وخمسة").
+    const withoutWaw = original.startsWith("و") ? original.slice(1) : original;
+    const token = Object.prototype.hasOwnProperty.call(words, original)
+      ? original
+      : Object.prototype.hasOwnProperty.call(words, withoutWaw) ? withoutWaw : original;
     if (/^\d$/.test(token)) current += token;
     else if (Object.prototype.hasOwnProperty.call(words, token)) current += words[token];
     else {
@@ -83,7 +88,13 @@ function isShortNameCandidate(text) {
   return /^[\u0600-\u06FF]{2,12}$/.test(String(text || "").trim());
 }
 
+function isArabicHesitation(text) {
+  const normalized = normalizeForAgreement(text).replace(/\s+/g, "");
+  return /^(?:ا+|ه+|اه+|اها+|ام+|مم+|هم+|ممم+|اييي+)$/.test(normalized);
+}
+
 module.exports = {
+  isArabicHesitation,
   isShortNameCandidate,
   isWeakTranscript,
   normalizeForAgreement,
