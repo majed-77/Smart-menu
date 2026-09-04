@@ -98,34 +98,22 @@ const TEXT={
 
 
 const DYNAMIC_ITEM_IMAGES={};
-const ITEM_IMAGES={
- "Le Matinal (1 pers)":"https://digitalmenu.tn/storage/clients/17763390988246/products/69f0b428a2deb.jpg",
- "Victorien (1 pers)":"https://digitalmenu.tn/storage/clients/17763390988246/products/69f0978cbd555.jpg",
- "Healthy (1 pers)":"https://digitalmenu.tn/storage/clients/17763390988246/products/69f0b3ff05c61.jpg",
- "CHOCO CRUNCH":"https://digitalmenu.tn/storage/clients/17763390988246/products/6a1c47eb18e21.jpg",
- "Margherita":"https://digitalmenu.tn/storage/clients/17763390988246/products/69e1ee8aaa727.jpg",
- "Burger Classique":"https://digitalmenu.tn/storage/clients/17763390988246/products/69e1f4609ee7f.jpg",
- "Salade César":"https://digitalmenu.tn/storage/clients/17763390988246/products/69e203b3e7ead.jpg",
- "Tagliatelli au Saumon":"https://digitalmenu.tn/storage/clients/17763390988246/products/69e2097cd98fb.jpg",
- "Citronnade":"https://digitalmenu.tn/storage/clients/17763390988246/products/69e17e3d2f6c5.jpg"
-};
+const ITEM_IMAGES={};
 function itemImage(name){return DYNAMIC_ITEM_IMAGES[name]||ITEM_IMAGES[name]||'';}
 function imageFallback(name){
  const n=(name||'').toLowerCase();
- if(/café|coffee|espresso|latte|capp/.test(n)) return '☕';
- if(/pizza/.test(n)) return '🍕';
- if(/burger/.test(n)) return '🍔';
- if(/salade/.test(n)) return '🥗';
- if(/jus|citron|orange|fraise|pomme|banane|kiwi/.test(n)) return '🥤';
- if(/dessert|pancake|crêpe|gaufre|nutella|chocolat/.test(n)) return '🍰';
- if(/pâte|spaghetti|lasagne|ravioli/.test(n)) return '🍝';
+ if(/كبسة|مندي|مظبي|مضغوط|رز|kabsa|mandi|madhbi|rice/.test(n)) return '🍚';
+ if(/لحم|دجاج|مشاوي|lamb|chicken|grill/.test(n)) return '🍖';
+ if(/سلطة|salad|salade/.test(n)) return '🥗';
+ if(/لبن|شاي|مشروب|laban|tea|drink/.test(n)) return '🥤';
+ if(/كنافة|حلى|dessert|kounafa/.test(n)) return '🍮';
  return '🍽️';
 }
 
 let siteLanguage='ar';
-let restaurantProfile={nameAr:'كافيه فيكتور هوغو',nameEn:'Café Victor Hugo',nameFr:'Café Victor Hugo',subtitleAr:'مقهى ومطعم',subtitleEn:'Café & Restaurant',subtitleFr:'Café & Restaurant',heroEyebrowAr:'منيو ذكي • سارة',heroEyebrowEn:'Smart Menu • Sara',heroEyebrowFr:'Menu intelligent • Sara',heroTitleAr:'حياكم الله',heroTitleEn:'Welcome',heroTitleFr:'Bienvenue',heroTextAr:'اطلب، احجز، أو اسأل سارة عن المنيو.',heroTextEn:'Order, reserve a table, or ask Sara about the menu.',heroTextFr:'Commandez, réservez une table ou demandez conseil à Sara.',announcementAr:'',announcementEn:'',announcementFr:'',announcementVisible:false,logoUrl:'',bannerUrl:''};
+let restaurantProfile={nameAr:'مطاعم سفرة الديرة',nameEn:'Safrat Al-Dayrah',nameFr:'Safrat Al-Dayrah',subtitleAr:'رز ولحم ودجاج على الأصول',subtitleEn:'Authentic Saudi rice, lamb and chicken',subtitleFr:'Riz, agneau et poulet à la saoudienne',heroEyebrowAr:'منيو ذكي • سارة',heroEyebrowEn:'Smart Menu • Sara',heroEyebrowFr:'Menu intelligent • Sara',heroTitleAr:'سفرة تجمعكم',heroTitleEn:'A table that brings everyone together',heroTitleFr:'Une table qui rassemble',heroTextAr:'أطباق رز سعودية ومذاق شعبي أصيل. اطلب، احجز، أو اسأل سارة.',heroTextEn:'Authentic Saudi rice platters. Order, reserve, or ask Sara.',heroTextFr:'Plats de riz saoudiens authentiques. Commandez, réservez ou demandez à Sara.',announcementAr:'السعرات تقديرية للحصة الموضحة.',announcementEn:'Calories are estimated per listed serving.',announcementFr:'Les calories sont estimées par portion indiquée.',announcementVisible:true,logoUrl:'/assets/images/safrat-aldayrah-logo.svg',bannerUrl:'/assets/images/safrat-aldayrah-hero.webp'};
 function profileText(base,lang=siteLanguage){const cap=lang==='ar'?'Ar':lang==='en'?'En':'Fr';return restaurantProfile[base+cap]||restaurantProfile[base+'Ar']||''}
-function restaurantName(lang=siteLanguage){return profileText('name',lang)||'كافيه فيكتور هوغو'}
+function restaurantName(lang=siteLanguage){return profileText('name',lang)||'مطاعم سفرة الديرة'}
 function applyRestaurantProfile(){const name=restaurantName(),sub=profileText('subtitle'),title=profileText('heroTitle'),text=profileText('heroText'),eyebrow=profileText('heroEyebrow'),ann=profileText('announcement');const n=document.querySelector('#restaurantName'),wn=document.querySelector('#welcomeRestaurantName'),s=document.querySelector('#restaurantSubtitle'),t=document.querySelector('#heroTitle'),tx=document.querySelector('#heroText'),e=document.querySelector('#heroEyebrow'),a=document.querySelector('#announcementBar'),logo=document.querySelector('#restaurantLogo'),hero=document.querySelector('#restaurantHero');if(n)n.textContent=name;if(wn)wn.textContent=name;if(s)s.textContent=sub;if(t)t.textContent=title;if(tx)tx.textContent=text;if(e)e.textContent=eyebrow;if(logo&&restaurantProfile.logoUrl)logo.src=restaurantProfile.logoUrl;if(a){a.textContent=ann;a.style.display=restaurantProfile.announcementVisible&&ann?'block':'none'}if(hero){if(restaurantProfile.bannerUrl){hero.style.backgroundImage=`url(${JSON.stringify(restaurantProfile.bannerUrl).slice(1,-1)})`;hero.classList.add('hasBanner')}else{hero.style.backgroundImage='';hero.classList.remove('hasBanner')}}document.title=name+' — المنيو';}
 async function loadRestaurantProfile(){try{const r=await fetch('/api/restaurant-profile',{cache:'no-store'}),j=await r.json();if(j?.profile)restaurantProfile={...restaurantProfile,...j.profile}}catch(e){console.warn('تعذر تحميل هوية المطعم',e)}applyRestaurantProfile()}
 loadRestaurantProfile();
@@ -219,8 +207,8 @@ function refreshMenuLanguage(){
      if(sig){
        sig.textContent=
          siteLanguage==='ar'?'⭐ صنف مميز':
-         siteLanguage==='en'?'Victor Signature':
-         'Signature Victor';
+         siteLanguage==='en'?'⭐ House favorite':
+         '⭐ Spécialité maison';
      }
    });
  });
@@ -313,7 +301,7 @@ function renderCustomerMenu(){
     c.innerHTML=`
       <div class="foodImageWrap">
         ${media}
-        ${d[3]?'<span class="signature">Signature Victor</span>':''}
+        ${d[3]?'<span class="signature">⭐ اختيار الديرة</span>':''}
         ${d[4]?.available===false?`<span class="unavailableBadge">${siteLanguage==='ar'?'غير متوفر':siteLanguage==='fr'?'Indisponible':'Unavailable'}</span>`:''}
         <div class="price">${displayPrice(d[2],siteLanguage||"ar")}</div>
       </div>

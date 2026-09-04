@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-labelledby="title desc">
+  <title id="title">شعار مطاعم سفرة الديرة</title>
+  <desc id="desc">صحن ضيافة سعودي تتوسطه حبة أرز</desc>
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#9f1d35"/>
+      <stop offset="1" stop-color="#621020"/>
+    </linearGradient>
+  </defs>
+  <circle cx="80" cy="80" r="76" fill="#f8ead0" stroke="#d3a543" stroke-width="5"/>
+  <circle cx="80" cy="80" r="62" fill="url(#g)"/>
+  <path d="M42 93c8 21 24 31 38 31s30-10 38-31H42Z" fill="#d3a543"/>
+  <path d="M35 88h90" fill="none" stroke="#f8ead0" stroke-linecap="round" stroke-width="7"/>
+  <path d="M80 35c13 12 15 29 0 46-15-17-13-34 0-46Z" fill="#f8ead0"/>
+  <path d="M53 65c10 3 17 11 19 22-12-1-20-8-23-19l4-3Zm54 0c-10 3-17 11-19 22 12-1 20-8 23-19l-4-3Z" fill="#d3a543"/>
+</svg>

@@ -14,6 +14,7 @@ function cleanImageUrl(value) {
   const raw = cleanText(value, 1000);
   if (!raw) return "";
   if (/^\/api\/menu-images\/[0-9a-f-]{36}$/i.test(raw)) return raw;
+  if (/^\/assets\/images\/[a-z0-9/_-]+\.(?:webp|png|jpe?g|svg)$/i.test(raw)) return raw;
 
   try {
     const url = new URL(raw);

@@ -3,6 +3,7 @@
 const { createApp } = require("./src/app");
 const { env } = require("./src/config/env");
 const { ensureSchemaReady, getSchemaState, pool } = require("./src/db/database");
+const { version } = require("./package.json");
 
 async function start() {
   if (pool) {
@@ -16,7 +17,7 @@ async function start() {
 
   const app = createApp();
   const server = app.listen(env.port, "0.0.0.0", () => {
-    console.log(`✅ Smart Menu AI v6.0.0 يعمل على المنفذ ${env.port}`);
+    console.log(`✅ Smart Menu AI v${version} يعمل على المنفذ ${env.port}`);
     console.log(`🗃️ PostgreSQL: ${pool ? "جاهز" : "غير مربوط"}`);
     console.log(`🤖 OpenAI: ${env.openaiApiKey ? "مربوط" : "غير مربوط"}`);
     console.log(`🇸🇦 اللغة الأساسية: العربية | العملة: SAR`);

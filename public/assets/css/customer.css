@@ -1,13 +1,14 @@
 :root {
-  --ink:#17130f;
-  --gold:#c79a3b;
-  --cream:#f5efe5;
-  --card:#fffdf9;
-  --muted:#786f65;
-  --danger:#a83232;
-  --line:#e8dccb;
-  --dark:#17130f;
-  --soft:#efe5d6
+  --ink:#28140f;
+  --gold:#d3a543;
+  --cream:#fbf4e8;
+  --card:#fffaf1;
+  --muted:#76655c;
+  --danger:#a32437;
+  --line:#e8d6ba;
+  --dark:#591322;
+  --soft:#f3e5cf;
+  --burgundy:#7b172a;
 }
 
 * {
@@ -20,7 +21,9 @@ html {
 
 body {
   margin:0;
-  background:linear-gradient(180deg,#f7f2ea 0,#f3ecdf 100%);
+  background:
+    radial-gradient(circle at 10% 10%,#d3a54312 0 2px,transparent 3px) 0 0/28px 28px,
+    linear-gradient(180deg,#fffaf1 0,#f5ead8 100%);
   color:var(--ink);
   font-family:Cairo,Arial,sans-serif
 }
@@ -37,7 +40,7 @@ header {
   position:sticky;
   top:0;
   z-index:10;
-  background:rgba(23,19,15,.96);
+  background:linear-gradient(135deg,rgba(89,19,34,.98),rgba(43,13,18,.98));
   color:#fff;
   border-bottom:1px solid #ffffff12;
   backdrop-filter:blur(14px)
@@ -64,18 +67,19 @@ header {
 }
 
 .brandLogo {
-  width:48px;
-  height:48px;
+  width:54px;
+  height:54px;
   border-radius:50%;
   object-fit:cover;
   border:1px solid #ffffff28;
-  background:#222;
+  background:#f8ead0;
   flex:0 0 auto
 }
 
 .brand {
-  font-family:"Playfair Display",serif;
+  font-family:Cairo,Arial,sans-serif;
   font-size:25px;
+  font-weight:800;
   line-height:1.05;
   white-space:nowrap
 }
@@ -145,7 +149,8 @@ nav button {
 }
 
 nav button:hover {
-  background:#ffffff18
+  background:#d3a54333;
+  border-color:#d3a54388
 }
 
 main {
@@ -158,9 +163,9 @@ main {
   display:none;
   margin:0 auto 14px;
   max-width:1200px;
-  border:1px solid #d7b56d55;
-  background:#d7b56d17;
-  color:#f7e7bf;
+  border:1px solid #d3a54377;
+  background:#fff4d9;
+  color:#6c3e15;
   border-radius:14px;
   padding:11px 14px;
   text-align:center;
@@ -172,12 +177,12 @@ main {
   overflow:hidden;
   border-radius:28px;
   background:
-    radial-gradient(circle at 75% 20%,#d9b56633,transparent 35%),
-    linear-gradient(135deg,#201910,#3a2a18);
+    radial-gradient(circle at 75% 20%,#d3a54333,transparent 35%),
+    linear-gradient(135deg,#591322,#2b0d12);
   color:#fff;
   padding:38px 34px;
   margin:6px 0 26px;
-  min-height:210px;
+  min-height:320px;
   display:flex;
   align-items:center
 }
@@ -197,7 +202,7 @@ main {
   content:"";
   position:absolute;
   inset:0;
-  background:#0008;
+  background:linear-gradient(270deg,#16080ad9 0%,#42121da8 50%,#0004 100%);
   border-radius:inherit;
   z-index:1
 }
@@ -210,7 +215,7 @@ main {
 .heroEyebrow {
   display:inline-block;
   border:1px solid #ffffff30;
-  background:#ffffff0e;
+  background:#7b172acc;
   border-radius:999px;
   padding:7px 11px;
   font-size:12px;
@@ -218,14 +223,15 @@ main {
 }
 
 .hero h1 {
-  font-family:"Playfair Display",serif;
-  font-size:44px;
+  font-family:Cairo,Arial,sans-serif;
+  font-size:46px;
+  font-weight:800;
   margin:0 0 10px;
   line-height:1.1
 }
 
 .hero p {
-  color:#ffffffb8;
+  color:#fff3dc;
   margin:0;
   line-height:1.8;
   max-width:650px
@@ -247,11 +253,12 @@ main {
   align-items:center;
   justify-content:space-between;
   gap:12px;
-  font-family:"Playfair Display",serif;
+  font-family:Cairo,Arial,sans-serif;
+  font-weight:800;
   font-size:28px;
   margin:32px 0 14px;
   padding-bottom:9px;
-  border-bottom:1px solid #d8c8b3
+  border-bottom:2px solid #d3a54366
 }
 
 .section-count {
@@ -272,7 +279,7 @@ main {
   border:1px solid var(--line);
   border-radius:22px;
   overflow:hidden;
-  box-shadow:0 10px 30px #3e2b1110;
+  box-shadow:0 12px 34px #59132212;
   position:relative;
   display:flex;
   flex-direction:column;
@@ -290,7 +297,7 @@ main {
 .foodImageWrap {
   position:relative;
   aspect-ratio:4/3;
-  background:linear-gradient(135deg,#dacdbb,#f1e7d9);
+  background:linear-gradient(135deg,#7b172a,#d3a543);
   overflow:hidden
 }
 
@@ -323,7 +330,7 @@ main {
   position:absolute;
   inset-inline-end:12px;
   top:12px;
-  background:#17130fe8;
+  background:#591322ed;
   color:#fff;
   border:1px solid #ffffff24;
   border-radius:999px;
@@ -338,7 +345,7 @@ main {
   inset-inline-start:12px;
   top:12px;
   background:var(--gold);
-  color:#fff;
+  color:#3f240d;
   border-radius:999px;
   padding:6px 9px;
   font-size:11px;
@@ -377,8 +384,8 @@ main {
   border:0;
   border-radius:999px;
   padding:14px 18px;
-  background:var(--gold);
-  color:#fff;
+  background:linear-gradient(135deg,#d3a543,#b67c20);
+  color:#301b0d;
   font-weight:800;
   font-size:15px;
   cursor:pointer;
@@ -426,7 +433,8 @@ main {
 }
 
 .welcomeCard,.dialog {
-  background:#fffdf9;
+  background:#fffaf1;
+  border:1px solid #d3a54355;
   border-radius:26px;
   max-width:500px;
   width:100%;
@@ -439,7 +447,9 @@ main {
 }
 
 .welcomeCard h1 {
-  font-family:"Playfair Display",serif;
+  font-family:Cairo,Arial,sans-serif;
+  color:var(--burgundy);
+  font-weight:800;
   margin:0 0 8px
 }
 
@@ -466,7 +476,8 @@ main {
 }
 
 .languageChoice:hover {
-  border-color:var(--gold)
+  border-color:var(--gold);
+  background:#fff7e6
 }
 
 .modal {
@@ -509,7 +520,7 @@ main {
   height:74px;
   margin:12px auto;
   border-radius:50%;
-  background:var(--gold);
+  background:linear-gradient(135deg,#d3a543,#b67c20);
   box-shadow:0 0 0 0 #b8893555;
   transition:.2s
 }
@@ -553,12 +564,12 @@ main {
 }
 
 .bubble.assistant {
-  background:#f1e6d2;
+  background:#f4e6cd;
   align-self:flex-start
 }
 
 .bubble.user {
-  background:#21170f;
+  background:#591322;
   color:#fff;
   align-self:flex-end
 }
@@ -585,7 +596,7 @@ main {
 .micBtn {
   border:0;
   background:var(--gold);
-  color:white;
+  color:#301b0d;
   border-radius:50%;
   width:48px;
   height:48px;
@@ -765,7 +776,7 @@ main {
   margin-top:15px;
   border:0;
   border-radius:14px;
-  background:var(--dark);
+  background:linear-gradient(135deg,#7b172a,#591322);
   color:#fff;
   padding:13px 16px;
   font-size:16px;

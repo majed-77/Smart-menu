@@ -34,7 +34,7 @@ The template variables are:
 {{4}} party size
 
 Suggested Arabic template text:
-هلا {{1}} 👋 تذكير بحجزك في Café Victor Hugo بتاريخ {{2}} الساعة {{3}}، لعدد {{4}} أشخاص. ننتظرك 🌷
+هلا {{1}} 👋 تذكير بحجزك في مطاعم سفرة الديرة بتاريخ {{2}} الساعة {{3}}، لعدد {{4}} أشخاص. ننتظرك 🌷
 
 4) Time zone
 Default restaurant timezone is Asia/Riyadh. Optional environment variable:

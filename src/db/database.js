@@ -131,27 +131,27 @@ async function initializeSchema() {
 
     CREATE TABLE IF NOT EXISTS restaurant_settings (
       id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
-      name_ar TEXT NOT NULL DEFAULT 'كافيه فيكتور هوغو',
-      name_en TEXT NOT NULL DEFAULT 'Café Victor Hugo',
-      name_fr TEXT NOT NULL DEFAULT 'Café Victor Hugo',
-      subtitle_ar TEXT NOT NULL DEFAULT 'مقهى ومطعم',
-      subtitle_en TEXT NOT NULL DEFAULT 'Café & Restaurant',
-      subtitle_fr TEXT NOT NULL DEFAULT 'Café & Restaurant',
+      name_ar TEXT NOT NULL DEFAULT 'مطاعم سفرة الديرة',
+      name_en TEXT NOT NULL DEFAULT 'Safrat Al-Dayrah',
+      name_fr TEXT NOT NULL DEFAULT 'Safrat Al-Dayrah',
+      subtitle_ar TEXT NOT NULL DEFAULT 'رز ولحم ودجاج على الأصول',
+      subtitle_en TEXT NOT NULL DEFAULT 'Authentic Saudi rice, lamb and chicken',
+      subtitle_fr TEXT NOT NULL DEFAULT 'Riz, agneau et poulet à la saoudienne',
       hero_eyebrow_ar TEXT NOT NULL DEFAULT 'منيو ذكي • سارة',
       hero_eyebrow_en TEXT NOT NULL DEFAULT 'Smart Menu • Sara',
       hero_eyebrow_fr TEXT NOT NULL DEFAULT 'Menu intelligent • Sara',
-      hero_title_ar TEXT NOT NULL DEFAULT 'حياكم الله',
-      hero_title_en TEXT NOT NULL DEFAULT 'Welcome',
-      hero_title_fr TEXT NOT NULL DEFAULT 'Bienvenue',
-      hero_text_ar TEXT NOT NULL DEFAULT 'اطلب، احجز، أو اسأل سارة عن المنيو.',
-      hero_text_en TEXT NOT NULL DEFAULT 'Order, reserve a table, or ask Sara about the menu.',
-      hero_text_fr TEXT NOT NULL DEFAULT 'Commandez, réservez une table ou demandez conseil à Sara.',
-      announcement_ar TEXT NOT NULL DEFAULT '',
-      announcement_en TEXT NOT NULL DEFAULT '',
-      announcement_fr TEXT NOT NULL DEFAULT '',
-      announcement_visible BOOLEAN NOT NULL DEFAULT FALSE,
-      logo_url TEXT NOT NULL DEFAULT 'https://digitalmenu.tn/storage/logos/cafe-victor-hugo-la-marsa-177633909869e21c70f3bb8-logo.jpg',
-      banner_url TEXT NOT NULL DEFAULT '',
+      hero_title_ar TEXT NOT NULL DEFAULT 'سفرة تجمعكم',
+      hero_title_en TEXT NOT NULL DEFAULT 'A table that brings everyone together',
+      hero_title_fr TEXT NOT NULL DEFAULT 'Une table qui rassemble',
+      hero_text_ar TEXT NOT NULL DEFAULT 'أطباق رز سعودية ومذاق شعبي أصيل. اطلب، احجز، أو اسأل سارة.',
+      hero_text_en TEXT NOT NULL DEFAULT 'Authentic Saudi rice platters. Order, reserve, or ask Sara.',
+      hero_text_fr TEXT NOT NULL DEFAULT 'Plats de riz saoudiens authentiques. Commandez, réservez ou demandez à Sara.',
+      announcement_ar TEXT NOT NULL DEFAULT 'السعرات تقديرية للحصة الموضحة.',
+      announcement_en TEXT NOT NULL DEFAULT 'Calories are estimated per listed serving.',
+      announcement_fr TEXT NOT NULL DEFAULT 'Les calories sont estimées par portion indiquée.',
+      announcement_visible BOOLEAN NOT NULL DEFAULT TRUE,
+      logo_url TEXT NOT NULL DEFAULT '/assets/images/safrat-aldayrah-logo.svg',
+      banner_url TEXT NOT NULL DEFAULT '/assets/images/safrat-aldayrah-hero.webp',
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
@@ -159,30 +159,66 @@ async function initializeSchema() {
     -- restaurant_settings existed in older Smart Menu releases with fewer columns.
     -- CREATE TABLE IF NOT EXISTS does not add new fields to an existing table, so
     -- explicitly migrate every editable branding field before the dashboard uses it.
-    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS name_ar TEXT NOT NULL DEFAULT 'كافيه فيكتور هوغو';
-    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS name_en TEXT NOT NULL DEFAULT 'Café Victor Hugo';
-    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS name_fr TEXT NOT NULL DEFAULT 'Café Victor Hugo';
-    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS subtitle_ar TEXT NOT NULL DEFAULT 'مقهى ومطعم';
-    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS subtitle_en TEXT NOT NULL DEFAULT 'Café & Restaurant';
-    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS subtitle_fr TEXT NOT NULL DEFAULT 'Café & Restaurant';
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS name_ar TEXT NOT NULL DEFAULT 'مطاعم سفرة الديرة';
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS name_en TEXT NOT NULL DEFAULT 'Safrat Al-Dayrah';
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS name_fr TEXT NOT NULL DEFAULT 'Safrat Al-Dayrah';
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS subtitle_ar TEXT NOT NULL DEFAULT 'رز ولحم ودجاج على الأصول';
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS subtitle_en TEXT NOT NULL DEFAULT 'Authentic Saudi rice, lamb and chicken';
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS subtitle_fr TEXT NOT NULL DEFAULT 'Riz, agneau et poulet à la saoudienne';
     ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS hero_eyebrow_ar TEXT NOT NULL DEFAULT 'منيو ذكي • سارة';
     ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS hero_eyebrow_en TEXT NOT NULL DEFAULT 'Smart Menu • Sara';
     ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS hero_eyebrow_fr TEXT NOT NULL DEFAULT 'Menu intelligent • Sara';
-    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS hero_title_ar TEXT NOT NULL DEFAULT 'حياكم الله';
-    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS hero_title_en TEXT NOT NULL DEFAULT 'Welcome';
-    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS hero_title_fr TEXT NOT NULL DEFAULT 'Bienvenue';
-    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS hero_text_ar TEXT NOT NULL DEFAULT 'اطلب، احجز، أو اسأل سارة عن المنيو.';
-    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS hero_text_en TEXT NOT NULL DEFAULT 'Order, reserve a table, or ask Sara about the menu.';
-    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS hero_text_fr TEXT NOT NULL DEFAULT 'Commandez, réservez une table ou demandez conseil à Sara.';
-    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS announcement_ar TEXT NOT NULL DEFAULT '';
-    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS announcement_en TEXT NOT NULL DEFAULT '';
-    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS announcement_fr TEXT NOT NULL DEFAULT '';
-    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS announcement_visible BOOLEAN NOT NULL DEFAULT FALSE;
-    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS logo_url TEXT NOT NULL DEFAULT 'https://digitalmenu.tn/storage/logos/cafe-victor-hugo-la-marsa-177633909869e21c70f3bb8-logo.jpg';
-    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS banner_url TEXT NOT NULL DEFAULT '';
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS hero_title_ar TEXT NOT NULL DEFAULT 'سفرة تجمعكم';
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS hero_title_en TEXT NOT NULL DEFAULT 'A table that brings everyone together';
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS hero_title_fr TEXT NOT NULL DEFAULT 'Une table qui rassemble';
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS hero_text_ar TEXT NOT NULL DEFAULT 'أطباق رز سعودية ومذاق شعبي أصيل. اطلب، احجز، أو اسأل سارة.';
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS hero_text_en TEXT NOT NULL DEFAULT 'Authentic Saudi rice platters. Order, reserve, or ask Sara.';
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS hero_text_fr TEXT NOT NULL DEFAULT 'Plats de riz saoudiens authentiques. Commandez, réservez ou demandez à Sara.';
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS announcement_ar TEXT NOT NULL DEFAULT 'السعرات تقديرية للحصة الموضحة.';
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS announcement_en TEXT NOT NULL DEFAULT 'Calories are estimated per listed serving.';
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS announcement_fr TEXT NOT NULL DEFAULT 'Les calories sont estimées par portion indiquée.';
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS announcement_visible BOOLEAN NOT NULL DEFAULT TRUE;
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS logo_url TEXT NOT NULL DEFAULT '/assets/images/safrat-aldayrah-logo.svg';
+    ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS banner_url TEXT NOT NULL DEFAULT '/assets/images/safrat-aldayrah-hero.webp';
     ALTER TABLE restaurant_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
     INSERT INTO restaurant_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+
+    CREATE TABLE IF NOT EXISTS app_migrations (
+      key TEXT PRIMARY KEY,
+      applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    DO $migration$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM app_migrations WHERE key='safrat-aldayrah-v1') THEN
+        UPDATE restaurant_settings SET
+          name_ar='مطاعم سفرة الديرة', name_en='Safrat Al-Dayrah', name_fr='Safrat Al-Dayrah',
+          subtitle_ar='رز ولحم ودجاج على الأصول',
+          subtitle_en='Authentic Saudi rice, lamb and chicken',
+          subtitle_fr='Riz, agneau et poulet à la saoudienne',
+          hero_eyebrow_ar='منيو ذكي • سارة', hero_eyebrow_en='Smart Menu • Sara', hero_eyebrow_fr='Menu intelligent • Sara',
+          hero_title_ar='سفرة تجمعكم',
+          hero_title_en='A table that brings everyone together',
+          hero_title_fr='Une table qui rassemble',
+          hero_text_ar='أطباق رز سعودية ومذاق شعبي أصيل. اطلب، احجز، أو اسأل سارة.',
+          hero_text_en='Authentic Saudi rice platters. Order, reserve, or ask Sara.',
+          hero_text_fr='Plats de riz saoudiens authentiques. Commandez, réservez ou demandez à Sara.',
+          announcement_ar='السعرات تقديرية للحصة الموضحة.',
+          announcement_en='Calories are estimated per listed serving.',
+          announcement_fr='Les calories sont estimées par portion indiquée.',
+          announcement_visible=TRUE,
+          logo_url='/assets/images/safrat-aldayrah-logo.svg',
+          banner_url='/assets/images/safrat-aldayrah-hero.webp',
+          updated_at=NOW()
+        WHERE id=1;
+
+        DELETE FROM menu_item_overrides;
+        DELETE FROM menu_categories;
+        INSERT INTO app_migrations (key) VALUES ('safrat-aldayrah-v1');
+      END IF;
+    END
+    $migration$;
   `);
 
   return true;

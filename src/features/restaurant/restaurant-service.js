@@ -4,28 +4,27 @@ const { pool, ensureSchemaReady } = require("../../db/database");
 const { cleanText } = require("../../lib/validation");
 
 const DEFAULT_PROFILE = Object.freeze({
-  nameAr: "كافيه فيكتور هوغو",
-  nameEn: "Café Victor Hugo",
-  nameFr: "Café Victor Hugo",
-  subtitleAr: "مقهى ومطعم",
-  subtitleEn: "Café & Restaurant",
-  subtitleFr: "Café & Restaurant",
+  nameAr: "مطاعم سفرة الديرة",
+  nameEn: "Safrat Al-Dayrah",
+  nameFr: "Safrat Al-Dayrah",
+  subtitleAr: "رز ولحم ودجاج على الأصول",
+  subtitleEn: "Authentic Saudi rice, lamb and chicken",
+  subtitleFr: "Riz, agneau et poulet à la saoudienne",
   heroEyebrowAr: "منيو ذكي • سارة",
   heroEyebrowEn: "Smart Menu • Sara",
   heroEyebrowFr: "Menu intelligent • Sara",
-  heroTitleAr: "حياكم الله",
-  heroTitleEn: "Welcome",
-  heroTitleFr: "Bienvenue",
-  heroTextAr: "اطلب، احجز، أو اسأل سارة عن المنيو.",
-  heroTextEn: "Order, reserve a table, or ask Sara about the menu.",
-  heroTextFr: "Commandez, réservez une table ou demandez conseil à Sara.",
-  announcementAr: "",
-  announcementEn: "",
-  announcementFr: "",
-  announcementVisible: false,
-  logoUrl:
-    "https://digitalmenu.tn/storage/logos/cafe-victor-hugo-la-marsa-177633909869e21c70f3bb8-logo.jpg",
-  bannerUrl: ""
+  heroTitleAr: "سفرة تجمعكم",
+  heroTitleEn: "A table that brings everyone together",
+  heroTitleFr: "Une table qui rassemble",
+  heroTextAr: "أطباق رز سعودية ومذاق شعبي أصيل. اطلب، احجز، أو اسأل سارة.",
+  heroTextEn: "Authentic Saudi rice platters. Order, reserve, or ask Sara.",
+  heroTextFr: "Plats de riz saoudiens authentiques. Commandez, réservez ou demandez à Sara.",
+  announcementAr: "السعرات تقديرية للحصة الموضحة.",
+  announcementEn: "Calories are estimated per listed serving.",
+  announcementFr: "Les calories sont estimées par portion indiquée.",
+  announcementVisible: true,
+  logoUrl: "/assets/images/safrat-aldayrah-logo.svg",
+  bannerUrl: "/assets/images/safrat-aldayrah-hero.webp"
 });
 
 function mapProfileRow(row = {}) {

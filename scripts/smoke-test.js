@@ -25,16 +25,20 @@ const routeSources = [
 const checks = [];
 const check = (name, condition) => checks.push({ name, ok: Boolean(condition) });
 
-check("16 menu categories", BASE_CATEGORIES.length === 16);
-check("138 base menu items", BASE_MENU_ITEMS.length === 138);
+check("7 Saudi menu categories", BASE_CATEGORIES.length === 7);
+check("18 Saudi base menu items", BASE_MENU_ITEMS.length === 18);
 check("Arabic is canonical for base item names", BASE_MENU_ITEMS.every((item) => /[\u0600-\u06FF]/.test(item.nameAr)));
 check("Arabic descriptions exist", BASE_MENU_ITEMS.every((item) => String(item.descriptionAr || "").trim()));
 check("Base prices contain no DT/TND", BASE_MENU_ITEMS.every((item) => !/(?:\bDT\b|TND)/i.test(String(item.priceText))));
 check("Unique base item keys", new Set(BASE_MENU_ITEMS.map((item) => item.itemKey)).size === BASE_MENU_ITEMS.length);
+check("Every menu item has calories", BASE_MENU_ITEMS.every((item) => Number.isInteger(item.calories) && item.calories >= 0));
+check("Every menu item has a local image", BASE_MENU_ITEMS.every((item) => item.imageUrl.startsWith("/assets/images/menu/") && fs.existsSync(path.join(root, "public", item.imageUrl))));
+check("Saudi restaurant identity is present", customerHtml.includes("مطاعم سفرة الديرة") && customerJs.includes("مطاعم سفرة الديرة"));
+check("Generated hero and logo exist", fs.existsSync(path.join(root, "public/assets/images/safrat-aldayrah-hero.webp")) && fs.existsSync(path.join(root, "public/assets/images/safrat-aldayrah-logo.svg")));
 
 check("Customer page loads external JS", /\/assets\/js\/customer-app\.js/.test(customerHtml));
 check("Dashboard loads external JS", /\/assets\/js\/dashboard-app\.js/.test(dashboardHtml));
-check("Customer assets are version 6.0.27", customerHtml.includes("customer.css?v=6.0.27") && customerHtml.includes("customer-app.js?v=6.0.27"));
+check("Customer assets are version 6.1.0", customerHtml.includes("customer.css?v=6.1.0") && customerHtml.includes("customer-app.js?v=6.1.0"));
 check("Sara name remains without waitress labels", customerJs.includes("waiterGeneral:'سارة'") && customerJs.includes("waiterGeneral:'Sara'") && !/(النادلة|نادلة|waitress|serveuse)/i.test(customerHtml + customerJs));
 check("No AI engine picker remains", !customerHtml.includes("data-sara-engine") && !customerHtml.includes("enginePicker"));
 check("Only retained Sara client route is used", customerJs.includes("'/api/sara-chat'") && customerJs.includes("'/api/cartesia-tts'"));
