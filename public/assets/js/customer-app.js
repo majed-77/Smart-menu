@@ -1330,9 +1330,20 @@ async function processSaraVoice(blob,mime){
     else form.append('mode','sara');
     const sttUrl='/api/transcribe';
     const r=await fetch(sttUrl,{method:'POST',body:form}); const d=await r.json().catch(()=>({}));
+    if(!r.ok&&['UNCERTAIN_NAME_TRANSCRIPT','UNCERTAIN_PHONE_TRANSCRIPT'].includes(d.code)){
+      const retryMessage=String(d.message||'ما التقطت المعلومة بوضوح، قلها مرة ثانية لو سمحت.');
+      addBubble('assistant',retryMessage);conversationHistory.push({role:'assistant',content:retryMessage});
+      status.textContent=TEXT[waiterLanguage].ready;await speakAI(retryMessage);return;
+    }
     if(!r.ok||!d.text)throw new Error(d.message||'Transcription failed');
     let q=String(d.text).trim(); if(!q)return;
     q=normalizeSaraBookingApprovalTranscript(q);
+    // Use the independently verified digit sequence for booking memory. This
+    // prevents a free-form transcript from swapping or regrouping phone digits.
+    if(!saraTableNumber && d.phoneDigits){
+      saraBookingState.phone=String(d.phoneDigits);
+      if(saraExpectedSpeechField()==='phone')q=String(d.phoneDigits);
+    }
     if(!saraTableNumber) q=saraNormalizePhoneTranscriptForDisplay(q);
     if(saraIsDuplicateTurn(q)){
       console.info('Sara: ignored duplicate voice turn',q);

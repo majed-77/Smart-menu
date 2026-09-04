@@ -7,6 +7,12 @@ const { DateTime } = require("luxon");
 const { env } = require("../../config/env");
 const { normalizeOpenAIError } = require("../../lib/errors");
 const { getRestaurantProfile } = require("../restaurant/restaurant-service");
+const {
+  isShortNameCandidate,
+  isWeakTranscript,
+  phoneDigitsFromTranscript,
+  transcriptsAgree
+} = require("./stt-quality");
 
 const router = express.Router();
 const apiKey = env.openaiApiKey;
@@ -221,14 +227,16 @@ router.post("/transcribe", upload.single("audio"), async (req, res) => {
     // confirmations ("إيه", "نعم", "اعتمد"). Do not seed vocabulary prompts,
     // because prompts previously caused hallucinated approval phrases.
     const isSaraEngine = req.body.mode === "sara";
-    const contextualHint = saraContext.previousQuestion
-      ? `السياق السابق للمساعدة في فهم الصوت فقط، ولا تضف منه كلاماً غير مسموع: ${saraContext.previousQuestion}`
-      : "";
     const options = {
       file: audioFile,
       model: isSaraEngine ? "gpt-4o-transcribe" : "gpt-4o-mini-transcribe",
       ...(isSaraEngine && language === "ar" ? {
-        prompt: `محادثة طبيعية باللهجة السعودية داخل مطعم. اكتب الكلام المسموع بالعربية وبالحروف العربية فقط. لا تترجم إلى أي لغة أخرى، ولا تكتب العربية بحروف لاتينية. اترك أسماء المنتجات الأجنبية فقط كما نطقها العميل. ${contextualHint}`.trim()
+        response_format: "json",
+        include: ["logprobs"],
+        temperature: 0,
+        // Never include Sara's previous question here: it biases weak audio toward
+        // an expected value, e.g. turning a hesitation sound into a guest name.
+        prompt: "محادثة طبيعية باللهجة السعودية داخل مطعم. اكتب فقط الكلام المسموع بوضوح. إذا كان الصوت تردداً مثل اه أو ام فاكتبه كما هو، ولا تستنتج اسماً أو رقماً. لا تترجم ولا تضف شرحاً."
       } : {})
     };
 
@@ -240,6 +248,7 @@ router.post("/transcribe", upload.single("audio"), async (req, res) => {
       await openai.audio.transcriptions.create(options);
 
     let text = String(transcription.text || "").trim();
+    let phoneDigits = phoneDigitsFromTranscript(text);
 
     // If Arabic audio produced a tiny Latin/meta hallucination, retry the SAME
     // audio once instead of immediately bothering the guest with "I didn't hear you".
@@ -255,7 +264,9 @@ router.post("/transcribe", upload.single("audio"), async (req, res) => {
           model: "gpt-4o-transcribe",
           language: "ar",
           temperature: 0,
-          prompt: `محادثة طبيعية بالعربية السعودية داخل مطعم. اكتب فقط الكلام المسموع بوضوح، ولا تترجم ولا تضف شرحاً. انتبه للكلمات القصيرة مثل بضيف، أشخاص، باسم، ورقم. ${contextualHint}`.trim()
+          response_format: "json",
+          include: ["logprobs"],
+          prompt: "محادثة طبيعية بالعربية السعودية داخل مطعم. اكتب فقط الكلام المسموع بوضوح، ولا تترجم ولا تضف شرحاً. إذا لم تسمع كلمة واضحة فلا تخمن اسماً أو رقماً."
         };
         const retry = await openai.audio.transcriptions.create(retryOptions);
         const retryText = String(retry.text || "").trim();
@@ -267,6 +278,51 @@ router.post("/transcribe", upload.single("audio"), async (req, res) => {
       } catch (retryErr) {
         console.warn("Arabic STT retry failed:", retryErr?.message || retryErr);
       }
+    }
+    phoneDigits = phoneDigitsFromTranscript(text);
+
+    // Names and phone numbers become booking data, so verify them from the same
+    // audio independently. If two readings disagree, ask only for that field again.
+    if (isSaraEngine && language === "ar" && saraContext.expected === "name" && isShortNameCandidate(text)) {
+      const verification = await openai.audio.transcriptions.create({
+        file: audioFile,
+        model: "gpt-4o-transcribe",
+        language: "ar",
+        response_format: "json",
+        include: ["logprobs"],
+        temperature: 0,
+        prompt: "اكتب الكلمة العربية المسموعة فقط. إن كان الصوت مجرد تردد مثل ااا أو اه أو ام، فلا تحوله إلى اسم ولا تخمن."
+      });
+      const verifiedText = String(verification.text || "").trim();
+      if (!transcriptsAgree(text, verifiedText) || isWeakTranscript(transcription) || isWeakTranscript(verification)) {
+        return res.status(422).json({
+          ok: false,
+          code: "UNCERTAIN_NAME_TRANSCRIPT",
+          message: "ما التقطت الاسم بوضوح، قل الاسم مرة ثانية لو سمحت."
+        });
+      }
+    }
+
+    const shouldVerifyPhone = saraContext.expected === "phone" || Boolean(phoneDigits);
+    if (isSaraEngine && language === "ar" && shouldVerifyPhone) {
+      const phoneVerification = await openai.audio.transcriptions.create({
+        file: audioFile,
+        model: "gpt-4o-transcribe",
+        language: "ar",
+        response_format: "json",
+        include: ["logprobs"],
+        temperature: 0,
+        prompt: "استخرج رقم الجوال المسموع فقط، واكتبه أرقاماً متصلة بالترتيب نفسه. لا تبدل ولا تجمع ولا تخمن أي رقم. إذا لم تسمع رقماً كاملاً بوضوح فاترك النص فارغاً."
+      });
+      const verifiedPhone = phoneDigitsFromTranscript(phoneVerification.text);
+      if (!verifiedPhone || (phoneDigits && phoneDigits !== verifiedPhone) || isWeakTranscript(phoneVerification)) {
+        return res.status(422).json({
+          ok: false,
+          code: "UNCERTAIN_PHONE_TRANSCRIPT",
+          message: "الرقم ما وصلني واضح. قله رقم رقم وبهدوء لو سمحت."
+        });
+      }
+      phoneDigits = verifiedPhone;
     }
 
     if (isSaraEngine && language === "ar" && looksLikeArabicSttHallucination(text)) {
@@ -290,7 +346,7 @@ router.post("/transcribe", upload.single("audio"), async (req, res) => {
       });
     }
 
-    return res.json({ ok: true, text });
+    return res.json({ ok: true, text, phoneDigits: phoneDigits || undefined });
   } catch (error) {
     console.error("Transcription error:", error);
     const e = normalizeOpenAIError(error);
