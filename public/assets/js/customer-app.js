@@ -1272,7 +1272,7 @@ function saraAssistantAsksKnownBookingField(answer){
   const t=String(answer||'').replace(/[ًٌٍَُِّْـ]/g,'').replace(/[إأآ]/g,'ا').toLowerCase();
   if(saraBookingState.name && /(وش الاسم|ايش الاسم|اسم الحجز|الاسم اللي اسجل)/.test(t))return true;
   if(saraBookingState.phone && /(رقم الجوال|رقم الواتساب|عطيني رقم|وش رقم)/.test(t))return true;
-  if(saraBookingState.partySize && /(?:الحجز|حجز).{0,20}(كم|لكم).{0,12}(شخص|اشخاص)|(?:كم|لكم).{0,12}(شخص|اشخاص)/.test(t))return true;
+  if(saraBookingState.partySize && /(?:الحجز|حجز).{0,20}(كم|لكم).{0,12}(شخص|اشخاص)|(?:كم|لكم).{0,12}(شخص|اشخاص)|ولا تقصد.{0,18}(شخص|اشخاص)|لشخصين.{0,12}ثلاث/.test(t))return true;
   if(saraBookingState.date && /(اي يوم|أي يوم|وش اليوم|تاريخ الحجز)/.test(t))return true;
   if(saraBookingState.time && /(الساعة كم|الساعه كم|وش الوقت|وقت الحجز)/.test(t))return true;
   return false;
