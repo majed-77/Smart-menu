@@ -26,11 +26,11 @@ let menu = [];
 
 const TEXT={
  ar:{
-  hero:'اسأل النادلة بالصوت أو الكتابة.',
+  hero:'اسأل سارة بالصوت أو الكتابة.',
   askWaiter:'🎙️ سارة',
-  waiterGeneral:'سارة — النادلة',
+  waiterGeneral:'سارة',
   siteLang:'🌐 العربية',
-  waiterTitle:'بأي لغة ترغب في التحدث مع النادلة؟',
+  waiterTitle:'بأي لغة ترغب في التحدث مع سارة؟',
   waiterSub:'اختر اللغة وسأرحب بك ثم يمكنك التحدث مباشرة.',
   close:'إغلاق', end:'إنهاء',
   placeholder:'اكتب سؤالك…',
@@ -40,8 +40,8 @@ const TEXT={
   thinking:'ثواني وبرد عليك…',
   micError:'تعذر تشغيل الميكروفون.',
   permission:'على iPhone: افتح إعدادات الموقع في Safari واسمح للميكروفون، ثم أعد تحميل الصفحة.',
-  hint:'المايك يشتغل تلقائيًا بعد اختيار لغة النادلة. تكلم عادي، وأثناء كلام سارة يتم تعليق المايك مؤقتًا حتى لا يقطع صوتها، وبعد ما تنتهي يرجع المايك تلقائيًا.',
-  aiError:'تعذر الاتصال بالنادلة الآن.',
+  hint:'المايك يشتغل تلقائيًا بعد اختيار اللغة. تكلم عادي، وأثناء كلام سارة يتم تعليق المايك مؤقتًا حتى لا يقطع صوتها، وبعد ما تنتهي يرجع المايك تلقائيًا.',
+  aiError:'تعذر الاتصال بسارة الآن.',
   apiKeyError:'مفتاح OpenAI غير موجود أو غير صحيح.',
   quotaError:'حساب OpenAI API لا يملك رصيدًا كافيًا أو تم تجاوز الحصة. أضف وسيلة دفع/رصيد في منصة OpenAI ثم جرّب مرة أخرى.',
   permissionError:'مفتاح OpenAI لا يملك صلاحية استخدام هذا الموديل.',
@@ -49,11 +49,11 @@ const TEXT={
   greet:(dish)=>`هلا والله 👋 معك سارة. وش حاب تعرف عن ${dish[0]}؟`
  },
  fr:{
-  hero:'Menu intelligent — appelez la serveuse virtuelle et parlez-lui au micro ou par écrit.',
-  askWaiter:'🎙️ Sara — la serveuse',
-  waiterGeneral:'Sara — votre serveuse',
+  hero:'Menu intelligent — parlez avec Sara au micro ou par écrit.',
+  askWaiter:'🎙️ Sara',
+  waiterGeneral:'Sara',
   siteLang:'🌐 Français',
-  waiterTitle:'Dans quelle langue souhaitez-vous parler avec la serveuse ?',
+  waiterTitle:'Dans quelle langue souhaitez-vous parler avec Sara ?',
   waiterSub:'Choisissez une langue, je vous accueillerai puis vous pourrez parler.',
   close:'Fermer', end:'Terminer',
   placeholder:'Écrivez votre question…',
@@ -64,19 +64,19 @@ const TEXT={
   micError:"Impossible d'utiliser le microphone.",
   permission:"Sur iPhone : autorisez le microphone pour ce site dans Safari, puis rechargez la page.",
   hint:'Appuyez sur 🎤 et parlez. Après 1,5 s de silence, la question part automatiquement. ⏹ envoie immédiatement.',
-  aiError:"Impossible de joindre la serveuse.",
+  aiError:"Impossible de joindre Sara.",
   apiKeyError:"La clé OpenAI est absente ou invalide.",
   quotaError:"Le compte OpenAI API n'a pas de crédit suffisant ou le quota est dépassé.",
   permissionError:"La clé OpenAI n'a pas l'autorisation d'utiliser ce modèle.",
   serverError:"Erreur du serveur AI. Consultez les logs Render.",
-  greet:(dish)=>`Bienvenue chez ${restaurantName('fr')}. Je suis votre serveuse virtuelle. Vous regardez ${dish[0]}. Posez-moi une question sur les ingrédients, le prix ou demandez-moi une recommandation.`
+  greet:(dish)=>`Bienvenue chez ${restaurantName('fr')}. Je suis Sara. Vous regardez ${dish[0]}. Posez-moi une question sur les ingrédients, le prix ou demandez-moi une recommandation.`
  },
  en:{
-  hero:'Smart menu — call the virtual waitress and speak by microphone or text.',
-  askWaiter:'🎙️ Sara — Waitress',
-  waiterGeneral:'Sara — Your Waitress',
+  hero:'Smart menu — speak with Sara by microphone or text.',
+  askWaiter:'🎙️ Sara',
+  waiterGeneral:'Sara',
   siteLang:'🌐 English',
-  waiterTitle:'Which language would you like to use with the waitress?',
+  waiterTitle:'Which language would you like to use with Sara?',
   waiterSub:'Choose a language and I’ll welcome you, then you can start speaking.',
   close:'Close', end:'End',
   placeholder:'Type your question…',
@@ -87,12 +87,12 @@ const TEXT={
   micError:'Unable to use the microphone.',
   permission:'On iPhone: allow microphone access for this website in Safari, then reload the page.',
   hint:'Tap 🎤 and speak. After 1.5 seconds of silence, it sends automatically. Tap ⏹ to send immediately.',
-  aiError:'Unable to reach the waitress.',
+  aiError:'Unable to reach Sara.',
   apiKeyError:'The OpenAI API key is missing or invalid.',
   quotaError:'The OpenAI API account has insufficient credit or quota.',
   permissionError:'The OpenAI key does not have permission to use this model.',
   serverError:'AI server error. Check Render logs.',
-  greet:(dish)=>`Welcome to ${restaurantName('en')}. I’m your virtual waitress. You’re viewing ${dish[0]}. Ask me about ingredients, price, or let me recommend something for you.`
+  greet:(dish)=>`Welcome to ${restaurantName('en')}. I’m Sara. You’re viewing ${dish[0]}. Ask me about ingredients, price, or let me recommend something for you.`
  }
 };
 

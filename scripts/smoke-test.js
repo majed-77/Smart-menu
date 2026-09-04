@@ -34,7 +34,8 @@ check("Unique base item keys", new Set(BASE_MENU_ITEMS.map((item) => item.itemKe
 
 check("Customer page loads external JS", /\/assets\/js\/customer-app\.js/.test(customerHtml));
 check("Dashboard loads external JS", /\/assets\/js\/dashboard-app\.js/.test(dashboardHtml));
-check("Customer assets are version 6.0.26", customerHtml.includes("customer.css?v=6.0.26") && customerHtml.includes("customer-app.js?v=6.0.26"));
+check("Customer assets are version 6.0.27", customerHtml.includes("customer.css?v=6.0.27") && customerHtml.includes("customer-app.js?v=6.0.27"));
+check("Sara name remains without waitress labels", customerJs.includes("waiterGeneral:'سارة'") && customerJs.includes("waiterGeneral:'Sara'") && !/(النادلة|نادلة|waitress|serveuse)/i.test(customerHtml + customerJs));
 check("No AI engine picker remains", !customerHtml.includes("data-sara-engine") && !customerHtml.includes("enginePicker"));
 check("Only retained Sara client route is used", customerJs.includes("'/api/sara-chat'") && customerJs.includes("'/api/cartesia-tts'"));
 check("Deleted client engines are absent", !/(saraEngine|startRealtime|startAgent2|startAltSara|ElevenLabs|DeepSeek|Claude|Gemini|Kimi|Fish Audio)/i.test(customerJs));
