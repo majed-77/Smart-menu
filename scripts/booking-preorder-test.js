@@ -25,6 +25,7 @@ const context = {
   conversationHistory: [],
   saraBookingState: { name: "", phone: "", partySize: 3, date: "2026-09-04", time: "22:00", notes: "", preorderChoice: "", orderItems: [] },
   saraAwaitingOrderApproval: () => false,
+  saraAwaitingBookingName: () => false,
   normalizeArabicDigitsSara: value => String(value).replace(/[٠-٩]/g, digit => "٠١٢٣٤٥٦٧٨٩".indexOf(digit)),
   saraBookingArgsFromState: null
 };
@@ -35,8 +36,9 @@ vm.runInContext([
   "saraAwaitingBookingApproval",
   "normalizeSaraBookingApprovalTranscript",
   "saraCanConfirmBookingNow",
-  "saraApplyAiBookingUpdate"
-].map(functionSource).join("\n") + "\nglobalThis.bookingTest={awaitingChoice:saraAwaitingPreorderChoice,awaitingApproval:saraAwaitingBookingApproval,normalizeApproval:normalizeSaraBookingApprovalTranscript,canConfirm:saraCanConfirmBookingNow,applyAi:saraApplyAiBookingUpdate};", context);
+  "saraApplyAiBookingUpdate",
+  "saraExtractBookingName"
+].map(functionSource).join("\n") + "\nglobalThis.bookingTest={awaitingChoice:saraAwaitingPreorderChoice,awaitingApproval:saraAwaitingBookingApproval,normalizeApproval:normalizeSaraBookingApprovalTranscript,canConfirm:saraCanConfirmBookingNow,applyAi:saraApplyAiBookingUpdate,extractName:saraExtractBookingName};", context);
 
 const assert = (condition, message) => {
   if (!condition) throw new Error(message);
@@ -72,5 +74,6 @@ assert(context.saraBookingState.preorderChoice === "no", "AI-first understanding
 assert(context.saraBookingState.partySize === 3 && context.saraBookingState.time === "22:00", "AI-first updates preserve booking facts not mentioned again");
 test.applyAi({active:true,has_name:false,name:"",has_phone:true,phone:"1111111111",has_party_size:false,party_size:0,has_date:false,date:"",has_time:false,time:"",has_notes:false,notes:"",has_preorder_choice:false,preorder_choice:"unknown"},"new_booking");
 assert(context.saraBookingState.phone === "1111111111" && context.saraBookingState.name === "ضيف تجريبي", "A correction replaces only the changed field");
+assert(test.extractName("الحجز باسم خالد ورقم الجوال 0000000000") === "خالد", "A name is captured when the phone follows in the same rushed sentence");
 
 console.log("\n✓ Booking pre-order behavior test passed.");

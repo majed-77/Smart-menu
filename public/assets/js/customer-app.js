@@ -681,7 +681,7 @@ function saraBookingContextActive(){
 }
 function saraExtractBookingName(raw){
   const text=String(raw||'').replace(/[،,.!?؟]+$/g,'').trim();
-  let m=text.match(/(?:اسم(?:\s+الحجز)?|اسمي|باسم)\s+([\u0600-\u06FF]{2,})(?=\s+(?:رقم|والرقم|واتساب|رقم الواتساب|لـ|لشخص|اليوم|بكره|غدا|غدًا|الساعة)|$)/i);
+  let m=text.match(/(?:اسم(?:\s+الحجز)?|اسمي|باسم)\s+([\u0600-\u06FF]{2,})(?=\s+(?:رقم|ورقم|والرقم|واتساب|رقم الواتساب|لـ|لشخص|اليوم|بكره|غدا|غدًا|الساعة)|$)/i);
   if(m)return m[1];
   if(saraAwaitingBookingName()){
     // "اسم ماجد" / "ماجد" / "أنا ماجد" should be accepted locally.
