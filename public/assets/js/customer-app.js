@@ -450,7 +450,7 @@ async function saveSaraTableOrder(args={}){
 }
 function closeSara(){
   if(saraCaptureWatchdog){clearTimeout(saraCaptureWatchdog);saraCaptureWatchdog=null;}
-  saraStarted=false; saraBusy=false; saraSpeaking=false; saraCapturing=false; saraBookingState={name:'',phone:'',partySize:null,date:'',time:'',notes:'',orderItems:[],preorderChoice:''}; saraOrderState=freshSaraOrderState(); saraManagedReservation=freshSaraManagedReservation(); saraBookingActive=false; saraLastConfirmedBooking={signature:'',code:'',at:0}; saraConfirmedBookingOrderAwaitingApproval=false; saraBookingSaveInFlight=false; saraBargeCandidateAt=0; saraCaptureStartedDuringSara=false; saraLastSpokenText=''; saraSpeechStoppedAt=0; saraVoiceProcessInFlight=false; saraLastTurnFingerprint=''; saraLastTurnAt=0;
+  saraStarted=false; saraBusy=false; saraSpeaking=false; saraCapturing=false; saraBookingState={name:'',phone:'',partySize:null,date:'',time:'',notes:'',orderItems:[],preorderChoice:''}; saraOrderState=freshSaraOrderState(); saraManagedReservation=freshSaraManagedReservation(); saraBookingActive=false; saraLastConfirmedBooking={signature:'',code:'',at:0}; saraConfirmedBookingOrderAwaitingApproval=false; saraBookingSaveInFlight=false; saraBargeCandidateAt=0; saraCaptureStartedDuringSara=false; saraLastSpokenText=''; saraSpeechStoppedAt=0; saraPostTtsGuardUntil=0; saraVoiceProcessInFlight=false; saraLastTurnFingerprint=''; saraLastTurnAt=0;
   if(saraVadFrame){cancelAnimationFrame(saraVadFrame);saraVadFrame=null;}
   try{if(saraRecorder && saraRecorder.state!=="inactive")saraRecorder.stop();}catch(e){}
   saraRecorder=null; saraChunks=[];
@@ -484,6 +484,7 @@ let saraBookingSaveInFlight=false;
 let saraBargeCandidateAt=0;
 let saraTtsStartedAt=0;
 let saraTtsEndedAt=0;
+let saraPostTtsGuardUntil=0;
 let saraLastSpokenText='';
 let saraCaptureStartedDuringSara=false;
 let saraSpeechStoppedAt=0;
@@ -1183,7 +1184,9 @@ function runSaraVAD(){
     // Start sooner so iPhone MediaRecorder does not lose short opening sounds.
     // End-of-speech remains unchanged at 1800ms per product requirement.
     const startHoldMs=25;
-    const canStart=!saraBusy || saraSpeaking;
+    // Let residual speaker echo decay before opening a new turn. PCM pre-roll
+    // still preserves real guest speech that begins during this short guard.
+    const canStart=(!saraBusy || saraSpeaking) && (saraSpeaking || now>=saraPostTtsGuardUntil);
 
     if(canStart && !saraCapturing){
       if(saraSpeaking){
@@ -1389,7 +1392,10 @@ function saraLooksLikeSaraEcho(transcript){
   if(!saraCaptureStartedDuringSara || !saraLastSpokenText)return false;
   const q=saraNormalizeForEcho(transcript), a=saraNormalizeForEcho(saraLastSpokenText);
   // Never suppress short real barge-ins such as "لا", "إيه", "اعتمد".
-  if(q.length<12 || q.split(' ').length<3)return false;
+  if(/^(?:لا|نعم|ايه|اي|اعتمد|اعتمدي|اوقف|وقفي|لحظه|لحظة)(?:\s|$)/.test(q))return false;
+  // Short fragments such as "رقم الجوال" can still be Sara's own speaker
+  // echo. Suppress them only when they occur verbatim in her last utterance.
+  if(q.length<12 || q.split(' ').length<3)return q.length>=5&&a.includes(q);
   if(a.includes(q) && q.length>=16)return true;
   const qs=new Set(q.split(' ').filter(w=>w.length>1));
   const as=new Set(a.split(' ').filter(w=>w.length>1));
@@ -1462,6 +1468,15 @@ async function processSaraVoice(blob,mime){
     else form.append('mode','sara');
     const sttUrl='/api/transcribe';
     const r=await fetch(sttUrl,{method:'POST',body:form}); const d=await r.json().catch(()=>({}));
+    const uncertainVoiceCodes=['UNCERTAIN_NAME_TRANSCRIPT','UNCERTAIN_PHONE_TRANSCRIPT','UNCERTAIN_ARABIC_TRANSCRIPT','NO_SPEECH_DETECTED'];
+    if(!r.ok&&saraCaptureStartedDuringSara&&uncertainVoiceCodes.includes(d.code)){
+      // A low-confidence clip opened while Sara was speaking is usually her
+      // own speaker echo. Never create a second assistant bubble from it.
+      console.info('Sara: ignored uncertain barge-in/echo clip',d.code);
+      saraCaptureStartedDuringSara=false;
+      status.textContent=TEXT[waiterLanguage].ready;
+      return;
+    }
     if(!r.ok&&['UNCERTAIN_NAME_TRANSCRIPT','UNCERTAIN_PHONE_TRANSCRIPT'].includes(d.code)){
       const retryMessage=String(d.message||'ما التقطت المعلومة بوضوح، قلها مرة ثانية لو سمحت.');
       addBubble('assistant',retryMessage);conversationHistory.push({role:'assistant',content:retryMessage});
@@ -1792,7 +1807,7 @@ async function speakAI(text){
         speechSource.onended=()=>{
           orb.classList.remove('speaking');
           speechSource=null;
-          saraSpeaking=false;saraTtsEndedAt=performance.now();saraBargeCandidateAt=0;
+          saraSpeaking=false;saraTtsEndedAt=performance.now();saraPostTtsGuardUntil=saraTtsEndedAt+420;saraBargeCandidateAt=0;
           saraClearPcmPreroll();
         };
         speechSource.start(0);
@@ -1816,12 +1831,13 @@ async function speakAI(text){
       orb.classList.remove('speaking');
       URL.revokeObjectURL(url);
       if(currentAudio===audio) currentAudio=null;
-      saraSpeaking=false;saraTtsEndedAt=performance.now();saraBargeCandidateAt=0;
+      saraSpeaking=false;saraTtsEndedAt=performance.now();saraPostTtsGuardUntil=saraTtsEndedAt+420;saraBargeCandidateAt=0;
       saraClearPcmPreroll();
     };
     audio.onerror=()=>{
       orb.classList.remove('speaking');
-      saraSpeaking=false;saraTtsEndedAt=performance.now();saraBargeCandidateAt=0;
+      saraSpeaking=false;saraTtsEndedAt=performance.now();saraPostTtsGuardUntil=saraTtsEndedAt+420;saraBargeCandidateAt=0;
+      saraClearPcmPreroll();
       URL.revokeObjectURL(url);
     };
 
